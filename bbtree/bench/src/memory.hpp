@@ -17,7 +17,7 @@ namespace bbtree_bench {
 // It counts the bytes mimalloc hands out for each block (`mi_usable_size`),
 // not the bytes asked for, as the Rust bench's `CountingAllocator` does: an
 // unsized `operator delete`, which bbtree's `global_allocator` and much of
-// the std library call, gives no size to subtract (PORTING.md, P15).
+// the std library call, gives no size to subtract (PORTING.md, P17).
 class counting_allocator {
  public:
   constexpr counting_allocator() noexcept = default;

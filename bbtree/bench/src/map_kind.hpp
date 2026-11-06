@@ -26,7 +26,7 @@ enum class map_kind {
   // strategy (PORTING.md, P5), and the integers have theirs under the
   // default strategy, as they do under the Rust crate's `Auto`: the same map
   // as `bbtree-unsync`, kept under its name so that `--map` and the CSVs
-  // line up (P14). Runs only when `--map` names it.
+  // line up (PORTING.md, P18). Runs only when `--map` names it.
   unsync_inline,
   // `std::map`, the counterpart of Rust's `BTreeMap`.
   std_btree,
@@ -35,7 +35,7 @@ enum class map_kind {
   absl_btree,
   // `ankerl::unordered_dense::map` with its default hash (wyhash), the
   // counterpart of hashbrown's `HashMap` with foldhash: a flat Swiss-table
-  // rival (P14).
+  // rival (PORTING.md, P18).
   hashbrown,
   // `std::unordered_map` with `std::hash`, the counterpart of std's
   // `HashMap` (SipHash-1-3).

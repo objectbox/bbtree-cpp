@@ -1,5 +1,5 @@
 # The bench harness, a port of the Rust crate's `bbtree/bench` (PORTING.md,
-# P12-P16). Two binaries share every source but the one that fixes the global
+# P12, P17-P19). Two binaries share every source but the one that fixes the global
 # allocator: `bbtree-bench` times cells on plain mimalloc, and
 # `bbtree-bench-memory` counts the live bytes of the maps instead.
 #
@@ -27,7 +27,7 @@ FetchContent_Declare(unordered_dense
 
 # mimalloc 3.3.2: the version the Rust bench's libmimalloc-sys 0.1.49 builds
 # by default (its `v2` feature is off), with its defaults, so that both heaps
-# back their arenas with the same transparent huge pages (PORTING.md, P13). It
+# back their arenas with the same transparent huge pages (PORTING.md, P17). It
 # replaces `operator new` and `delete` through `mimalloc-new-delete.h` in the
 # timing binary: the C++ counterpart of the Rust bench's `#[global_allocator]`.
 # It does not interpose `malloc`.

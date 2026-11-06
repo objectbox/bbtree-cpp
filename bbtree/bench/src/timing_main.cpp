@@ -1,6 +1,6 @@
 // The timing binary: every cell is timed on plain mimalloc, which replaces
 // `operator new` and `delete` here, as the Rust bench's
-// `#[global_allocator]` does (PORTING.md, P13).
+// `#[global_allocator]` does (PORTING.md, P17).
 #include <mimalloc-new-delete.h>
 
 #include "bench_program.hpp"

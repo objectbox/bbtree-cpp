@@ -60,5 +60,8 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
   run on fixed random inputs in the tests
 - [x] kernel target: the no-SSE2 code paths built and run (P14); racing-reads checker not ported (P15)
 ## M9 Bench harness (std::map, abseil btree_map, ankerl, std::unordered_map)
+- [x] the Rust bench ported (bbtree/bench): suites, cells, generators pinned to the Rust bench's by `self-check`,
+  adapters, child process per cell, CSV, report, `compare` across languages, perf counters, datasets, memory
+  binary; mimalloc 3.3.2 as the Rust bench's (P17-P19)
 ## M10 READMEs and docs
 ## M11 Measure against the Rust original, profile, optimize

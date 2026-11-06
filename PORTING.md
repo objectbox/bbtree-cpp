@@ -267,8 +267,8 @@ Huge pages are part of what it measures: the Rust bench's mimalloc crate
 backs its heap with huge pages (37 thousand dTLB misses in a whole 1M u64
 iterate cell), and mimalloc on 4 KiB pages misses the dTLB at about every
 leaf, which made the port's iteration look twice as slow (2.1 ns an entry
-against 0.8 ns, the same walk) before the C++ bench allowed large OS pages
-too.
+against 0.8 ns, the same walk). The C++ bench gets the same pages from the
+same mimalloc (P17).
 
 ## P16. `for_each` beside iterators, for Rust's folds
 
@@ -299,3 +299,92 @@ random order, with huge pages:
 - **Rejected for now:** iterators with no node stack, which search again
   from the root at each crossing. They would keep their place in registers
   at the cost of a search per leaf; FUTURE_WORK.md has it.
+
+## P17. The bench's allocator: mimalloc 3.3.2 behind `operator new`
+
+- **Chosen:** the timing binary replaces `operator new` and `delete` with
+  mimalloc's (`mimalloc-new-delete.h`), the counterpart of the Rust bench's
+  `#[global_allocator]`, which also covers only the language's own
+  allocations, not libc's `malloc`. The version is 3.3.2, the one the Rust
+  bench's libmimalloc-sys 0.1.49 builds by default (its `v2` feature is
+  off), with its default options. Version 3 madvises its arenas for
+  transparent huge pages, which is where the Rust bench's huge pages come
+  from (P12): a 1M `u64` iterate cell now misses the dTLB about 6.6 thousand
+  times in the whole process, and iterates in 0.93 ns an entry against the
+  Rust bench's 0.8.
+- **Rejected:** mimalloc 2.x with `mi_option_allow_large_os_pages` set at
+  startup. It gets huge pages too, but by another path than the Rust
+  bench's allocator, which a comparison would then measure; and the option
+  must be set before the first allocation, which static initializers make
+  fragile. Interposing `malloc` (`MI_OVERRIDE`) was rejected because static
+  interposition on Linux holds only for the archive members the linker
+  pulls in.
+- **Memory mode counts mimalloc's block sizes.** The memory binary routes
+  every form of `operator new` and `delete` through one counting allocator,
+  the binary's one mutable global (the Rust bench's `static ALLOCATOR`). It
+  adds `mi_usable_size` at allocation and subtracts it at free, where the
+  Rust bench counts the bytes asked for: an unsized `operator delete`, which
+  `global_allocator` and much of the std library call (Clang 15 has no sized
+  deallocation by default), gives no size to subtract. Blocks of 1 KiB and
+  512 bytes, bbtree's nodes, are the same either way: a 1M `u64` map holds
+  26.7 bytes an entry in both benches. Other maps' small nodes round up to
+  mimalloc's size classes, a few percent.
+
+## P18. The bench's maps, under the Rust bench's names
+
+The CSVs line up by map name, so the C++ maps take the Rust ones' names:
+
+| name | Rust bench | C++ bench |
+|---|---|---|
+| `bbtree` | `BBTreeMap`, counted | `bbtree::bbtree_map`, counted, held on the heap (it doesn't move) |
+| `bbtree-unsync` | `unsync::BBTreeMap` | `bbtree::unsync::bbtree_map` |
+| `bbtree-unsync-inline` | `unsync::BBTreeMap<_, _, WithInlineKey>`, integers only | the same map as `bbtree-unsync` |
+| `std-btree` | `std::collections::BTreeMap` | `std::map` |
+| `absl-btree` | none | `absl::btree_map` |
+| `hashbrown` | hashbrown's `HashMap`, foldhash | `ankerl::unordered_dense::map`, wyhash |
+| `std-hash` | std's `HashMap`, SipHash-1-3 | `std::unordered_map`, `std::hash` |
+
+- `bbtree-unsync-inline`: under the Rust crate's `Auto` strategy the
+  integers already have the inline keys their `InlineKey` impl gives, with
+  the same node plan as under `WithInlineKey` (`page.rs` tests it), and C++
+  has no strategies (P5). The cell runs the default map; the name stays so
+  that `--map` and the CSVs line up. Its `bulk_build` runs, where the Rust
+  bench's is `n/a` (Rust's `collect` makes the `Auto` strategy only).
+  **Rejected:** `plain_keys` under this name (the opposite of what it
+  names), or dropping the name.
+- The hash maps are each language's usual choice, not the same algorithm:
+  `std::hash` of an integer is the integer, where Rust's std hashes with
+  SipHash. Ordered maps are the comparison that matters; the hash maps are
+  context.
+- Every operation goes through the same calls as in the Rust bench:
+  `insert_or_assign` for Rust's `insert`, `operator[]` for
+  `entry().or_default()`, `extract` for `pop_first` where the map has none,
+  the range constructor for `FromIterator`, and `for_each` for the iterate
+  checksum where the map has it (P16). The shared map has no entry API, no
+  `pop_first` and no bulk build in either bench.
+
+## P19. Bench inputs, the Rust bench's key for key
+
+A C++ cell and a Rust cell measure the same keys in the same orders:
+SplitMix64 with the Rust bench's seeds, Lemire's bounded draw, Fisher-Yates
+in the same direction, the string shapes' draws in the same order,
+SipHash-1-3 for the strings' distinctness (as Rust's `DefaultHasher` hashes
+a `str`, with its 0xFF terminator) and for the datasets' hold-out, and the
+datasets' lines split as `str::lines` splits them.
+
+- **Checked by `self-check`:** 50 sequences of seven cells (insertion,
+  absent, probe, removal and upsert orders of one-map cells, the
+  many-map cells' vocabularies, picks, misses and map orders, a key list's
+  samples, the struct values) are digested and compared with digests that
+  the Rust bench's own code gives, from a module added to a scratch copy of
+  its sources (bbtree/bench/README.md says how). All 50 agree, with the
+  Rust bench at the commit PLAN.md names.
+- **Serial shuffles.** The Rust bench shuffles large inputs on all cores by
+  their indices, with the serial result; the C++ bench shuffles serially,
+  which gives the same result by definition. Copying and sorting inputs
+  run on `std::thread`s instead of rayon, keeping the Rust bench's
+  threshold, so that small maps' keys stay in the timing thread's heap.
+- **One fix:** the Rust bench's many-map lookups call `get` on every map,
+  which `bbtree` (the shared map) lends no reference from: its
+  `get_many` cells fail there (a panic). The C++ bench looks up through
+  `lookup_fingerprint` for that map, as the one-map lookups do in both.
