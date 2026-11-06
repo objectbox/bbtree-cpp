@@ -58,7 +58,7 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 ## M8 Fuzz targets (libFuzzer), racing-reads checker, kernel-target build
 - [x] libFuzzer targets for every node-plan row, the shared map, set algebra and hostile keys; harnesses also
   run on fixed random inputs in the tests
-- [ ] racing-reads checker on Clang assembly; kernel-target (freestanding) build
+- [x] kernel target: the no-SSE2 code paths built and run (P14); racing-reads checker not ported (P15)
 ## M9 Bench harness (std::map, abseil btree_map, ankerl, std::unordered_map)
 ## M10 READMEs and docs
 ## M11 Measure against the Rust original, profile, optimize

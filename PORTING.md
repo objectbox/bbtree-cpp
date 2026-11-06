@@ -230,6 +230,30 @@ D1–D60) still hold unless an entry here says otherwise.
 - So the Rust fuzz target `user_code_panics` has no counterpart; its lying
   orders and encodings are `fuzz_hostile_keys`, checked for memory safety.
 
+## P14. The kernel target: code paths without SSE2, not a freestanding build
+
+- **Chosen:** `bbtree_kernel_target` builds and runs the maps with
+  `__SSE2__` and `__POPCNT__` undefined, so the inline-key count takes its
+  binary search and no intrinsic is compiled, as the Rust crate's
+  `x86_64-unknown-none` build does.
+- **Alternative:** a true freestanding build (`-ffreestanding
+  -mgeneral-regs-only`). libstdc++'s headers need `long double`, which
+  general registers alone rule out, and the library uses hosted headers
+  (`<optional>`, `<span>`, `<string>` for byte-string keys). It would need a
+  freestanding standard library and headers split by hosted-ness.
+
+## P15. No racing-reads checker on the compiled code
+
+- **Not ported:** the Rust crate's `racing-reads` checker, which reads
+  rustc's assembly to confirm that once a node's version check passes, the
+  code reads nothing more of the node before another check. Rust offers no
+  fence that orders its volatile racing reads before a check, so it checks
+  the compiler's output. Here every check is an acquire fence followed by a
+  relaxed load (P11), which the C++ memory model orders, and ThreadSanitizer
+  runs the stress tests. Porting the checker would mean a second
+  assembly-pattern parser for Clang's output, for what the fences already
+  guarantee.
+
 ## P12. Bench dependencies include mimalloc
 
 The Rust bench links mimalloc as its global allocator, and D15's and D8's
