@@ -150,6 +150,23 @@ class any_page {
   std::byte* page_;
 };
 
+// Copies a node's page as bytes into `dest`; in a latched tree, around the
+// latch word, which stays the destination's: a page keeps one word for life,
+// whose version only grows (09-concurrency.md, type-stable nodes).
+template <class T>
+struct page_copy {
+  static void keeping_latch(std::byte* dest, const std::byte* source, std::size_t size) noexcept {
+    if constexpr (T::latched) {
+      constexpr std::size_t latch_begin = latched_node_header_layout::latch_offset;
+      constexpr std::size_t latch_end = latch_begin + sizeof(std::uint64_t);
+      std::memcpy(dest, source, latch_begin);
+      std::memcpy(dest + latch_end, source + latch_end, size - latch_end);
+    } else {
+      std::memcpy(dest, source, size);
+    }
+  }
+};
+
 // The arrays a node keeps beside its keys, one slot per key: its inline keys
 // at its plan's width, and in a leaf whose plan keeps them, its keys' hash
 // tags (D36). Every key move moves them alike.

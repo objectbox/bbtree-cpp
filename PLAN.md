@@ -40,9 +40,10 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [x] level-by-level lanes (P10), `get_many`, `insert_or_assign_many`, set `contains_many`/`insert_many`
 
 ## M5 Shared map (`bbtree_map`, D54, D55, D57)
-- [ ] latch word, optimistic reads, page pool (type-stable pages)
-- [ ] lookup, insert, remove, scans, batches, append
-- [ ] stress tests (Shuttle stand-in), TSan preset
+- [x] latch word, optimistic reads (P11), page pool (type-stable pages), descent; read, get_copied,
+  get_cloned, contains, update; owner extend; lookup stress test under TSan
+- [ ] leaf-local insert/remove, structural changes through held nodes (held.rs), start_tree
+- [ ] appends (D45), shared-prefix shrinks, scans, batches, owner methods (get_mut, iter_mut, clear)
 
 ## M6 File maps (D58) and bbtree-mmap
 ## M7 bbtree-store (D60): leaf annex, heap pages, records, WAL

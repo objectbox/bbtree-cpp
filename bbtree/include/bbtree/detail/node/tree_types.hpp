@@ -10,6 +10,7 @@
 // inline keys.
 #pragma once
 
+#include <bbtree/detail/latched/latch.hpp>
 #include <bbtree/detail/node/keys.hpp>
 #include <bbtree/detail/node/layout.hpp>
 
@@ -20,6 +21,11 @@
 #include <utility>
 
 namespace bbtree::detail {
+
+template <class S>
+struct strategy_traits<latched<S>> : strategy_traits<S> {
+  static constexpr bool latched = true;
+};
 
 template <class K, class V, class Compare, class Strategy>
 struct tree_types {

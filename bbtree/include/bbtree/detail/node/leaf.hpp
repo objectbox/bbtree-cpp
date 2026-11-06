@@ -357,7 +357,7 @@ class leaf_node : public child_node<T, leaf_node<T>, true> {
   // leaf's, which holds nothing; returns it there.
   leaf_node move_to(std::byte* dest) const noexcept {
     if constexpr (slots<K>::moves_as_bytes && slots<V>::moves_as_bytes) {
-      std::memcpy(dest, node_.page(), layout.page.size);
+      page_copy<T>::keeping_latch(dest, node_.page(), layout.page.size);
       return leaf_node(node_ptr<T>::leaf_at(dest));
     } else {
       const leaf_node moved(node_ptr<T>::template initialize<true>(dest));

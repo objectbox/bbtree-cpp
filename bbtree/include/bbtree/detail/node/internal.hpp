@@ -273,7 +273,7 @@ class internal_node : public child_node<T, internal_node<T>, false> {
 
   internal_node move_to(std::byte* dest) const noexcept {
     if constexpr (T::has_inline_keys || slots<K>::moves_as_bytes) {
-      std::memcpy(dest, node_.page(), layout.page.size);
+      page_copy<T>::keeping_latch(dest, node_.page(), layout.page.size);
       return internal_node(node_ptr<T>::internal_at(dest));
     } else {
       const internal_node moved(node_ptr<T>::template initialize<false>(dest));

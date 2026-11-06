@@ -208,6 +208,21 @@ class tree {
   }
   // No destructor: a tree leaks unless `destroy`ed with its allocator.
 
+  // A tree over existing nodes: a latched tree's, for an owner or a thread
+  // holding the nodes an operation changes (`latched_tree::change_held`).
+  // `release_root` gives them back without taking them apart.
+  static tree of_root(root_page<T> root, const shared_prefix& shared, node_ptr<T> rightmost) noexcept {
+    tree view;
+    view.root_ = root;
+    view.shared_ = shared;
+    view.rightmost_leaf_ = rightmost;
+    return view;
+  }
+  root_page<T> release_root() noexcept {
+    rightmost_leaf_ = node_ptr<T>();
+    return std::exchange(root_, root_page<T>());
+  }
+
   bool has_root() const noexcept { return static_cast<bool>(root_); }
   root_page<T> root_page_handle() const noexcept { return root_; }
   node_ptr<T> root() const noexcept {

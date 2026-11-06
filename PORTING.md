@@ -184,6 +184,34 @@ D1–D60) still hold unless an entry here says otherwise.
   descent; the Rust crate's saved destinations, which skip the second
   search, are in FUTURE_WORK.md.
 
+## P11. Racing reads: plain reads checked by a version, as in the Rust crate
+
+- **Chosen:** optimistic readers (internal nodes always, leaves for
+  lookups, D54, D57) read node bytes with plain loads, the header's `len`
+  and `prefix_len` once each through `volatile`, and act on nothing they
+  read before the node's version vouches for it. Version checks follow the
+  sequence lock's order: acquire load of the version, the reads, an acquire
+  fence, a relaxed reload compared with the first. `get_copied` copies a
+  value's bytes into a buffer, checks the version, then `std::bit_cast`s,
+  for trivially copyable values only. ThreadSanitizer is told to ignore
+  exactly these reads (`racing_reads`, its dynamic annotations), nothing
+  wider.
+- **This is a formal data race** under the C++ memory model, as it is under
+  Rust's (the Rust crate says so, `node/optimistic.rs`) and in every C++ OLC
+  B-tree (Leis et al., btreeolc). The version check throws away whatever a
+  torn read produced; no user code runs on it.
+- **Alternative:** `std::atomic_ref` relaxed loads for every byte a reader
+  races on. Not available here: mixing atomic and non-atomic accesses to
+  the same bytes is itself a data race, so every writer's access to inline
+  keys, edges and headers would have to be atomic too, and the node code
+  moves them with `memmove` (P6).
+- The latch word is reached through `std::atomic_ref` over the page's
+  bytes: a page is raw memory, and `std::atomic` is not an implicit-lifetime
+  type that could appear in it.
+- **Open (M11):** on one thread, shared `u64` hits cost 21% more than the
+  unsync map's at 1M (128.5 against 105.9 ns) and 12% at 10M; the Rust
+  crate's cost about 3% more (09-concurrency.md, Performance).
+
 ## P12. Bench dependencies include mimalloc
 
 The Rust bench links mimalloc as its global allocator, and D15's and D8's
