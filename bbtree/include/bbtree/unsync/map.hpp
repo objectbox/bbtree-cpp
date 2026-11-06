@@ -38,6 +38,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace bbtree::unsync {
 
@@ -129,6 +130,8 @@ class bbtree_map {
   bbtree_map() noexcept = default;
   explicit bbtree_map(const Allocator& allocator) noexcept : allocator_(allocator) {}
 
+  // Builds from the entries in [first, last), keeping the first of equal
+  // keys as std::map does: sorted, then built full-node by full-node (D25).
   template <std::input_iterator It>
   bbtree_map(It first, It last, const Allocator& allocator = Allocator()) : allocator_(allocator) {
     insert(first, last);
@@ -138,11 +141,9 @@ class bbtree_map {
     insert(entries.begin(), entries.end());
   }
 
-  bbtree_map(const bbtree_map& other) : allocator_(other.allocator_) {
-    for (const auto& [key, value] : other) {
-      emplace_hint(end(), key, value);
-    }
-  }
+  // A copy of the same shape, node by node.
+  bbtree_map(const bbtree_map& other)
+      : allocator_(other.allocator_), tree_(other.tree_.clone(pages())), length_(other.length_) {}
   bbtree_map(bbtree_map&& other) noexcept
       : allocator_(other.allocator_),
         tree_(std::move(other.tree_)),
@@ -319,11 +320,38 @@ class bbtree_map {
   }
   iterator insert(const_iterator /*hint*/, const value_type& entry) { return insert(entry).first; }
   iterator insert(const_iterator /*hint*/, value_type&& entry) { return insert(std::move(entry)).first; }
+  // Inserts the entries in [first, last), keeping existing keys and the
+  // first of equal new ones. Into an empty map, by a bulk build (D25).
   template <std::input_iterator It>
   void insert(It first, It last) {
-    for (; first != last; ++first) {
-      emplace(*first);
+    if (!empty()) {
+      for (; first != last; ++first) {
+        emplace(*first);
+      }
+      return;
     }
+    std::vector<std::pair<K, V>> entries;
+    if constexpr (std::forward_iterator<It>) {
+      entries.reserve(static_cast<std::size_t>(std::distance(first, last)));
+    }
+    bool ascending = true;
+    for (; first != last; ++first) {
+      entries.emplace_back(*first);
+      if (entries.size() > 1 && !key_order::less(entries[entries.size() - 2].first, entries.back().first)) {
+        ascending = false;
+      }
+    }
+    if (!ascending) {
+      std::stable_sort(entries.begin(), entries.end(),
+                       [](const auto& a, const auto& b) { return key_order::less(a.first, b.first); });
+      auto equal_keys = [](const auto& a, const auto& b) { return !key_order::less(a.first, b.first); };
+      entries.erase(std::unique(entries.begin(), entries.end(), equal_keys), entries.end());
+    }
+    detail::tree_builder<types, Allocator> builder(pages());
+    for (auto& entry : entries) {
+      builder.push(std::move(entry.first), std::move(entry.second));
+    }
+    adopt(std::move(builder).finish());
   }
   void insert(std::initializer_list<value_type> entries) { insert(entries.begin(), entries.end()); }
 
@@ -458,23 +486,52 @@ class bbtree_map {
 
   // Moves every entry of `other` into this map, `other`'s value replacing
   // this map's at an equal key, as Rust's `append` does; `other` is empty
-  // after.
+  // after. Both maps' entries move in order into one bulk build (D25), in
+  // O(n + m).
   void append(bbtree_map& other) {
-    while (auto entry = other.pop_first()) {
-      insert_or_assign(std::move(entry->first), std::move(entry->second));
+    if (other.empty()) {
+      return;
     }
+    if (empty()) {
+      swap(other);
+      return;
+    }
+    detail::tree_builder<types, Allocator> builder(pages());
+    iterator mine = begin();
+    iterator theirs = other.begin();
+    auto take = [&](iterator& from) {
+      builder.push(std::move(*from.cursor_.key()), std::move(*from.cursor_.value()));
+      ++from;
+    };
+    while (mine != end() && theirs != other.end()) {
+      const auto order = key_order::cmp(*mine.cursor_.key(), *theirs.cursor_.key());
+      if (order < 0) {
+        take(mine);
+      } else if (order > 0) {
+        take(theirs);
+      } else {
+        ++mine;
+        take(theirs);
+      }
+    }
+    while (mine != end()) {
+      take(mine);
+    }
+    while (theirs != other.end()) {
+      take(theirs);
+    }
+    // The moved-from shells are destroyed with their trees.
+    other.clear();
+    clear();
+    adopt(std::move(builder).finish());
   }
 
-  // Moves the entries from `key` on into a new map, which it returns.
+  // Moves the entries from `key` on into a new map, which it returns: a cut
+  // along the search's node stack, O(log n) (D25).
   bbtree_map split_off(const K& key) {
     bbtree_map right(allocator_);
-    while (auto entry = last()) {
-      if (key_order::less(entry->first, key)) {
-        break;
-      }
-      auto popped = pop_last();
-      right.try_emplace(std::move(popped->first), std::move(popped->second));
-    }
+    auto [upper, upper_length] = tree_.split_off_at(key, detail::key_side::before, pages(), length_);
+    right.adopt({std::move(upper), upper_length});
     return right;
   }
 
@@ -508,6 +565,11 @@ class bbtree_map {
   using key_order = typename types::order;
 
   pages_type pages() const noexcept { return pages_type(allocator_); }
+
+  void adopt(std::pair<tree_type, std::size_t>&& built) noexcept {
+    tree_ = std::move(built.first);
+    length_ = built.second;
+  }
 
   iterator found_or_end(std::optional<detail::found_entry<types>> found) noexcept {
     return found ? iterator(cursor_type(&tree_, *found)) : end();

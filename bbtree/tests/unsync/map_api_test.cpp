@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <iterator>
 #include <map>
+#include <random>
 #include <ranges>
 #include <string>
 #include <vector>
@@ -278,4 +279,111 @@ TEST_CASE("every tracked value is destroyed once", "[map]") {
     map.check_invariants();
   }
   CHECK(ledger.alive() == 0);
+}
+
+namespace {
+
+template <class Map, class Model>
+void check_equal(const Map& map, const Model& model) {
+  map.check_invariants();
+  REQUIRE(map.size() == model.size());
+  REQUIRE(std::equal(map.begin(), map.end(), model.begin(), model.end(),
+                     [](auto a, const auto& b) { return a.first == b.first && a.second == b.second; }));
+}
+
+}  // namespace
+
+TEST_CASE("building from a range keeps the first of equal keys", "[map][build]") {
+  for (std::size_t count : {0u, 1u, 12u, 55u, 56u, 1000u, 20'000u, 100'000u}) {
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> entries;
+    std::mt19937_64 rng(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      entries.emplace_back(rng() % (count * 2 + 1), i);
+    }
+    const u64_map map(entries.begin(), entries.end());
+    const std::map<std::uint64_t, std::uint64_t> model(entries.begin(), entries.end());
+    check_equal(map, model);
+    std::sort(entries.begin(), entries.end());
+    entries.erase(std::unique(entries.begin(), entries.end(),
+                              [](const auto& a, const auto& b) { return a.first == b.first; }),
+                  entries.end());
+    const u64_map sorted(entries.begin(), entries.end());
+    check_equal(sorted, std::map<std::uint64_t, std::uint64_t>(entries.begin(), entries.end()));
+  }
+}
+
+TEST_CASE("building string keys that share less as they come", "[map][build]") {
+  std::vector<std::pair<std::string, std::string>> entries;
+  for (int i = 0; i < 30'000; ++i) {
+    entries.emplace_back("/home/user/projects/" + std::to_string(i % 97) + "/file-" + std::to_string(i), "v");
+  }
+  entries.emplace_back("/home/other", "o");
+  entries.emplace_back("/etc/passwd", "p");
+  const bbtree::unsync::bbtree_map<std::string, std::string> map(entries.begin(), entries.end());
+  check_equal(map, std::map<std::string, std::string>(entries.begin(), entries.end()));
+}
+
+TEST_CASE("a copy has the same entries and is independent", "[map][build]") {
+  bbtree_test::drop_ledger ledger;
+  {
+    bbtree::unsync::bbtree_map<std::string, bbtree_test::tracked> map;
+    for (std::uint64_t i = 0; i < 20'000; ++i) {
+      map.try_emplace("key-" + std::to_string(i * 7919 % 20'011), ledger, i);
+    }
+    auto copy = map;
+    copy.check_invariants();
+    REQUIRE(copy.size() == map.size());
+    REQUIRE(copy == map);
+    copy.erase(copy.begin());
+    REQUIRE(copy.size() + 1 == map.size());
+  }
+  CHECK(ledger.alive() == 0);
+}
+
+TEST_CASE("split_off cuts at every kind of position", "[map][build]") {
+  for (const std::uint64_t count : {1u, 40u, 200u, 3000u, 40'000u}) {
+    for (std::uint64_t cut = 0; cut <= count * 2 + 2; cut += std::max<std::uint64_t>(1, count / 13)) {
+      u64_map map;
+      std::map<std::uint64_t, std::uint64_t> model;
+      for (std::uint64_t i = 0; i < count; ++i) {
+        map.insert({i * 2, i});
+        model.insert({i * 2, i});
+      }
+      u64_map upper = map.split_off(cut);
+      std::map<std::uint64_t, std::uint64_t> model_upper(model.lower_bound(cut), model.end());
+      model.erase(model.lower_bound(cut), model.end());
+      check_equal(map, model);
+      check_equal(upper, model_upper);
+      upper.insert({cut + 1, 0});
+      map.insert({0, 9});
+      upper.check_invariants();
+      map.check_invariants();
+    }
+  }
+}
+
+TEST_CASE("append merges in order, the appended values winning", "[map][build]") {
+  std::mt19937_64 rng(5);
+  for (int round = 0; round < 20; ++round) {
+    u64_map left;
+    u64_map right;
+    std::map<std::uint64_t, std::uint64_t> model;
+    const std::size_t left_count = rng() % 5000;
+    const std::size_t right_count = rng() % 5000;
+    for (std::size_t i = 0; i < left_count; ++i) {
+      const std::uint64_t key = rng() % 8000;
+      left.insert_or_assign(key, 1);
+      model.insert_or_assign(key, 1);
+    }
+    for (std::size_t i = 0; i < right_count; ++i) {
+      const std::uint64_t key = rng() % 8000;
+      right.insert_or_assign(key, 2);
+    }
+    for (const auto& [key, value] : right) {
+      model.insert_or_assign(key, value);
+    }
+    left.append(right);
+    CHECK(right.empty());
+    check_equal(left, model);
+  }
 }

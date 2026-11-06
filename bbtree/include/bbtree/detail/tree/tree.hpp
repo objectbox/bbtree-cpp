@@ -151,6 +151,13 @@ class node_stack_mut {
   // there is none.
   void go_to_entry_at_slot(std::size_t slot) noexcept;
 
+  // --- Borders and cuts (`borders.hpp`) ---
+  template <node_end End>
+  void refit_border_below(std::size_t edge) noexcept;
+  void move_prefixes_back_to_root() noexcept;
+  template <class Pages>
+  node_ptr<T> cut(const Pages& pages);
+
   // --- Prefixes (`prefix.hpp`) ---
   void refit_split_halves(const std::size_t (&separator_indexes)[max_depth + 1],
                           std::size_t levels_climbed) noexcept;
@@ -326,6 +333,25 @@ class tree {
   template <class KeyRef>
   prefixed_key<KeyRef> shrink_shared_prefix_for(KeyRef key) noexcept;
 
+  // --- Borders and cuts (`borders.hpp`) ---
+
+  template <node_end End, class Pages>
+  void fix_border(const Pages& pages) noexcept;
+  template <class Pages>
+  void lower_while_root_empty(const Pages& pages) noexcept;
+  template <node_end End>
+  void refit_border_siblings() noexcept;
+  template <class Q, class Pages>
+  std::pair<tree, std::size_t> split_off_at(const Q& query, key_side side, const Pages& pages,
+                                            std::size_t& length);
+
+  // --- Copies (`clone.hpp`) ---
+
+  // A copy, node by node, of the same shape; copies keys and values, calls
+  // no comparator and no inline-key encoding.
+  template <class Pages>
+  tree clone(const Pages& pages) const;
+
   // --- Teardown (`teardown.hpp`) ---
 
   // Drops every entry and gives every page back; the tree is empty after.
@@ -438,6 +464,9 @@ void node_stack_mut<T>::finish_insertion() noexcept {
 
 }  // namespace bbtree::detail
 
+#include <bbtree/detail/tree/borders.hpp>
+#include <bbtree/detail/tree/build.hpp>
+#include <bbtree/detail/tree/clone.hpp>
 #include <bbtree/detail/tree/insert.hpp>
 #include <bbtree/detail/tree/invariants.hpp>
 #include <bbtree/detail/tree/prefix.hpp>

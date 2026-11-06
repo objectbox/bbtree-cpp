@@ -30,8 +30,8 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 ## M3 Map and set API (`unsync::bbtree_map`, `unsync::bbtree_set`)
 - [x] map API: lookup, insert, erase, iterators, bounds, try_emplace/insert_or_assign/emplace
 - [ ] map-level differential test (iterators, bounds, erase(it)) against std::map
-- [ ] bulk: builder (D25), from sorted / from unsorted, append, split_off by cut (D25), clone by node copy
-  (append and split_off exist one entry at a time)
+- [x] bulk: builder (D25), from sorted / from unsorted ranges, append by merged build, split_off by cut,
+  clone by node copy
 - [ ] retain, extract_if
 - [ ] set API and set algebra
 - [ ] port `unsync/map/tests`, `unsync/set/tests`

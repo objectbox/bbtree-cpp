@@ -39,6 +39,8 @@ namespace bbtree::detail {
 template <class A>
 class page_source {
  public:
+  using allocator_type = A;
+
   explicit page_source(const A& allocator) noexcept : allocator_(allocator) {}
 
   void* allocate(page_kind kind, page_layout layout) const {
