@@ -54,6 +54,14 @@ class node_stack {
   // A detached node stack writes nothing until it is attached.
   node_stack() noexcept {}  // NOLINT: the slots stay unwritten on purpose
 
+  // A copy copies only the levels in use; the others stay unwritten.
+  node_stack(const node_stack& other) noexcept : levels_(other.levels_) { copy_levels(other); }
+  node_stack& operator=(const node_stack& other) noexcept {
+    levels_ = other.levels_;
+    copy_levels(other);
+    return *this;
+  }
+
   void attach(node_ptr<T> root) noexcept {
     write_level(0, root, 0);
     levels_ = 1;
@@ -201,6 +209,12 @@ class node_stack {
   }
 
  private:
+  void copy_levels(const node_stack& other) noexcept {
+    for (std::size_t at = 0; at < other.levels_; ++at) {
+      nodes_[at] = other.nodes_[at];
+      indexes_[at] = other.indexes_[at];
+    }
+  }
   void write_level(std::size_t depth, node_ptr<T> node, std::size_t index) noexcept {
     nodes_[depth] = node.tagged();
     write_index(depth, index);

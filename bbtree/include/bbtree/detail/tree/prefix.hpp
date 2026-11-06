@@ -25,7 +25,8 @@
 namespace bbtree::detail {
 
 template <class T>
-prefixed_key<typename T::key_type> tree<T>::shrink_shared_prefix_for(K&& key) noexcept {
+template <class KeyRef>
+prefixed_key<KeyRef> tree<T>::shrink_shared_prefix_for(KeyRef key) noexcept {
   if constexpr (T::has_inline_keys) {
     const node_ptr<T> top = root();
     if (top.is_leaf() && top.len() == 0) {
@@ -39,7 +40,7 @@ prefixed_key<typename T::key_type> tree<T>::shrink_shared_prefix_for(K&& key) no
       }
     }
   }
-  return prefixed_key<K>(std::move(key));
+  return prefixed_key<KeyRef>(static_cast<KeyRef>(key));
 }
 
 // Shrinks what every key shares to its first `len` bytes, and moves every

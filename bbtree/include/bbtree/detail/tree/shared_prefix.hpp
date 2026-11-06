@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <type_traits>
 
 namespace bbtree::detail {
 
@@ -89,24 +90,29 @@ class shared_prefix {
 };
 
 // A key that shares what every key of its tree shares (D50); only the tree
-// makes one, by shrinking what its keys share or checking it.
-template <class K>
+// makes one, by shrinking what its keys share or checking it. It refers to
+// the caller's key, of reference type `KeyRef` (`const K&` or `K&&`), which
+// it copies or moves only as the key goes into a node: an insert that finds
+// the key leaves the caller's key as it was, as `std::map::try_emplace` does.
+template <class KeyRef>
 class prefixed_key {
- public:
-  explicit prefixed_key(K&& key) noexcept : key_(std::move(key)) {}
+  using K = std::remove_cvref_t<KeyRef>;
 
-  const K& key() const noexcept { return key_; }
-  K take() && noexcept { return std::move(key_); }
+ public:
+  explicit prefixed_key(KeyRef key) noexcept : key_(&key) {}
+
+  const K& key() const noexcept { return *key_; }
 
   // The key with its window at the prefix length of the node it goes into.
   template <class T>
-  windowed_key<K> window_at(std::size_t prefix_len) && noexcept {
-    const inline_word inline_key = T::inliner::inline_key_at(key_, prefix_len);
-    return {std::move(key_), window(prefix_len, inline_key)};
+  windowed_key<K> window_at(std::size_t prefix_len) const
+      noexcept(std::is_nothrow_constructible_v<K, KeyRef>) {
+    const inline_word inline_key = T::inliner::inline_key_at(*key_, prefix_len);
+    return {K(static_cast<KeyRef>(*key_)), window(prefix_len, inline_key)};
   }
 
  private:
-  K key_;
+  std::remove_reference_t<KeyRef>* key_;
 };
 
 }  // namespace bbtree::detail

@@ -35,15 +35,17 @@ bool tree<T>::appends_to_rightmost(const K& key) noexcept {
 }
 
 template <class T>
-template <class A, class MakeValue>
-insertion<T> tree<T>::insert(K&& key, MakeValue&& make_value, bool assign, const page_source<A>& pages,
+template <class KeyRef, class A, class MakeValue>
+insertion<T> tree<T>::insert(KeyRef&& key, MakeValue&& make_value, bool assign, const page_source<A>& pages,
                              std::size_t& length) {
+  static_assert(std::is_same_v<std::remove_cvref_t<KeyRef>, K>);
   if (const node_ptr<T> remembered = rightmost_leaf_; appends_to_rightmost(key)) {
     const leaf_node<T> leaf(remembered);
     V value = make_value();
     const std::size_t index = leaf.len();
-    leaf.insert_fit(index, prefixed_key<K>(std::move(key)).template window_at<T>(leaf.prefix_len()),
-                    std::move(value));
+    leaf.insert_fit(
+        index, prefixed_key<KeyRef&&>(std::forward<KeyRef>(key)).template window_at<T>(leaf.prefix_len()),
+        std::move(value));
     rightmost_leaf_ = remembered;
     ++length;
     return {{remembered, index}, true};
@@ -51,7 +53,7 @@ insertion<T> tree<T>::insert(K&& key, MakeValue&& make_value, bool assign, const
   if (!has_root()) {
     make_root(pages);
   }
-  prefixed_key<K> prefixed = shrink_shared_prefix_for(std::move(key));
+  const prefixed_key<KeyRef&&> prefixed = shrink_shared_prefix_for<KeyRef&&>(std::forward<KeyRef>(key));
   forget_rightmost_leaf();
 
   // The descent without a node stack, as a lookup's.
@@ -80,21 +82,20 @@ insertion<T> tree<T>::insert(K&& key, MakeValue&& make_value, bool assign, const
   }
   if (leaf.len() < leaf_node<T>::capacity) {
     V value = make_value();
-    leaf.insert_fit(found.index, std::move(prefixed).template window_at<T>(leaf.prefix_len()),
-                    std::move(value));
+    leaf.insert_fit(found.index, prefixed.template window_at<T>(leaf.prefix_len()), std::move(value));
     ++length;
     return {{node, found.index}, true};
   }
-  return insert_with_stack(std::move(prefixed), std::forward<MakeValue>(make_value), assign, pages, length);
+  return insert_with_stack(prefixed, std::forward<MakeValue>(make_value), assign, pages, length);
 }
 
 // The insert into a full leaf: searches again, recording the node stack, takes
 // the split's pages, then splits.
 template <class T>
-template <class A, class MakeValue>
-[[gnu::noinline]] insertion<T> tree<T>::insert_with_stack(prefixed_key<K>&& key, MakeValue&& make_value,
-                                                          bool assign, const page_source<A>& pages,
-                                                          std::size_t& length) {
+template <class KeyRef, class A, class MakeValue>
+[[gnu::noinline]] insertion<T> tree<T>::insert_with_stack(const prefixed_key<KeyRef>& key,
+                                                          MakeValue&& make_value, bool assign,
+                                                          const page_source<A>& pages, std::size_t& length) {
   node_stack_mut<T> stack(*this);
   if (stack.search(search_key<T, K>(key.key()))) {
     const found_entry<T> entry = stack.found();
@@ -119,34 +120,34 @@ template <class A, class MakeValue>
     reserved.reserve(page_kind::internal, T::internal.page, full_internals + (raises && depth > 0 ? 1 : 0));
   }
   V value = make_value();
-  stack.insert_prefixed(std::move(key), std::move(value), reserved, length);
+  stack.insert_prefixed(key, std::move(value), reserved, length);
   stack.finish_insertion();
   return {stack.found(), true};
 }
 
 template <class T>
-template <class Pages>
-void node_stack_mut<T>::insert_prefixed(prefixed_key<K>&& key, V&& value, const Pages& pages,
+template <class KeyRef, class Pages>
+void node_stack_mut<T>::insert_prefixed(const prefixed_key<KeyRef>& key, V&& value, const Pages& pages,
                                         std::size_t& length) {
   const leaf_node<T> bottom = leaf();
   assert(index() <= bottom.len() && "edge index out of bounds");
   if (bottom.len() < leaf_node<T>::capacity) {
-    bottom.insert_fit(index(), std::move(key).template window_at<T>(bottom.prefix_len()), std::move(value));
+    bottom.insert_fit(index(), key.template window_at<T>(bottom.prefix_len()), std::move(value));
     ++length;
   } else {
-    insert_splitting(std::move(key), std::move(value), pages, length);
+    insert_splitting(key, std::move(value), pages, length);
   }
 }
 
 // Splits the full leaf and carries each split up the node stack: every node
 // takes its child's separator and right half, and splits in turn if full.
 template <class T>
-template <class Pages>
-[[gnu::noinline]] void node_stack_mut<T>::insert_splitting(prefixed_key<K>&& key, V&& value,
+template <class KeyRef, class Pages>
+[[gnu::noinline]] void node_stack_mut<T>::insert_splitting(const prefixed_key<KeyRef>& key, V&& value,
                                                            const Pages& pages, std::size_t& length) {
   const leaf_node<T> bottom = leaf();
-  auto split = bottom.split_insert(index(), std::move(key).template window_at<T>(bottom.prefix_len()),
-                                   std::move(value), fresh_page<T, page_role::leaf>::allocate(pages));
+  auto split = bottom.split_insert(index(), key.template window_at<T>(bottom.prefix_len()), std::move(value),
+                                   fresh_page<T, page_role::leaf>::allocate(pages));
   std::size_t indexes_in_halves[max_depth + 1];
   std::size_t separator_indexes[max_depth + 1];
   indexes_in_halves[0] = split.inserted.index;

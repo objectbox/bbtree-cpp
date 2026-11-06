@@ -3,6 +3,8 @@
 // tests and fuzz targets, D5).
 #include <bbtree/detail/tree/tree.hpp>
 
+#include "../support/test_types.hpp"
+
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -82,6 +84,11 @@ struct key_maker<std::array<std::uint8_t, 16>> {
   }
 };
 
+template <>
+struct key_maker<bbtree_test::user_string> {
+  static bbtree_test::user_string make(std::uint64_t n) { return {key_maker<std::string>::make(n)}; }
+};
+
 // A key with no inline keys: a struct ordered by its operator<=>.
 struct plain_key {
   std::uint32_t high;
@@ -95,17 +102,36 @@ struct key_maker<plain_key> {
   }
 };
 
+// Makes the test's values: plain integers, strings, or tracked values that a
+// ledger counts.
+template <class V>
+struct value_maker {
+  static V make(std::uint64_t n, bbtree_test::drop_ledger&) { return static_cast<V>(n); }
+};
+template <>
+struct value_maker<std::string> {
+  static std::string make(std::uint64_t n, bbtree_test::drop_ledger&) {
+    return "value number " + std::to_string(n) + " with a heap buffer";
+  }
+};
+template <>
+struct value_maker<bbtree_test::tracked> {
+  static bbtree_test::tracked make(std::uint64_t n, bbtree_test::drop_ledger& ledger) { return {ledger, n}; }
+};
+
 template <class K, class V, class S>
-void run_differential(std::uint64_t seed, int operations, std::uint64_t key_space) {
+void run_differential_with(std::uint64_t seed, int operations, std::uint64_t key_space,
+                           bbtree_test::drop_ledger& ledger) {
   tree_under_test<K, V, S> tree;
   std::map<K, V> model;
   std::mt19937_64 rng(seed);
+
   for (int step = 0; step < operations; ++step) {
     const std::uint64_t n = rng() % key_space;
     const K key = key_maker<K>::make(n);
     const unsigned op = static_cast<unsigned>(rng() % 10);
     if (op < 5) {
-      const V value = static_cast<V>(rng());
+      const V value = value_maker<V>::make(rng(), ledger);
       const bool inserted = tree.insert_or_assign(key, value);
       const bool model_inserted = model.insert_or_assign(key, value).second;
       REQUIRE(inserted == model_inserted);
@@ -149,6 +175,12 @@ void run_differential(std::uint64_t seed, int operations, std::uint64_t key_spac
   }
 }
 
+template <class K, class V, class S>
+void run_differential(std::uint64_t seed, int operations, std::uint64_t key_space) {
+  bbtree_test::drop_ledger ledger;
+  { run_differential_with<K, V, S>(seed, operations, key_space, ledger); }
+  REQUIRE(ledger.alive() == 0);
+}
 }  // namespace
 
 TEMPLATE_TEST_CASE("the tree matches std::map", "[tree][differential]", std::uint64_t, std::int64_t,
@@ -166,8 +198,22 @@ TEMPLATE_TEST_CASE("the tree matches std::map", "[tree][differential]", std::uin
   }
 }
 
-TEST_CASE("string values move with their keys", "[tree][differential]") {
-  run_differential<std::string, std::uint64_t, bbtree::auto_inline_keys>(7, 20'000, 2000);
+TEMPLATE_TEST_CASE("the tree moves values that are not trivially relocatable", "[tree][differential]",
+                   std::string, bbtree_test::tracked) {
+  run_differential<std::string, TestType, bbtree::auto_inline_keys>(7, 20'000, 2000);
+  run_differential<std::uint64_t, TestType, bbtree::auto_inline_keys>(8, 20'000, 4000);
+  run_differential<plain_key, TestType, bbtree::plain_keys>(9, 20'000, 4000);
+}
+
+TEST_CASE("keys with their own inline_key specialization", "[tree][differential]") {
+  using types = bbtree::detail::tree_types<bbtree_test::user_string, std::uint64_t,
+                                           std::less<bbtree_test::user_string>, bbtree::auto_inline_keys>;
+  STATIC_CHECK(types::leaf_plan.hash_tags);
+  STATIC_CHECK(types::internal_plan.rehydrates_windows);
+  STATIC_CHECK(*types::internal_plan.width == bbtree::inline_width::four);
+  for (std::uint64_t seed = 0; seed < 3; ++seed) {
+    run_differential<bbtree_test::user_string, std::uint64_t, bbtree::auto_inline_keys>(seed, 30'000, 6000);
+  }
 }
 
 TEST_CASE("ascending inserts append and grow the tree", "[tree]") {

@@ -135,8 +135,8 @@ class node_stack_mut {
   void finish_insertion() noexcept;
 
   // --- Inserting (`insert.hpp`) ---
-  template <class Pages>
-  void insert_prefixed(prefixed_key<K>&& key, V&& value, const Pages& pages, std::size_t& length);
+  template <class KeyRef, class Pages>
+  void insert_prefixed(const prefixed_key<KeyRef>& key, V&& value, const Pages& pages, std::size_t& length);
 
   // --- Removing (`remove.hpp`) ---
   template <class Pages>
@@ -149,8 +149,8 @@ class node_stack_mut {
   void refit_left_of_separator() noexcept;
 
  private:
-  template <class Pages>
-  void insert_splitting(prefixed_key<K>&& key, V&& value, const Pages& pages, std::size_t& length);
+  template <class KeyRef, class Pages>
+  void insert_splitting(const prefixed_key<KeyRef>& key, V&& value, const Pages& pages, std::size_t& length);
 
   template <class Child>
   void refit_children_of_kind(std::size_t first_edge, std::optional<std::size_t> second_edge) noexcept;
@@ -293,11 +293,12 @@ class tree {
   // --- Inserting (`insert.hpp`) ---
 
   // Inserts `key` with the value `make_value()` makes, unless the tree holds
-  // the key; then, if `assign`, assigns the made value to its entry. The value
-  // is made before the tree changes, and the split's pages are taken before
-  // it: an exception from either leaves the tree's entries as they were.
-  template <class A, class MakeValue>
-  insertion<T> insert(K&& key, MakeValue&& make_value, bool assign, const page_source<A>& pages,
+  // the key; then, if `assign`, assigns the made value to its entry. The key
+  // (`const K&` or `K&&`) is copied or moved only if it goes in. The value is
+  // made before the tree changes, and a split's pages are taken before it:
+  // an exception from either leaves the tree's entries as they were.
+  template <class KeyRef, class A, class MakeValue>
+  insertion<T> insert(KeyRef&& key, MakeValue&& make_value, bool assign, const page_source<A>& pages,
                       std::size_t& length);
 
   // --- Removing (`remove.hpp`) ---
@@ -313,7 +314,8 @@ class tree {
 
   // Shrinks what every key shares to what `key` shares too, before the tree
   // takes it; an empty tree takes `key`'s first bytes.
-  prefixed_key<K> shrink_shared_prefix_for(K&& key) noexcept;
+  template <class KeyRef>
+  prefixed_key<KeyRef> shrink_shared_prefix_for(KeyRef key) noexcept;
 
   // --- Teardown (`teardown.hpp`) ---
 
@@ -326,8 +328,8 @@ class tree {
   void check_invariants(std::size_t length) const;
 
  private:
-  template <class A, class MakeValue>
-  insertion<T> insert_with_stack(prefixed_key<K>&& key, MakeValue&& make_value, bool assign,
+  template <class KeyRef, class A, class MakeValue>
+  insertion<T> insert_with_stack(const prefixed_key<KeyRef>& key, MakeValue&& make_value, bool assign,
                                  const page_source<A>& pages, std::size_t& length);
 
   // The append of `key` to the remembered last leaf, if it has room and
