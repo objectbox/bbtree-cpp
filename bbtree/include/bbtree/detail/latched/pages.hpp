@@ -38,6 +38,13 @@ class free_list {
     });
   }
 
+  // Exchanges the two lists' pages. Owner: no thread pushes or pops.
+  void swap(free_list& other) noexcept {
+    std::byte* const top = top_.load(std::memory_order_relaxed);
+    top_.store(other.top_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    other.top_.store(top, std::memory_order_relaxed);
+  }
+
   std::byte* pop() noexcept {
     if (top_.load(std::memory_order_relaxed) == nullptr) {
       return nullptr;
@@ -76,6 +83,12 @@ template <class T>
 class free_lists {
  public:
   free_list& of(page_kind kind) noexcept { return kind == page_kind::leaf ? leaves_ : internals_; }
+
+  // Owner: no thread pushes or pops.
+  void swap(free_lists& other) noexcept {
+    leaves_.swap(other.leaves_);
+    internals_.swap(other.internals_);
+  }
 
   // Gives every free page back to the allocator: when the map is dropped.
   template <class A>

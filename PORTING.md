@@ -336,7 +336,7 @@ The CSVs line up by map name, so the C++ maps take the Rust ones' names:
 
 | name | Rust bench | C++ bench |
 |---|---|---|
-| `bbtree` | `BBTreeMap`, counted | `bbtree::bbtree_map`, counted, held on the heap (it doesn't move) |
+| `bbtree` | `BBTreeMap`, counted | `bbtree::bbtree_map`, counted |
 | `bbtree-unsync` | `unsync::BBTreeMap` | `bbtree::unsync::bbtree_map` |
 | `bbtree-unsync-inline` | `unsync::BBTreeMap<_, _, WithInlineKey>`, integers only | the same map as `bbtree-unsync` |
 | `std-btree` | `std::collections::BTreeMap` | `std::map` |

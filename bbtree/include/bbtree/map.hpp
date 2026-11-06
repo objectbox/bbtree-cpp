@@ -56,7 +56,22 @@ class bbtree_map {
   explicit bbtree_map(const Allocator& allocator) noexcept : allocator_(allocator) {}
   bbtree_map(const bbtree_map&) = delete;
   bbtree_map& operator=(const bbtree_map&) = delete;
+  // Moves and swaps are the owner's: no other thread uses either map. A
+  // moved-from map is empty.
+  bbtree_map(bbtree_map&& other) noexcept : allocator_(other.allocator_) { tree_.swap(other.tree_); }
+  bbtree_map& operator=(bbtree_map&& other) noexcept {
+    bbtree_map taken(std::move(other));
+    swap(taken);
+    return *this;
+  }
   ~bbtree_map() { tree_.destroy(pages()); }
+
+  void swap(bbtree_map& other) noexcept {
+    using std::swap;
+    swap(allocator_, other.allocator_);
+    tree_.swap(other.tree_);
+  }
+  friend void swap(bbtree_map& a, bbtree_map& b) noexcept { a.swap(b); }
 
   // --- Lookups, from any thread ---
 

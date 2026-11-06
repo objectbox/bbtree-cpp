@@ -23,7 +23,6 @@
 #include <format>
 #include <iterator>
 #include <map>
-#include <memory>
 #include <optional>
 #include <span>
 #include <unordered_map>
@@ -184,8 +183,7 @@ using std_hash = std_interface_map<std::unordered_map<K, V>, false>;
 // `bbtree::bbtree_map`, and the count of entries it has taken, which the map
 // itself doesn't keep: a shared counter would cost every insert an atomic.
 // Lookups read through a closure, as the map hands out no references to
-// threads that share it; iterating, through a scan. The map is neither
-// copyable nor movable, so the adapter holds it on the heap.
+// threads that share it; iterating, through a scan.
 template <class K, class V>
 class counted_bbtree {
   using checksum = entry_checksum<K, V>;
@@ -200,7 +198,7 @@ class counted_bbtree {
   std::size_t entry_count() const noexcept { return entries_; }
 
   void insert(K key, V value) {
-    if (!map_->insert_or_assign(std::move(key), std::move(value))) {
+    if (!map_.insert_or_assign(std::move(key), std::move(value))) {
       ++entries_;
     }
   }
@@ -208,12 +206,12 @@ class counted_bbtree {
   const V* get(const K&) const { unsupported_operation::reached(operation::get_hit); }
 
   std::optional<std::uint64_t> lookup_fingerprint(const K& key) const {
-    return map_->read(key, [](const K&, const V& value) { return value_traits<V>::fingerprint(value); });
+    return map_.read(key, [](const K&, const V& value) { return value_traits<V>::fingerprint(value); });
   }
 
   std::uint64_t checksum_all() const {
     std::uint64_t sum = 0;
-    map_->scan([&](const K& key, const V& value) {
+    map_.scan([&](const K& key, const V& value) {
       sum += checksum::of(key, value);
       return true;
     });
@@ -224,7 +222,7 @@ class counted_bbtree {
     std::uint64_t sum = 0;
     std::size_t visited = 0;
     if (count > 0) {
-      map_->scan_from(start, [&](const K& key, const V& value) {
+      map_.scan_from(start, [&](const K& key, const V& value) {
         sum += checksum::of(key, value);
         ++visited;
         return visited != count;
@@ -234,7 +232,7 @@ class counted_bbtree {
   }
 
   bool remove(const K& key) {
-    if (!map_->remove(key)) {
+    if (!map_.remove(key)) {
       return false;
     }
     --entries_;
@@ -252,7 +250,7 @@ class counted_bbtree {
  private:
   static constexpr std::array lacking{operation::bulk_build, operation::entry_upsert, operation::pop_first};
 
-  std::unique_ptr<bbtree::bbtree_map<K, V>> map_ = std::make_unique<bbtree::bbtree_map<K, V>>();
+  bbtree::bbtree_map<K, V> map_;
   std::size_t entries_ = 0;
 };
 

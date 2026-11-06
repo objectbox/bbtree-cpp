@@ -128,6 +128,15 @@ class latched_tree {
     free_.deallocate_all(source);
   }
 
+  // Exchanges the two trees, their free pages too. Owner: no other thread
+  // uses either tree.
+  void swap(latched_tree& other) noexcept {
+    exchange_relaxed(root_, other.root_);
+    exchange_relaxed(rightmost_leaf_, other.rightmost_leaf_);
+    std::swap(shared_, other.shared_);
+    free_.swap(other.free_);
+  }
+
   // Runs `operation` on the tree as an unsync tree, by a thread holding every
   // node the operation changes: writes back the shared prefix and the root
   // pointer, retagged if the root changed kind. Appends' last-leaf pointer is
@@ -411,6 +420,12 @@ class latched_tree {
   }
 
   friend class latched_changes<T>;
+
+  static void exchange_relaxed(std::atomic<std::uintptr_t>& a, std::atomic<std::uintptr_t>& b) noexcept {
+    const std::uintptr_t held = a.load(std::memory_order_relaxed);
+    a.store(b.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    b.store(held, std::memory_order_relaxed);
+  }
 
   std::atomic<std::uintptr_t> root_{0};
   shared_prefix shared_;

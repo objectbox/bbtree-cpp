@@ -13,6 +13,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -144,4 +145,38 @@ TEST_CASE("readers race writers that split and merge", "[shared]") {
   std::size_t count = 0;
   map.for_each([&](const auto&, auto&) { ++count; });
   map.check_invariants(count);
+}
+
+TEST_CASE("the shared map moves and swaps, its free pages with it", "[shared]") {
+  using map_type = bbtree::bbtree_map<std::uint64_t, std::uint64_t>;
+  const auto count = [](map_type& map) {
+    std::size_t entries = 0;
+    map.for_each([&](const auto& key, auto& value) {
+      CHECK(value == key + 1);
+      ++entries;
+    });
+    map.check_invariants(entries);
+    return entries;
+  };
+  map_type first;
+  for (std::uint64_t key = 0; key < 20'000; ++key) {
+    first.insert(key, key + 1);
+  }
+  for (std::uint64_t key = 0; key < 20'000; key += 2) {
+    first.erase(key);  // frees nodes, which stay on the map's free lists
+  }
+  map_type second(std::move(first));
+  CHECK(count(second) == 10'000);
+  CHECK(count(first) == 0);
+  first.insert(7, 8);
+  swap(first, second);
+  CHECK(count(first) == 10'000);
+  CHECK(second.get_copied(7) == 8);
+  second = std::move(first);
+  CHECK(count(second) == 10'000);
+  CHECK(count(first) == 0);
+  for (std::uint64_t key = 0; key < 20'000; key += 2) {
+    second.insert(key, key + 1);  // reuses the moved free pages
+  }
+  CHECK(count(second) == 20'000);
 }
