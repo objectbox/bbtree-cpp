@@ -11,7 +11,10 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <memory>
+#include <new>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace bbtree::detail {
@@ -56,6 +59,23 @@ class leaf_node : public child_node<T, leaf_node<T>, true> {
 
   // Gives the leaf's page back; every key, value and head has moved out.
   page_type free() const noexcept { return page_type::adopt(node_.page()); }
+
+  // The leaf's annex (D60), in a map whose leaves keep one.
+  std::add_lvalue_reference_t<typename T::annex> annex() const noexcept
+    requires T::has_leaf_annex
+  {
+    return *std::launder(reinterpret_cast<typename T::annex*>(node_.page() + T::leaf_annex_offset));
+  }
+
+  // Releases the annex to `allocator`, the map's, as the leaf goes with the
+  // map: it moves out, and nothing reads it again.
+  template <class A>
+  void release_annex(const A& allocator) const noexcept {
+    if constexpr (T::has_leaf_annex) {
+      std::move(annex()).release(allocator);
+      std::destroy_at(&annex());
+    }
+  }
 
   node_ptr<T> node() const noexcept { return node_; }
   std::size_t len() const noexcept { return node_.len(); }
@@ -352,6 +372,7 @@ class leaf_node : public child_node<T, leaf_node<T>, true> {
     right.keys_and_columns().move_run_to(0, right_len, left.keys_and_columns(), left_len + 1);
     right.head_and_value_slots().move_run_to(0, right_len + 1, left.head_and_value_slots(), left_len + 1);
     left.node_.set_len(left_len + 1 + right_len);
+    left.merge_annex(right);
   }
 
   // Moves this leaf whole into the page at `dest`, a page as large as a
@@ -362,6 +383,12 @@ class leaf_node : public child_node<T, leaf_node<T>, true> {
       return leaf_node(node_ptr<T>::leaf_at(dest));
     } else {
       const leaf_node moved(node_ptr<T>::template initialize<true>(dest));
+      if constexpr (T::has_leaf_annex) {
+        // The annex relocates as its bytes, over the one `initialize` made.
+        std::destroy_at(&moved.annex());
+        std::memcpy(static_cast<void*>(&moved.annex()), static_cast<const void*>(&annex()),
+                    sizeof(typename T::annex));
+      }
       moved.node_.set_prefix_len(prefix_len());
       const std::size_t count = len();
       keys_and_columns().move_run_to(0, count, moved.keys_and_columns(), 0);
@@ -456,11 +483,29 @@ class leaf_node : public child_node<T, leaf_node<T>, true> {
     right.node_.set_has_head(true);
     right.set_len_refilling(right_len);
     set_len_refilling(separator_index);
+    split_annex(right);
     if constexpr (T::has_inline_keys) {
       right.head_key_slot().construct(0, std::move(middle.key));
       return separator<T>(middle.window);
     } else {
       return separator<T>(std::move(middle));
+    }
+  }
+
+  // Tells this leaf's annex it split, into itself and `right`, a new leaf
+  // right of it that took the entries right of the split.
+  void split_annex(leaf_node right) const noexcept {
+    if constexpr (T::has_leaf_annex) {
+      annex().split(right.annex());
+    }
+  }
+
+  // Merges the annex of `right`, which merged into this leaf and goes, into
+  // this leaf's: it moves out, and nothing reads it again.
+  void merge_annex(leaf_node right) const noexcept {
+    if constexpr (T::has_leaf_annex) {
+      annex().merge(std::move(right.annex()));
+      std::destroy_at(&right.annex());
     }
   }
 

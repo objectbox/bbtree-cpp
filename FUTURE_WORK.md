@@ -28,12 +28,12 @@ A lane rebuilds its `search_key` at each stage, which rereads a string
 query's length and pointer. The Rust crate keeps the query in the lane
 (12-batch-api.md, rule 5). It matters for string keys only.
 
-## The shared map's batches, reverse scans and copied ranges
+## The shared map's batches and copied ranges
 
 The Rust crate's shared map has batched `read_many`, `get_many_copied`,
-`get_many_cloned`, `insert_many` and `update_or_insert_many`,
-`scan_rev` and `range_cloned`. Not ported yet: the bench drives the shared
-map with single-key operations and forward scans only. The unsync map's
+`get_many_cloned`, `insert_many` and `update_or_insert_many`, and
+`range_cloned`. Not ported yet: the bench drives the shared map with
+single-key operations and scans only. The unsync map's
 level-by-level lanes ([batches](PORTING.md#p10-batches-descend-level-by-level-not-in-async-lanes)) would carry over, each lane ending in
 an optimistic leaf read.
 
@@ -55,3 +55,33 @@ none and find the next leaf by a search from the root at each crossing,
 using the internal nodes' separators. Either way, more iterator states
 (attached, detached, at a separator) have to stay in sync with the cursor's
 removal paths.
+
+## bbtree-store: a refused insert without an exception
+
+A store whose budget is spent refuses inserts by an `alloc_error` thrown
+from its closure inside the map and caught by `insert` (PORTING.md, [refused inserts](PORTING.md#p21-refusing-an-insert-by-throwing-not-by-a-result-type)),
+microseconds a refusal. A cache that runs at its budget refuses often; a
+refusal result threaded through `latched_changes`' insert paths, and a
+non-throwing failure of the split's page reservation, would make it as
+cheap as an insert. Not measured.
+
+## bbtree-store: heads' stubs go once their key is no longer a head
+
+A head key whose value outgrew its record keeps a stub and a target
+(PORTING.md, [heads' records](PORTING.md#p24-a-leafs-head-keys-record-stays-put)) until its key is written again or removed. A compaction
+could point a non-head key's stub's key to its target and kill the stub,
+saving the stub's bytes and the indirection on reads.
+
+## bbtree-store: smaller records for tiny values
+
+Every record keeps 8 bytes after its key so that a head's record can become
+a stub in place ([heads' records](PORTING.md#p24-a-leafs-head-keys-record-stays-put)): up to 8 bytes more than the Rust crate's for values
+under 8 bytes. A record could keep less, and a head with a tiny record grow
+by another route (a stub in a record of its own whose old bytes die only
+once no separator's reader can hold them), at the cost of a second path.
+
+## CRC32C in hardware
+
+The WAL's CRC32C is a byte-at-a-time table ([CRC32C](PORTING.md#p27-crc32c-a-table-a-byte-at-a-time)). SSE4.2's `crc32`
+instruction (8 bytes a cycle), or slicing by 8, would cut the CRC of a
+commit of many records, if appends ever show it.

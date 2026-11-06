@@ -46,7 +46,9 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
   shared-prefix shrinks holding both borders, start_tree; insert/insert_or_assign/update_or_insert/
   get_or_insert/remove/remove_if/erase; owner clear/for_each; change stress tests under TSan
 - [x] forward scans (scan, scan_from), owner get_owned/for_each/clear
-- [ ] later (FUTURE_WORK): reverse scans, range_cloned, the shared batches (read_many, get_many_copied,
+- [x] reverse scans (scan_rev, scan_rev_from, P22); leaf annexes (D60, P20, P21): with_leaf_annex,
+  update_or_insert_with_leaf, remove_with_leaf; annex tests (splits, merges, teardown, threads)
+- [ ] later (FUTURE_WORK): range_cloned, the shared batches (read_many, get_many_copied,
   insert_many), unlatched copies of byte-string values (D57)
 
 ## M6 File maps (D58) and bbtree-mmap
@@ -55,6 +57,12 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [x] bbtree-mmap: typed map files (mmap, read, huge pages), var-length keys and values as spans into heap
   pages after their leaves, lookups example
 ## M7 bbtree-store (D60): leaf annex, heap pages, records, WAL
+- [x] leaf annex in the shared map (P20, P21), reverse scans (P22)
+- [x] bbtree-store: records, heap pages, chains, compaction, strays, overflow pages, scans both ways,
+  copied ranges; heads' records stay put (P23, P24); tests against std::map, budgets, churn, threads (TSan)
+- [x] WAL: records, tail, writer, storage concept, CRC32C (P25 to P28); the Rust tests and the proofs'
+  properties as tests
+- [ ] later: the store's bench example (with M9)
 ## M8 Fuzz targets (libFuzzer), racing-reads checker, kernel-target build
 - [x] libFuzzer targets for every node-plan row, the shared map, set algebra and hostile keys; harnesses also
   run on fixed random inputs in the tests

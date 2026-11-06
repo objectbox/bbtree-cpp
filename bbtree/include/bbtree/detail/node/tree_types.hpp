@@ -59,6 +59,11 @@ struct tree_types {
   static constexpr bool has_inline_keys = inliner::has_inline_keys;
   static_assert(!latched || has_inline_keys, "a shared map's keys need inline keys (D54)");
 
+  // Whether each leaf keeps an annex after its header (D60): only a shared
+  // map's leaves do.
+  static constexpr bool has_leaf_annex = !std::is_void_v<annex>;
+  static_assert(!has_leaf_annex || (latched && !in_file), "only a shared map's leaves keep an annex (D60)");
+
   static constexpr node_plan leaf_plan = [] {
     node_plan plan = node_plan::of<K, inliner>(true);
     if (plan.hash_tags) {
@@ -80,6 +85,9 @@ struct tree_types {
   static constexpr page_layout root_page = root_is_leaf_sized ? leaf.page : internal.page;
   static_assert(root_page.align >= leaf.page.align && root_page.align >= internal.page.align,
                 "the larger node kind is at least as aligned as the other (D52)");
+
+  // Where a leaf's annex lies, from the start of its page.
+  static constexpr std::size_t leaf_annex_offset = layouts::annex_offset(latched);
 
   static constexpr std::size_t leaf_capacity = leaf.keys.capacity;
   static constexpr std::size_t internal_capacity = internal.keys.capacity;

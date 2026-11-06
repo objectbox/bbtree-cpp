@@ -1,6 +1,7 @@
 // Taking a tree apart: every entry dropped once, every page given back. A
 // post-order walk, a level at a time down at most `max_depth` levels; leaves
-// of entries without destructors are freed without visiting their slots.
+// of entries without destructors are freed without visiting their slots. A
+// leaf's annex is released to the map's allocator (D60).
 #pragma once
 
 #include <bbtree/detail/tree/tree.hpp>
@@ -33,6 +34,9 @@ struct teardown {
             leaf.head_key_slot().destroy(0);
           }
         }
+      }
+      if constexpr (T::has_leaf_annex) {
+        leaf.release_annex(pages.allocator());
       }
       return;
     }

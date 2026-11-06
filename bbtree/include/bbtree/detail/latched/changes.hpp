@@ -21,7 +21,9 @@
 //   or takes from; for a separator, the path below it and the right border of
 //   the subtree left of it; and the nodes up to the fences of the topmost
 //   changed node. Then it runs the unsync removal along them.
-// A failed allocation throws `alloc_error` before anything changes.
+// A failed allocation throws `alloc_error` before anything changes. So does a
+// policy that refuses, by throwing from `occupied` or `vacant` (D60's
+// `update_or_insert_with_leaf`): both run before the tree changes.
 #pragma once
 
 #include <bbtree/detail/latched/held.hpp>
@@ -42,8 +44,10 @@ class latched_changes {
   explicit latched_changes(latched_tree<T>& tree) noexcept : tree_(tree) {}
 
   // Inserts `key` with `value` unless the tree holds the key; `policy`
-  // decides: `policy.occupied(stored_key, stored_value, value)` for an
-  // equal key, `policy.vacant(key, value)` right before a new one goes in.
+  // decides: `policy.occupied(leaf, stored_key, stored_value, value)` for an
+  // equal key, `policy.vacant(leaf, key, value)` right before a new one goes
+  // in, each with the leaf held exclusively, the key's or the one it goes
+  // into (or splits from, D60).
   template <class A, class Policy>
   auto insert(K&& key, V&& value, Policy& policy, const page_source<A>& source) {
     if (!tree_.has_root()) {
@@ -67,9 +71,12 @@ class latched_changes {
     }
   }
 
-  // Removes the entry at `query` if `condition(key, value)` holds of it.
-  template <class Q, class A, class Condition>
-  std::optional<std::pair<K, V>> remove(const Q& query, Condition& condition, const page_source<A>& source) {
+  // Removes the entry at `query` if `condition(key, value)` holds of it,
+  // running `before_removal(leaf, key, value)` once right before it comes out
+  // of `leaf`, held exclusively (D60). `condition` may run more than once.
+  template <class Q, class A, class Condition, class BeforeRemoval>
+  std::optional<std::pair<K, V>> remove(const Q& query, Condition& condition, BeforeRemoval before_removal,
+                                        const page_source<A>& source) {
     if (!tree_.has_root()) {
       return std::nullopt;
     }
@@ -90,6 +97,7 @@ class latched_changes {
           return std::nullopt;
         }
         if (leaf.keeps_its_minimum() || is_root(leaf)) {
+          before_removal(leaf, leaf.key(*index), std::as_const(leaf.value(*index)));
           return leaf.remove(*index);
         }
       }
@@ -98,7 +106,7 @@ class latched_changes {
     backoff wait;
     while (true) {
       std::optional<std::pair<K, V>> removed;
-      if (try_remove_rebalancing(key, condition, pages, removed)) {
+      if (try_remove_rebalancing(key, condition, before_removal, pages, removed)) {
         return removed;
       }
       wait.wait();
@@ -132,6 +140,7 @@ class latched_changes {
       latch.unlock_exclusive(version);
       return;
     }
+    leaf_node<T>(root.node()).release_annex(source.allocator());
     std::move(root.free()).deallocate(source);
   }
 
@@ -149,7 +158,8 @@ class latched_changes {
   // An append to the last leaf, if the key goes after its last key and the
   // leaf has room (D45); nothing otherwise.
   template <class Policy>
-  auto append(K& key, V& value, Policy& policy) -> std::optional<decltype(policy.vacant(key, value))> {
+  auto append(K& key, V& value, Policy& policy)
+      -> std::optional<decltype(policy.vacant(leaf_node<T>(), key, value))> {
     const node_ptr<T> last = rightmost_leaf();
     if (!last) {
       return std::nullopt;
@@ -169,7 +179,7 @@ class latched_changes {
     if (!tree_.shared_.template is_shared_by<T>(key)) {
       return std::nullopt;
     }
-    auto output = policy.vacant(key, value);
+    auto output = policy.vacant(leaf, std::as_const(key), std::as_const(value));
     leaf.insert_fit(len, prefixed_key<K&&>(std::move(key)).template window_at<T>(leaf.prefix_len()),
                     std::move(value));
     return output;
@@ -179,17 +189,18 @@ class latched_changes {
   // with the edge where the key belongs, if the leaf is full.
   template <class Policy>
   auto insert_into(const held_leaf<T, leaf_mode::exclusive>& held, bool at_separator, K& key, V& value,
-                   Policy& policy, std::size_t& edge) -> std::optional<decltype(policy.vacant(key, value))> {
+                   Policy& policy, std::size_t& edge)
+      -> std::optional<decltype(policy.vacant(leaf_node<T>(), key, value))> {
     const leaf_node<T> leaf = held.leaf();
     if (at_separator) {
-      return policy.occupied(std::as_const(leaf.head_key()), leaf.head_value(), std::move(value));
+      return policy.occupied(leaf, std::as_const(leaf.head_key()), leaf.head_value(), std::move(value));
     }
     const search_result found = leaf.search(search_key<T, K>(key));
     if (found.found) {
-      return policy.occupied(leaf.key(found.index), leaf.value(found.index), std::move(value));
+      return policy.occupied(leaf, leaf.key(found.index), leaf.value(found.index), std::move(value));
     }
     if (leaf.len() < leaf_node<T>::capacity) {
-      auto output = policy.vacant(key, value);
+      auto output = policy.vacant(leaf, std::as_const(key), std::as_const(value));
       const prefixed_key<K&&> checked = prefixed(key, leaf);
       leaf.insert_fit(found.index, checked.template window_at<T>(leaf.prefix_len()), std::move(value));
       return output;
@@ -200,7 +211,7 @@ class latched_changes {
 
   template <class Policy, class A>
   [[gnu::noinline]] auto insert_splitting(K& key, V& value, Policy& policy, const page_source<A>& source)
-      -> decltype(policy.vacant(key, value)) {
+      -> decltype(policy.vacant(leaf_node<T>(), key, value)) {
     node_pages<T, A> pages(tree_.free_, source);
     backoff wait;
     while (true) {
@@ -222,11 +233,12 @@ class latched_changes {
   }
 
   // Takes what the split changes and runs it; nothing if another thread
-  // holds one of those nodes, to start over.
+  // holds one of those nodes, to start over. The policy runs on the full
+  // leaf, before it splits.
   template <class Policy, class A>
   auto split(const tree_path<T>& path, const held_leaf<T, leaf_mode::exclusive>& held, std::size_t edge,
              K& key, V& value, Policy& policy, node_pages<T, A>& pages)
-      -> std::optional<decltype(policy.vacant(key, value))> {
+      -> std::optional<decltype(policy.vacant(leaf_node<T>(), key, value))> {
     const std::size_t depth = path.depth();
     std::optional<std::size_t> room;
     for (std::size_t level = depth; level-- > 0;) {
@@ -247,7 +259,7 @@ class latched_changes {
       throw alloc_error();
     }
     const leaf_node<T> leaf = held.leaf();
-    auto output = policy.vacant(key, value);
+    auto output = policy.vacant(leaf, std::as_const(key), std::as_const(value));
     const bool was_last_leaf = rightmost_leaf() == leaf.node();
     const prefixed_key<K&&> checked = prefixed(key, leaf);
     tree_.change_held([&](tree<T>& whole) {
@@ -295,9 +307,9 @@ class latched_changes {
   }
 
   // One try at a removal that rebalances; false to start over.
-  template <class Q, class Condition, class A>
-  bool try_remove_rebalancing(const search_key<T, Q>& key, Condition& condition, node_pages<T, A>& pages,
-                              std::optional<std::pair<K, V>>& removed) {
+  template <class Q, class Condition, class BeforeRemoval, class A>
+  bool try_remove_rebalancing(const search_key<T, Q>& key, Condition& condition, BeforeRemoval before_removal,
+                              node_pages<T, A>& pages, std::optional<std::pair<K, V>>& removed) {
     tree_path<T> path;
     auto found = tree_.template descend<leaf_mode::exclusive>(key, path);
     if (!found) {
@@ -324,6 +336,7 @@ class latched_changes {
         return true;
       }
       if (leaf.keeps_its_minimum() || is_root(leaf)) {
+        before_removal(leaf, leaf.key(*index), std::as_const(leaf.value(*index)));
         removed = leaf.remove(*index);
         return true;
       }
@@ -346,6 +359,11 @@ class latched_changes {
     const std::size_t top = path.fences_top(top_changed);
     if (!held.take_path(path, top)) {
       return false;
+    }
+    if (found->at_separator) {
+      before_removal(leaf, std::as_const(leaf.head_key()), std::as_const(leaf.head_value()));
+    } else {
+      before_removal(leaf, leaf.key(leaf_index), std::as_const(leaf.value(leaf_index)));
     }
     removed = tree_.change_held([&](tree<T>& whole) {
       node_stack_mut<T> stack(

@@ -230,6 +230,28 @@ concept std_byte_string = requires(const T& t) {
                             { byte_string<T>::bytes(t) } -> std::same_as<std::span<const std::uint8_t>>;
                           };
 
+// Byte spans: the windows of their bytes, as std byte strings have (the Rust
+// crate's `InlineKey for [u8]`), for a key that is a byte string by another
+// name to forward to, as bbtree-store's keys do. Hash tags are lengths,
+// capped at 255.
+template <>
+struct inline_key<std::span<const std::uint8_t>> {
+  using bytes_type = std::span<const std::uint8_t>;
+
+  static inline_word at(bytes_type key, std::size_t offset) noexcept {
+    return detail::big_endian::window(key, offset);
+  }
+  static std::uint8_t hash_tag(bytes_type key) noexcept {
+    return key.size() < 255 ? static_cast<std::uint8_t>(key.size()) : std::uint8_t{255};
+  }
+  static std::strong_ordering cmp_from(bytes_type a, bytes_type b, std::size_t equal_len) noexcept {
+    return detail::search_bytes(a).cmp_from(b, equal_len);
+  }
+  static std::strong_ordering cmp_prefix(bytes_type key, bytes_type prefix) noexcept {
+    return detail::search_bytes(key).cmp_prefix(prefix);
+  }
+};
+
 // Unsigned integers: their big-endian bytes (D31); 2-byte inline keys.
 template <class T>
   requires(std::is_integral_v<T> && std::is_unsigned_v<T> && sizeof(T) == 8)
