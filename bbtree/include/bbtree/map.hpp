@@ -21,6 +21,7 @@
 #include <bbtree/allocator.hpp>
 #include <bbtree/detail/latched/changes.hpp>
 #include <bbtree/detail/latched/latched_tree.hpp>
+#include <bbtree/detail/latched/scan.hpp>
 #include <bbtree/detail/tree/cursor.hpp>
 #include <bbtree/node_config.hpp>
 
@@ -85,6 +86,21 @@ class bbtree_map {
     requires lookup_type<Q> bool
   contains(const Q& key) const {
     return tree_.contains(key);
+  }
+
+  // Runs `visit(key, value)` on every entry in key order, each leaf latched
+  // shared while its entries are visited, until `visit` returns false. Not a
+  // snapshot: an entry present for the whole scan is visited exactly once.
+  template <class Visit>
+  void scan(Visit&& visit) const {
+    detail::latched_scan<types>(tree_).template from<K>(nullptr, visit);
+  }
+
+  // The same, from the first entry not ordered before `start`.
+  template <class Q, class Visit>
+    requires lookup_type<Q>
+  void scan_from(const Q& start, Visit&& visit) const {
+    detail::latched_scan<types>(tree_).from(&start, visit);
   }
 
   // --- Changes, from any thread ---
@@ -171,6 +187,16 @@ class bbtree_map {
   }
 
   // --- The owner's ---
+
+  // The value at `key`, for the owner to change in place. Owner.
+  template <class Q>
+    requires lookup_type<Q>
+  V* get_owned(const Q& key) {
+    return tree_.change_owned([&](detail::tree<types>& whole) -> V* {
+      const auto found = whole.find(key);
+      return found ? found->value() : nullptr;
+    });
+  }
 
   // Drops every entry. Owner.
   void clear() noexcept { tree_.destroy(pages()); }

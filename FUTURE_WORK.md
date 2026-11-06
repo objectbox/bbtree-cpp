@@ -27,3 +27,20 @@ at the cost of the staleness bookkeeping.
 A lane rebuilds its `search_key` at each stage, which rereads a string
 query's length and pointer. The Rust crate keeps the query in the lane
 (12-batch-api.md, rule 5). It matters for string keys only.
+
+## The shared map's batches, reverse scans and copied ranges
+
+The Rust crate's shared map has batched `read_many`, `get_many_copied`,
+`get_many_cloned`, `insert_many` and `update_or_insert_many`,
+`scan_rev` and `range_cloned`. Not ported yet: the bench drives the shared
+map with single-key operations and forward scans only. The unsync map's
+level-by-level lanes ([batches](PORTING.md#p10-batches-descend-level-by-level-not-in-async-lanes)) would carry over, each lane ending in
+an optimistic leaf read.
+
+## Unlatched copies of byte-string values
+
+`get_copied` copies a value without latching its leaf only for keys
+ordered by their own bytes (integers, byte arrays). The Rust crate also
+settles a byte-string key that ends within its leaf's 8-byte inline key by
+its hash tag, an exact length below 255, reading no heap byte. String maps
+take the shared latch instead.

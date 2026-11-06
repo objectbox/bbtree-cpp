@@ -45,7 +45,9 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [x] inserts (append, fit, split through held nodes), removals (leaf-local, rebalancing through held nodes),
   shared-prefix shrinks holding both borders, start_tree; insert/insert_or_assign/update_or_insert/
   get_or_insert/remove/remove_if/erase; owner clear/for_each; change stress tests under TSan
-- [ ] appends (D45), shared-prefix shrinks, scans, batches, owner methods (get_mut, iter_mut, clear)
+- [x] forward scans (scan, scan_from), owner get_owned/for_each/clear
+- [ ] later (FUTURE_WORK): reverse scans, range_cloned, the shared batches (read_many, get_many_copied,
+  insert_many), unlatched copies of byte-string values (D57)
 
 ## M6 File maps (D58) and bbtree-mmap
 ## M7 bbtree-store (D60): leaf annex, heap pages, records, WAL
