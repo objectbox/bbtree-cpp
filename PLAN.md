@@ -25,11 +25,13 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [x] node stacks (D24); insert with split (D32, D33, D37), last-leaf append (D45), reserved pages (D8)
 - [x] remove with rebalancing (D22), prefix refits (D26, D44); teardown
 - [x] invariant checks (`BBTREE_CHECKED`); differential tests against `std::map`
-- [ ] walks: iteration and ranges (D23, D33, D35, D42)
+- [x] walks: cursors for iteration and bounds (D23, D33, D42; PORTING.md P7)
 
 ## M3 Map and set API (`unsync::bbtree_map`, `unsync::bbtree_set`)
-- [ ] map API: lookup, insert, erase, iterators, ranges, entries
-- [ ] bulk: builder (D25), from sorted / from unsorted, append, split_off, clone
+- [x] map API: lookup, insert, erase, iterators, bounds, try_emplace/insert_or_assign/emplace
+- [ ] map-level differential test (iterators, bounds, erase(it)) against std::map
+- [ ] bulk: builder (D25), from sorted / from unsorted, append, split_off by cut (D25), clone by node copy
+  (append and split_off exist one entry at a time)
 - [ ] retain, extract_if
 - [ ] set API and set algebra
 - [ ] port `unsync/map/tests`, `unsync/set/tests`

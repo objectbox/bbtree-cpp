@@ -90,6 +90,8 @@ class node_stack_mut {
   // Takes exclusive access, which ends the tree's permission to append to its
   // remembered leaf.
   explicit node_stack_mut(tree<T>& owner) noexcept;
+  // At the position `at`, a node stack of `owner`.
+  node_stack_mut(tree<T>& owner, const node_stack<T>& at) noexcept;
 
   tree<T>& owner() const noexcept { return tree_; }
   node_stack<T>& stack() noexcept { return stack_; }
@@ -141,6 +143,13 @@ class node_stack_mut {
   // --- Removing (`remove.hpp`) ---
   template <class Pages>
   std::pair<K, V> remove(const Pages& pages, std::size_t& length) noexcept;
+  // Removes the entry and ends at the next one, or detached past the last.
+  template <class Pages>
+  std::pair<K, V> remove_and_go_to_next(const Pages& pages, std::size_t& length) noexcept;
+  // From a leaf: entry `slot - 1` for a slot within it, the separator left of
+  // it for slot 0, the separator right of it for slot len + 1; detached if
+  // there is none.
+  void go_to_entry_at_slot(std::size_t slot) noexcept;
 
   // --- Prefixes (`prefix.hpp`) ---
   void refit_split_halves(const std::size_t (&separator_indexes)[max_depth + 1],
@@ -347,6 +356,12 @@ class tree {
 
 template <class T>
 node_stack_mut<T>::node_stack_mut(tree<T>& owner) noexcept : tree_(owner) {
+  owner.forget_rightmost_leaf();
+}
+
+template <class T>
+node_stack_mut<T>::node_stack_mut(tree<T>& owner, const node_stack<T>& at) noexcept
+    : tree_(owner), stack_(at) {
   owner.forget_rightmost_leaf();
 }
 

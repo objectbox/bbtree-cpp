@@ -170,6 +170,56 @@ std::pair<typename T::key_type, typename T::mapped_type> node_stack_mut<T>::remo
 
 template <class T>
 template <class Pages>
+std::pair<typename T::key_type, typename T::mapped_type> node_stack_mut<T>::remove_and_go_to_next(
+    const Pages& pages, std::size_t& length) noexcept {
+  if (node().is_leaf()) {
+    const leaf_node<T> bottom = leaf();
+    if (bottom.keeps_its_minimum() || is_at_root()) {
+      const std::size_t at = index();
+      std::pair<K, V> entry = bottom.remove(at);
+      --length;
+      go_to_entry_at_slot(at + 1);
+      return entry;
+    }
+  }
+  auto [entry, changed] = take_out(pages, length);
+  for (std::size_t at = 0; at < depth(); ++at) {
+    changed.indexes[at] = stack_.index_at(at);
+  }
+  lower_and_refit_changed_fences(changed, pages);
+  // The next entry's slot in its leaf, as the fixing tracked it through its
+  // merges and steals, and the edges down to that leaf.
+  start_at_root();
+  for (std::size_t at = 0; at < changed.leaf_depth; ++at) {
+    set_index(changed.indexes[at]);
+    descend();
+  }
+  go_to_entry_at_slot(changed.indexes[changed.leaf_depth]);
+  return std::move(entry);
+}
+
+template <class T>
+void node_stack_mut<T>::go_to_entry_at_slot(std::size_t slot) noexcept {
+  if (slot >= 1 && slot <= leaf().len()) {
+    set_index(slot - 1);
+    return;
+  }
+  while (!is_at_root()) {
+    const internal_node<T> parent = ascend();
+    const std::size_t edge = index();
+    if (slot > 0 && edge < parent.len()) {
+      return;
+    }
+    if (slot == 0 && edge > 0) {
+      set_index(edge - 1);
+      return;
+    }
+  }
+  detach();
+}
+
+template <class T>
+template <class Pages>
 auto node_stack_mut<T>::take_out(const Pages& pages, std::size_t& length) noexcept
     -> std::pair<std::pair<K, V>, changed_fences> {
   const std::size_t entry_depth = depth();
