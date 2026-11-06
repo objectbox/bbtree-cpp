@@ -99,7 +99,10 @@ D1–D60) still hold unless an entry here says otherwise.
   so `std::string` keys and values shift one object at a time. It is also
   32 bytes against Rust's 24-byte `String`: a `std::string` → `u64` leaf
   holds 19 entries against the Rust crate's 24, and a `std::string` set
-  fewer too. Both show in the comparison with the Rust crate (M11).
+  fewer too. Both show in the comparison with the Rust crate (M11). A
+  one-at-a-time move constructs straight into the destination slot and
+  destroys the source, one move each, not two through a temporary: 12% off
+  a 1M random `std::string` insert. FUTURE_WORK.md has the byte moves.
 
 ## P7. Iterators: proxy references, and node stacks attached lazily
 

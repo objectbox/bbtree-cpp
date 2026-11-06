@@ -85,3 +85,18 @@ once no separator's reader can hold them), at the cost of a second path.
 The WAL's CRC32C is a byte-at-a-time table ([CRC32C](PORTING.md#p27-crc32c-a-table-a-byte-at-a-time)). SSE4.2's `crc32`
 instruction (8 bytes a cycle), or slicing by 8, would cut the CRC of a
 commit of many records, if appends ever show it.
+
+## libstdc++ strings moved as bytes, their short-string pointer fixed
+
+libstdc++'s `std::string` points into itself while short, so it is not
+trivially relocatable, and shifting `std::string` keys moves them one at a
+time: move constructor, a variable-length `memcpy` call, destructor. That is
+still about 18% of a 1M random `std::string` insert (220 ns, after moving
+straight into the destination slot). Moving a run of them as bytes, then
+pointing each short string's data pointer at its own new buffer, would make
+them shift like Rust's `String`. It depends on libstdc++'s layout (the data
+pointer first, the buffer at 16), which needs a test that checks it, and on
+a fix-up in every byte-moving path: `slots`' shifts and runs, the paired
+entries' `entry_shift`, and whole-node moves. A prototype that fixed only
+`slots` gained 3%, since paired entries then shift one at a time.
+

@@ -116,7 +116,7 @@ class slots {
       }
     } else {
       for (std::size_t from = len; from-- > index;) {
-        construct(from + 1, take(from));
+        relocate(from, *this, from + 1);
       }
     }
   }
@@ -140,7 +140,7 @@ class slots {
       }
     } else {
       for (std::size_t from = index + 1; from < len; ++from) {
-        construct(from - 1, take(from));
+        relocate(from, *this, from - 1);
       }
     }
   }
@@ -164,7 +164,7 @@ class slots {
       }
     } else {
       for (std::size_t offset = 0; offset < count; ++offset) {
-        dest.construct(dest_start + offset, take(start + offset));
+        relocate(start + offset, dest, dest_start + offset);
       }
     }
   }
@@ -179,6 +179,14 @@ class slots {
   const std::byte* address() const noexcept { return anchor_; }
 
  private:
+  // Moves slot `index`'s object into `dest`'s empty slot `dest_index`, one
+  // move and one destruction, leaving slot `index` empty.
+  void relocate(std::size_t index, slots dest, std::size_t dest_index) const noexcept {
+    T* object = slot(index);
+    ::new (static_cast<void*>(dest.anchor_ + dest_index * dest.stride_)) T(std::move(*object));
+    object->~T();
+  }
+
   std::byte* anchor_ = nullptr;
   std::size_t stride_ = 0;
 };
