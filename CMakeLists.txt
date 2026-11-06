@@ -44,3 +44,6 @@ endif()
 
 add_subdirectory(bbtree)
 add_subdirectory(bbtree-mmap)
+if(BBTREE_BUILD_FUZZ)
+  add_subdirectory(bbtree/fuzz)
+endif()

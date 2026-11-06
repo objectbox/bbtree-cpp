@@ -212,6 +212,24 @@ D1–D60) still hold unless an entry here says otherwise.
   unsync map's at 1M (128.5 against 105.9 ns) and 12% at 10M; the Rust
   crate's cost about 3% more (09-concurrency.md, Performance).
 
+## P13. Exceptions from user code end the program where keys move
+
+- **Chosen:** user code (comparators, `inline_key` specializations, key and
+  value moves and destructors) must not throw, as the Rust crate's must not
+  panic (D48). Key and value moves and destructors are required `noexcept`
+  (`static_assert`); the tree's operations that move keys are `noexcept`, so
+  a comparator or encoding that throws there ends the program by
+  `std::terminate`, as the Rust crate's abort-on-unwind guards do where it
+  calls user code while keys move. Constructing a value (`try_emplace`'s
+  arguments, `operator[]`'s default) and allocating pages happen before
+  anything changes and may throw: the map is then as it was.
+- **Alternatives:** exception-neutral node code, which would reconcile every
+  call into user code with the changes around it (what D48 rejects for the
+  Rust crate: it constrains every structural operation, for code already
+  wrong), or catching and swallowing.
+- So the Rust fuzz target `user_code_panics` has no counterpart; its lying
+  orders and encodings are `fuzz_hostile_keys`, checked for memory safety.
+
 ## P12. Bench dependencies include mimalloc
 
 The Rust bench links mimalloc as its global allocator, and D15's and D8's

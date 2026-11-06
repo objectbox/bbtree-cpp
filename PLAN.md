@@ -56,6 +56,9 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
   pages after their leaves, lookups example
 ## M7 bbtree-store (D60): leaf annex, heap pages, records, WAL
 ## M8 Fuzz targets (libFuzzer), racing-reads checker, kernel-target build
+- [x] libFuzzer targets for every node-plan row, the shared map, set algebra and hostile keys; harnesses also
+  run on fixed random inputs in the tests
+- [ ] racing-reads checker on Clang assembly; kernel-target (freestanding) build
 ## M9 Bench harness (std::map, abseil btree_map, ankerl, std::unordered_map)
 ## M10 READMEs and docs
 ## M11 Measure against the Rust original, profile, optimize
