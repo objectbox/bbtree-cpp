@@ -381,6 +381,14 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
       }
       return;
     }
+    if constexpr (std::forward_iterator<It>) {
+      auto out_of_order = [](const auto& a, const auto& b) { return !key_order::less(a.first, b.first); };
+      if (std::adjacent_find(first, last, out_of_order) == last) {
+        this->build_ascending(
+            first, last, [](auto&& entry) { return std::pair<K, V>(std::forward<decltype(entry)>(entry)); });
+        return;
+      }
+    }
     std::vector<std::pair<K, V>> entries;
     if constexpr (std::forward_iterator<It>) {
       entries.reserve(static_cast<std::size_t>(std::distance(first, last)));

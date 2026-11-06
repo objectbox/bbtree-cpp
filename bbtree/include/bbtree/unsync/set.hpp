@@ -273,6 +273,15 @@ class bbtree_set
       }
       return;
     }
+    if constexpr (std::forward_iterator<It>) {
+      auto out_of_order = [](const auto& a, const auto& b) { return !key_order::less(a, b); };
+      if (std::adjacent_find(first, last, out_of_order) == last) {
+        this->build_ascending(first, last, [](auto&& key) {
+          return std::pair<K, detail::set_value>(K(std::forward<decltype(key)>(key)), detail::set_value{});
+        });
+        return;
+      }
+    }
     std::vector<std::pair<K, detail::set_value>> entries;
     bool ascending = true;
     for (; first != last; ++first) {
