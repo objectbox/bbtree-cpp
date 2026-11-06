@@ -31,9 +31,9 @@
     },
     {
       "name": "gcc",
-      "displayName": "GCC, debug, tests",
+      "displayName": "GCC, optimized (its optimizer warns of more), tests",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_CXX_COMPILER": "g++", "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "g++", "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
     },
     {
       "name": "release",

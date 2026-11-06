@@ -2,7 +2,7 @@
 #
 # The library (`bbtree/`) has no dependencies. Tests fetch Catch2; the bench
 # fetches abseil, ankerl::unordered_dense and mimalloc (PORTING.md, P12).
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.28)
 project(bbtree++ VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -22,8 +22,11 @@ set(BBTREE_SANITIZE "" CACHE STRING "Sanitizers: address,undefined | thread | em
 add_library(bbtree_warnings INTERFACE)
 target_compile_options(bbtree_warnings INTERFACE
   -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
-  -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Wnull-dereference
-  -Wimplicit-fallthrough -Werror)
+  -Wnon-virtual-dtor -Wold-style-cast -Wcast-align
+  -Wimplicit-fallthrough -Werror
+  # GCC's -Wnull-dereference flags optimized paths it can't prove unreachable,
+  # in libstdc++'s std::string too: Clang's only.
+  $<$<CXX_COMPILER_ID:Clang>:-Wnull-dereference>)
 
 if(BBTREE_NATIVE)
   add_compile_options(-march=native)

@@ -10,7 +10,7 @@ stripping, batches, optimistic lock coupling and file maps, in C++.
   coupling, with closures instead of handles.
 - File maps (`bbtree/file.hpp`) and bbtree-mmap: maps compacted into a file and
   looked up where they lie.
-- Zero dependencies: headers only, C++20, Clang 15+ or GCC 13+.
+- Zero dependencies: headers only, C++20, Clang 15+ or GCC 13+; CMake 3.28+.
 
 [PORTING.md](PORTING.md) says where and why the port differs from the Rust
 original, [FUTURE_WORK.md](FUTURE_WORK.md) what is left and what would be
