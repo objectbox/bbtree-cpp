@@ -14,6 +14,7 @@
 #include <bbtree/detail/tree/cursor.hpp>
 #include <bbtree/detail/tree/tree.hpp>
 #include <bbtree/detail/tree/tree_owner.hpp>
+#include <bbtree/detail/tree/walk.hpp>
 #include <bbtree/node_config.hpp>
 
 #include <algorithm>
@@ -157,8 +158,8 @@ class bbtree_set
   // iterators (P16).
   template <class Visit>
   void for_each(Visit&& visit) const {
-    auto key_only = [&](K& key, detail::set_value&) { visit(std::as_const(key)); };
-    cursor_type::first(&tree_).visit_to_end(key_only);
+    auto key_only = [&](const K& key, detail::set_value&) { visit(key); };
+    detail::in_order_walk<types>(tree_).run(key_only);
   }
 
   // --- Capacity ---

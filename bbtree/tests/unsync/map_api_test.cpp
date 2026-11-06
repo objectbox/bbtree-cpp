@@ -121,6 +121,22 @@ TEST_CASE("for_each visits every entry in order and writes values", "[map]") {
   CHECK(visited == std::vector<std::pair<std::string, std::string>>(model.begin(), model.end()));
 }
 
+TEST_CASE("for_each visits separators' entries without inline keys too", "[map]") {
+  bbtree::unsync::bbtree_map<std::string, std::uint64_t, std::less<>, bbtree::global_allocator,
+                             bbtree::plain_keys>
+      map;
+  std::map<std::string, std::uint64_t> model;
+  for (std::uint64_t i = 0; i < 20'000; ++i) {
+    const std::string key = std::to_string(i * 7919 % 100'003);
+    map.insert_or_assign(key, i);
+    model.insert_or_assign(key, i);
+  }
+  std::vector<std::pair<std::string, std::uint64_t>> visited;
+  std::as_const(map).for_each(
+      [&](const std::string& key, const std::uint64_t& value) { visited.emplace_back(key, value); });
+  CHECK(visited == std::vector<std::pair<std::string, std::uint64_t>>(model.begin(), model.end()));
+}
+
 TEST_CASE("an iterator from find steps on through the tree", "[map]") {
   u64_map map;
   for (std::uint64_t key = 0; key < 4000; ++key) {

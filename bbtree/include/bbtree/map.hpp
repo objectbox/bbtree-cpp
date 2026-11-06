@@ -27,7 +27,7 @@
 #include <bbtree/detail/latched/changes.hpp>
 #include <bbtree/detail/latched/latched_tree.hpp>
 #include <bbtree/detail/latched/scan.hpp>
-#include <bbtree/detail/tree/cursor.hpp>
+#include <bbtree/detail/tree/walk.hpp>
 #include <bbtree/node_config.hpp>
 
 #include <cstddef>
@@ -338,10 +338,7 @@ class bbtree_map {
   // Runs `f(key, value)` on every entry in key order. Owner.
   template <class F>
   void for_each(F&& f) {
-    tree_.change_owned([&](detail::tree<types>& whole) {
-      auto mutable_value = [&](K& key, V& value) { f(std::as_const(key), value); };
-      detail::cursor<types>::first(&whole).visit_to_end(mutable_value);
-    });
+    tree_.change_owned([&](detail::tree<types>& whole) { detail::in_order_walk<types>(whole).run(f); });
   }
 
   // Inserts the entries of [first, last), each replacing an equal key's

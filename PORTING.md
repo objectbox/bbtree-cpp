@@ -286,13 +286,21 @@ random order, with huge pages:
 | walk | Clang 15 | GCC 13 |
 |---|--:|--:|
 | range-for | 1.6 ns an entry | 1.3 ns |
-| `for_each` | 0.9 ns | 1.0 ns |
+| `for_each` on a cursor | 0.9 ns | 1.0 ns |
+| `for_each`, depth-first down the edges | 0.56 ns | 0.67 ns |
 | Rust, `fold` | 0.78 ns | |
 
 - **Chosen:** `for_each(visit)` on the unsync map and set, and in the shared
-  map's owner `for_each`, through one cursor walk (`visit_to_end`) that keeps
-  the position in a local and visits a leaf's run in one loop. It is a thin
-  addition with no logic of its own.
+  map's owner `for_each`, as a depth-first walk down the edges
+  (`detail/tree/walk.hpp`) that visits each leaf's head, then its keys
+  (D17): every entry, in order, with no node stack and no separator visited
+  on its own. A 1k u64 map's walk takes 0.25 ns an entry against Rust's 0.34,
+  and 1M maps of 4 `std::string` → 32-byte entries 10 ns against 17 on a
+  cursor: the cursor's outlined crossings kept the CPU from starting the
+  next map's loads early.
+- **Rejected:** a cursor walk that keeps its position in a local and runs a
+  leaf's entries in one loop, crossing leaves as the iterators do, as Rust's
+  fold does. It came first; the table shows why it went.
 - **Rejected:** passing the node stack to the crossings by value and
   returning it, so that no address of the iterator escapes. It copies the
   stack on every crossing, and Clang still kept the iterator in memory:

@@ -17,9 +17,8 @@
 //
 // A step keeps the cursor's position in memory, since the outlined crossings
 // take its node stack by address: range-for over 1M u64 entries takes 1.6 ns
-// an entry with Clang, 1.3 with GCC. `visit_to_end` keeps the position in
-// registers and runs a leaf's entries in one loop, as Rust's folds do: 0.9 ns
-// (PORTING.md P16).
+// an entry with Clang, 1.3 with GCC. The maps' `for_each` walks with no
+// cursor (`walk.hpp`), as Rust's folds do: 0.9 ns (PORTING.md P16).
 #pragma once
 
 #include <bbtree/detail/tree/tree.hpp>
@@ -106,25 +105,6 @@ class cursor {
       }
     }
     at_ = cross_forward(tree_, stack_, at_);
-  }
-
-  // Runs `visit(key, value)` on every entry from the cursor's on, and leaves
-  // the cursor past the last.
-  template <class Visit>
-  void visit_to_end(Visit& visit) {
-    position at = at_;
-    while (at.key != nullptr) {
-      if (at.key_end != nullptr) {
-        for (; at.key != at.key_end; at.key = advance(at.key, T::leaf.keys.key_stride),
-                                     at.value = advance(at.value, T::leaf.value_stride)) {
-          visit(*at.key, *at.value);
-        }
-      } else {
-        visit(*at.key, *at.value);
-      }
-      at = cross_forward(tree_, stack_, at);
-    }
-    at_ = at;
   }
 
   // Steps to the previous entry; from past the last, to the last.

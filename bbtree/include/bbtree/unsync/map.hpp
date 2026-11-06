@@ -25,6 +25,7 @@
 #include <bbtree/detail/tree/cursor.hpp>
 #include <bbtree/detail/tree/tree.hpp>
 #include <bbtree/detail/tree/tree_owner.hpp>
+#include <bbtree/detail/tree/walk.hpp>
 #include <bbtree/entry_ref.hpp>
 #include <bbtree/node_config.hpp>
 
@@ -180,13 +181,12 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   // faster than iterators, whose steps keep their place in memory (P16).
   template <class Visit>
   void for_each(Visit&& visit) {
-    auto mutable_value = [&](K& key, V& value) { visit(std::as_const(key), value); };
-    cursor_type::first(&tree_).visit_to_end(mutable_value);
+    detail::in_order_walk<types>(tree_).run(visit);
   }
   template <class Visit>
   void for_each(Visit&& visit) const {
-    auto const_value = [&](K& key, V& value) { visit(std::as_const(key), std::as_const(value)); };
-    cursor_type::first(&tree_).visit_to_end(const_value);
+    auto const_value = [&](const K& key, V& value) { visit(key, std::as_const(value)); };
+    detail::in_order_walk<types>(tree_).run(const_value);
   }
 
   // --- Capacity ---
