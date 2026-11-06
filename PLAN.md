@@ -42,7 +42,9 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 ## M5 Shared map (`bbtree_map`, D54, D55, D57)
 - [x] latch word, optimistic reads (P11), page pool (type-stable pages), descent; read, get_copied,
   get_cloned, contains, update; owner extend; lookup stress test under TSan
-- [ ] leaf-local insert/remove, structural changes through held nodes (held.rs), start_tree
+- [x] inserts (append, fit, split through held nodes), removals (leaf-local, rebalancing through held nodes),
+  shared-prefix shrinks holding both borders, start_tree; insert/insert_or_assign/update_or_insert/
+  get_or_insert/remove/remove_if/erase; owner clear/for_each; change stress tests under TSan
 - [ ] appends (D45), shared-prefix shrinks, scans, batches, owner methods (get_mut, iter_mut, clear)
 
 ## M6 File maps (D58) and bbtree-mmap

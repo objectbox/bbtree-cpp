@@ -14,6 +14,7 @@
 // - type-stable pages (`pages.hpp`).
 #pragma once
 
+#include <bbtree/detail/latched/held.hpp>
 #include <bbtree/detail/latched/latch.hpp>
 #include <bbtree/detail/latched/optimistic.hpp>
 #include <bbtree/detail/latched/pages.hpp>
@@ -99,6 +100,9 @@ struct descent {
 };
 
 template <class T>
+class latched_changes;
+
+template <class T>
 class latched_tree {
   using K = typename T::key_type;
   using V = typename T::mapped_type;
@@ -124,31 +128,46 @@ class latched_tree {
     free_.deallocate_all(source);
   }
 
-  // Runs `operation` on the tree as an unsync tree, as if it owned the nodes
-  // it changes: by an owner, or by a thread holding every node the operation
-  // changes. Writes the shared prefix and the root pointer back.
+  // Runs `operation` on the tree as an unsync tree, by a thread holding every
+  // node the operation changes: writes back the shared prefix and the root
+  // pointer, retagged if the root changed kind. Appends' last-leaf pointer is
+  // the caller's to keep.
   template <class Operation>
   decltype(auto) change_held(Operation&& operation) {
     tree<T> whole = view();
-    const shared_prefix before = whole.shared();
-    // The tree points appends at its last leaf, whichever it is (D45).
     struct write_back {
       latched_tree& self;
       tree<T>& whole;
-      const shared_prefix& before;
+      shared_prefix before;
+      node_ptr<T> root_before;
       ~write_back() {
         if (!(whole.shared() == before)) {
           self.shared_ = whole.shared();
         }
         const node_ptr<T> root = whole.has_root() ? whole.root() : node_ptr<T>();
+        if (root != root_before) {
+          self.root_.store(root.tagged(), std::memory_order_release);
+        }
+        (void)whole.release_root();
+      }
+    } done{*this, whole, whole.shared(), root_node()};
+    return operation(whole);
+  }
+
+  // `change_held` by an owner, who has the map alone: then appends go to the
+  // tree's last leaf, whichever it is after the operation.
+  template <class Operation>
+  decltype(auto) change_owned(Operation&& operation) {
+    struct point_appends {
+      latched_tree& self;
+      ~point_appends() {
+        const node_ptr<T> root = self.root_node();
         self.rightmost_leaf_.store(
             root ? node_end_of<T>::template border_leaf<node_end::last>(root).node().tagged() : 0,
             std::memory_order_release);
-        self.root_.store(root.tagged(), std::memory_order_release);
-        (void)whole.release_root();
       }
-    } done{*this, whole, before};
-    return operation(whole);
+    } after{*this};
+    return change_held(std::forward<Operation>(operation));
   }
 
   // --- Lookups (D57) ---
@@ -241,9 +260,10 @@ class latched_tree {
   // Descends to the leaf where `key` belongs, holding it in `Mode`; none for a
   // key outside what every key shares (D50). Restarts from the root on any
   // failed check.
-  template <leaf_mode Mode, class Q>
-  std::optional<descent<T, Mode>> descend(const search_key<T, Q>& key) const noexcept {
+  template <leaf_mode Mode, class Q, class Path = no_path>
+  std::optional<descent<T, Mode>> descend(const search_key<T, Q>& key, Path&& path = Path()) const noexcept {
     while (true) {
+      path.clear();
       const node_ptr<T> root = root_node();
       if (root.is_leaf()) {
         held_leaf<T, Mode> held{leaf_node<T>(root)};
@@ -288,6 +308,7 @@ class latched_tree {
           break;
         }
         at_separator |= route->at_separator;
+        path.record(node, version, *route);
         if (child.is_leaf()) {
           held_leaf<T, Mode> held{leaf_node<T>(child)};
           if (!latch.is_unchanged(version)) {
@@ -388,6 +409,8 @@ class latched_tree {
     }
     return std::optional<V>(std::bit_cast<V>(value_bytes));
   }
+
+  friend class latched_changes<T>;
 
   std::atomic<std::uintptr_t> root_{0};
   shared_prefix shared_;

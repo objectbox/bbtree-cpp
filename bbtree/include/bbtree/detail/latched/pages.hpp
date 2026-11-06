@@ -138,6 +138,17 @@ class node_pages {
     reserved_count_ = 0;
   }
 
+  // Whether the operation freed `page`: for appends, whose last leaf a merge
+  // may have freed.
+  bool has_freed(const std::byte* page) const noexcept {
+    for (std::size_t slot = 0; slot < freed_count_; ++slot) {
+      if (freed_[slot].page == page) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // The page source interface the tree's operations take pages through.
   void* allocate(page_kind kind, [[maybe_unused]] page_layout layout) const noexcept {
     assert(layout == layout_of(kind) && "a kind's pages have one layout");

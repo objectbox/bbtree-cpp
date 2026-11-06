@@ -19,7 +19,9 @@
 #pragma once
 
 #include <bbtree/allocator.hpp>
+#include <bbtree/detail/latched/changes.hpp>
 #include <bbtree/detail/latched/latched_tree.hpp>
+#include <bbtree/detail/tree/cursor.hpp>
 #include <bbtree/node_config.hpp>
 
 #include <cstddef>
@@ -95,14 +97,100 @@ class bbtree_map {
     return tree_.update(key, std::forward<F>(f));
   }
 
+  // Inserts `key` with `value` unless the map holds the key; returns whether
+  // it did. Throws `alloc_error`, the map unchanged, if a page is refused.
+  bool insert(K key, V value) {
+    struct keep_existing {
+      bool occupied(const K&, V&, V&&) noexcept { return false; }
+      bool vacant(const K&, const V&) noexcept { return true; }
+    } policy;
+    return changes().insert(std::move(key), std::move(value), policy, pages());
+  }
+
+  // Inserts `key` with `value`, or replaces the value at `key`; returns the
+  // value replaced, if any (the Rust crate's `insert`).
+  std::optional<V> insert_or_assign(K key, V value) {
+    struct replace {
+      std::optional<V> occupied(const K&, V& stored, V&& with) noexcept {
+        return std::exchange(stored, std::move(with));
+      }
+      std::optional<V> vacant(const K&, const V&) noexcept { return std::nullopt; }
+    } policy;
+    return changes().insert(std::move(key), std::move(value), policy, pages());
+  }
+
+  // Runs `f(key, stored, value)` on the entry at `key` with its leaf latched
+  // exclusive, handing it the new value to merge; or inserts `key` and
+  // `value` if there is none, returning nothing (for an `f` that returns
+  // nothing: whether there was an entry).
+  template <class F>
+  auto update_or_insert(K key, V value, F&& f) {
+    using result = detail::closure_result<std::invoke_result_t<F&, const K&, V&, V&&>>;
+    struct merge {
+      F& f;
+      typename result::type occupied(const K& stored_key, V& stored, V&& with) {
+        return result::of(f, stored_key, stored, std::move(with));
+      }
+      typename result::type vacant(const K&, const V&) noexcept { return result::none(); }
+    } policy{f};
+    return changes().insert(std::move(key), std::move(value), policy, pages());
+  }
+
+  // Runs `f(key, value)` on the entry at `key`, inserting `key` and `value`
+  // first if there is none, with the leaf latched exclusive.
+  template <class F>
+  auto get_or_insert(K key, V value, F&& f) {
+    struct read {
+      F& f;
+      auto occupied(const K& stored_key, V& stored, V&&) { return f(stored_key, std::as_const(stored)); }
+      auto vacant(const K& new_key, const V& new_value) { return f(new_key, new_value); }
+    } policy{f};
+    return changes().insert(std::move(key), std::move(value), policy, pages());
+  }
+
+  // Removes and returns the entry at `key`, if any.
+  template <class Q>
+    requires lookup_type<Q>
+  std::optional<std::pair<K, V>> remove(const Q& key) {
+    auto always = [](const K&, const V&) { return true; };
+    return changes().remove(key, always, pages());
+  }
+
+  // Removes and returns the entry at `key` if `condition(key, value)` holds
+  // of it, its leaf latched exclusive.
+  template <class Q, class Condition>
+    requires lookup_type<Q>
+  std::optional<std::pair<K, V>> remove_if(const Q& key, Condition&& condition) {
+    return changes().remove(key, condition, pages());
+  }
+
+  template <class Q>
+    requires lookup_type<Q> bool
+  erase(const Q& key) {
+    return remove(key).has_value();
+  }
+
   // --- The owner's ---
+
+  // Drops every entry. Owner.
+  void clear() noexcept { tree_.destroy(pages()); }
+
+  // Runs `f(key, value)` on every entry in key order. Owner.
+  template <class F>
+  void for_each(F&& f) {
+    tree_.change_owned([&](detail::tree<types>& whole) {
+      for (auto at = detail::cursor<types>::first(&whole); !at.is_end(); at.next()) {
+        f(std::as_const(*at.key()), *at.value());
+      }
+    });
+  }
 
   // Inserts the entries of [first, last), each replacing an equal key's
   // value. Owner.
   template <std::input_iterator It>
   void extend(It first, It last) {
     std::size_t ignored_length = 0;
-    tree_.change_held([&](detail::tree<types>& whole) {
+    tree_.change_owned([&](detail::tree<types>& whole) {
       for (; first != last; ++first) {
         const auto& entry = *first;
         whole.insert(
@@ -117,6 +205,7 @@ class bbtree_map {
 
  private:
   pages_type pages() const noexcept { return pages_type(allocator_); }
+  detail::latched_changes<types> changes() noexcept { return detail::latched_changes<types>(tree_); }
 
   [[no_unique_address]] Allocator allocator_;
   tree_type tree_;

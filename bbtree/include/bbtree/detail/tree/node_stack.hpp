@@ -62,6 +62,13 @@ class node_stack {
     return *this;
   }
 
+  // Adds a level below the bottom one: for a node stack along a path a
+  // latched descent kept (the Rust crate's `NodeStackMut::along`).
+  void push_level(node_ptr<T> node, std::size_t index) noexcept {
+    write_level(levels_, node, index);
+    ++levels_;
+  }
+
   void attach(node_ptr<T> root) noexcept {
     write_level(0, root, 0);
     levels_ = 1;

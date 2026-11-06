@@ -9,7 +9,8 @@ set(BBTREE_TEST_SOURCES
   unsync/map_api_test.cpp
   unsync/set_test.cpp
   unsync/batch_test.cpp
-  shared/lookup_stress_test.cpp)
+  shared/lookup_stress_test.cpp
+  shared/change_stress_test.cpp)
 
 find_package(Threads REQUIRED)
 
