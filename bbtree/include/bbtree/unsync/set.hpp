@@ -153,6 +153,14 @@ class bbtree_set
   reverse_iterator rbegin() const noexcept { return reverse_iterator(end()); }
   reverse_iterator rend() const noexcept { return reverse_iterator(begin()); }
 
+  // Runs `visit(key)` on every key in order, a leaf at a time: faster than
+  // iterators (P16).
+  template <class Visit>
+  void for_each(Visit&& visit) const {
+    auto key_only = [&](K& key, detail::set_value&) { visit(std::as_const(key)); };
+    cursor_type::first(&tree_).visit_to_end(key_only);
+  }
+
   // --- Capacity ---
 
   [[nodiscard]] bool empty() const noexcept { return length_ == 0; }

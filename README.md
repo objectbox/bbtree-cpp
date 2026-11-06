@@ -30,6 +30,7 @@ map[2] = "two";
 for (const auto& [key, value] : map) {  // const auto& or auto&&, not auto&
   std::printf("%lu %s\n", key, value.c_str());
 }
+map.for_each([](const auto& key, auto& value) { value += '!'; });  // a leaf at a time, faster than range-for
 auto upper = map.split_off(2);  // O(log n)
 std::array<std::uint64_t, 64> keys = ...;
 auto values = map.get_many(keys);  // batched lookups, misses overlapped

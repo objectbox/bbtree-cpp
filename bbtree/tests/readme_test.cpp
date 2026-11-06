@@ -18,12 +18,14 @@ TEST_CASE("the README's one-thread example", "[readme]") {
     joined += std::to_string(key) + value;
   }
   CHECK(joined == "1one2two");
+  map.for_each([](const auto&, auto& value) { value += '!'; });
+  CHECK(map[1] == "one!");
   auto upper = map.split_off(2);
   CHECK(upper.size() == 1);
   std::array<std::uint64_t, 64> keys{};
   keys[0] = 1;
   const auto values = map.get_many(keys);
-  CHECK(*values[0] == "one");
+  CHECK(*values[0] == "one!");
 }
 
 TEST_CASE("the README's threads example", "[readme]") {

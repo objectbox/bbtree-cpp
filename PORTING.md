@@ -262,3 +262,40 @@ memory of a 1 KiB node). Comparing the port under glibc's malloc against
 the original under mimalloc would measure the allocators. So the C++ bench
 links mimalloc too, a bench-only dependency beside abseil and
 ankerl::unordered_dense; the library stays dependency-free.
+
+Huge pages are part of what it measures: the Rust bench's mimalloc crate
+backs its heap with huge pages (37 thousand dTLB misses in a whole 1M u64
+iterate cell), and mimalloc on 4 KiB pages misses the dTLB at about every
+leaf, which made the port's iteration look twice as slow (2.1 ns an entry
+against 0.8 ns, the same walk) before the C++ bench allowed large OS pages
+too.
+
+## P16. `for_each` beside iterators, for Rust's folds
+
+Rust's map iterators specialize `fold`: a fold runs a leaf's entries in one
+loop and crosses leaves between runs, and the Rust bench's iterate checksum
+folds. A C++ range-for can only call `operator++`, and the iterator keeps its
+position in memory, because the outlined leaf crossings take the cursor's
+node stack, which lives in the same object, by address. Every step stores
+the position and reads it back. Measured over a warm 1M u64 map built in
+random order, with huge pages:
+
+| walk | Clang 15 | GCC 13 |
+|---|--:|--:|
+| range-for | 1.6 ns an entry | 1.3 ns |
+| `for_each` | 0.9 ns | 1.0 ns |
+| Rust, `fold` | 0.78 ns | |
+
+- **Chosen:** `for_each(visit)` on the unsync map and set, and in the shared
+  map's owner `for_each`, through one cursor walk (`visit_to_end`) that keeps
+  the position in a local and visits a leaf's run in one loop. It is a thin
+  addition with no logic of its own.
+- **Rejected:** passing the node stack to the crossings by value and
+  returning it, so that no address of the iterator escapes. It copies the
+  stack on every crossing, and Clang still kept the iterator in memory:
+  2.0 ns.
+- **Rejected:** inlining the crossings (`always_inline`). The node stack's
+  own outlined calls still take its address: no change.
+- **Rejected for now:** iterators with no node stack, which search again
+  from the root at each crossing. They would keep their place in registers
+  at the cost of a search per leaf; FUTURE_WORK.md has it.

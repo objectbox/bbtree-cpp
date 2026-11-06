@@ -14,6 +14,12 @@
 // has its node stack at once; one that a lookup or an insert made, which kept
 // no ancestors (D32, D37), gets it on its first crossing, by searching its
 // key.
+//
+// A step keeps the cursor's position in memory, since the outlined crossings
+// take its node stack by address: range-for over 1M u64 entries takes 1.6 ns
+// an entry with Clang, 1.3 with GCC. `visit_to_end` keeps the position in
+// registers and runs a leaf's entries in one loop, as Rust's folds do: 0.9 ns
+// (PORTING.md P16).
 #pragma once
 
 #include <bbtree/detail/tree/tree.hpp>
@@ -28,6 +34,16 @@ class cursor {
   using K = typename T::key_type;
   using V = typename T::mapped_type;
 
+  // Where the cursor is: its entry's key and value, and for an entry in a
+  // leaf, the leaf's key end and length; past the last, all null.
+  struct position {
+    K* key = nullptr;
+    V* value = nullptr;
+    // One past the last key of the entry's leaf; null at a separator.
+    K* key_end = nullptr;
+    std::size_t leaf_len = 0;
+  };
+
  public:
   cursor() noexcept = default;
 
@@ -36,13 +52,13 @@ class cursor {
 
   // At `entry`, which a lookup or an insert found; its node stack comes on
   // its first crossing.
-  cursor(const tree<T>* owner, found_entry<T> entry) noexcept : tree_(owner) { point_at(entry); }
+  cursor(const tree<T>* owner, found_entry<T> entry) noexcept : tree_(owner), at_(position_of(entry)) {}
 
   // At the entry a node stack of `owner` ends at, or past the last if it is
   // detached.
   cursor(const tree<T>* owner, const node_stack<T>& at) noexcept : tree_(owner), stack_(at) {
     if (stack_.is_attached()) {
-      point_at_stack();
+      at_ = position_of_stack(stack_);
     }
   }
 
@@ -52,7 +68,7 @@ class cursor {
     if (owner->has_root()) {
       at.stack_.attach(owner->root());
       if (at.stack_.descend_to_first_key()) {
-        at.point_at_stack();
+        at.at_ = position_of_stack(at.stack_);
       } else {
         at.stack_.detach();
       }
@@ -68,195 +84,185 @@ class cursor {
     if (owner->has_root()) {
       at.stack_.attach(owner->root());
       at.stack_.search_to_edge(search_key<T, Q>(query), side, owner->shared());
-      at.at_leaf_edge();
+      at.at_ = at_leaf_edge(at.stack_);
     }
     return at;
   }
 
-  bool is_end() const noexcept { return key_ == nullptr; }
-  K* key() const noexcept { return key_; }
-  V* value() const noexcept { return value_; }
+  bool is_end() const noexcept { return at_.key == nullptr; }
+  K* key() const noexcept { return at_.key; }
+  V* value() const noexcept { return at_.value; }
   const tree<T>* owner() const noexcept { return tree_; }
-  friend bool operator==(const cursor& a, const cursor& b) noexcept { return a.key_ == b.key_; }
+  friend bool operator==(const cursor& a, const cursor& b) noexcept { return a.at_.key == b.at_.key; }
 
   // Steps to the next entry, or past the last.
   void next() noexcept {
     assert(!is_end() && "stepping past the end");
-    if (key_end_ != nullptr) {
-      key_ = advance(key_, T::leaf.keys.key_stride);
-      value_ = advance(value_, T::leaf.value_stride);
-      if (key_ != key_end_) {
+    if (at_.key_end != nullptr) {
+      at_.key = advance(at_.key, T::leaf.keys.key_stride);
+      at_.value = advance(at_.value, T::leaf.value_stride);
+      if (at_.key != at_.key_end) {
         return;
       }
     }
-    cross_forward();
+    at_ = cross_forward(tree_, stack_, at_);
+  }
+
+  // Runs `visit(key, value)` on every entry from the cursor's on, and leaves
+  // the cursor past the last.
+  template <class Visit>
+  void visit_to_end(Visit& visit) {
+    position at = at_;
+    while (at.key != nullptr) {
+      if (at.key_end != nullptr) {
+        for (; at.key != at.key_end; at.key = advance(at.key, T::leaf.keys.key_stride),
+                                     at.value = advance(at.value, T::leaf.value_stride)) {
+          visit(*at.key, *at.value);
+        }
+      } else {
+        visit(*at.key, *at.value);
+      }
+      at = cross_forward(tree_, stack_, at);
+    }
+    at_ = at;
   }
 
   // Steps to the previous entry; from past the last, to the last.
   void prev() noexcept {
-    if (is_end()) {
-      *this = last(tree_);
+    if (at_.key_end != nullptr && at_.key != key_begin(at_)) {
+      at_.key = advance(at_.key, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
+      at_.value = advance(at_.value, -static_cast<std::ptrdiff_t>(T::leaf.value_stride));
       return;
     }
-    if (key_end_ != nullptr && key_ != key_begin()) {
-      key_ = advance(key_, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
-      value_ = advance(value_, -static_cast<std::ptrdiff_t>(T::leaf.value_stride));
-      return;
-    }
-    cross_backward();
+    at_ = cross_backward(tree_, stack_, at_);
   }
 
   // The node stack at the entry, attached first if the cursor has none; for
   // a removal at the cursor.
   const node_stack<T>& attached_stack() noexcept {
-    attach();
+    attach(tree_, stack_, at_);
     return stack_;
   }
 
  private:
-  static cursor last(const tree<T>* owner) noexcept {
-    cursor at(owner);
-    if (owner->has_root()) {
-      at.stack_.attach(owner->root());
-      if (at.stack_.descend_to_last_key()) {
-        at.point_at_stack();
-      } else {
-        at.stack_.detach();
-      }
-    }
-    return at;
-  }
-
   template <class P>
   static P* advance(P* pointer, std::ptrdiff_t bytes) noexcept {
     return reinterpret_cast<P*>(reinterpret_cast<std::byte*>(pointer) + bytes);
   }
 
-  K* key_begin() const noexcept {
-    return advance(key_end_, -static_cast<std::ptrdiff_t>(leaf_len_ * T::leaf.keys.key_stride));
+  static K* key_begin(const position& at) noexcept {
+    return advance(at.key_end, -static_cast<std::ptrdiff_t>(at.leaf_len * T::leaf.keys.key_stride));
   }
 
-  // Points at `entry`: a leaf's key, with the leaf's run, or a separator.
-  void point_at(found_entry<T> entry) noexcept {
-    key_ = entry.key();
-    value_ = entry.value();
+  // The position at `entry`: a leaf's key, with the leaf's run, or a
+  // separator.
+  static position position_of(found_entry<T> entry) noexcept {
+    position at{entry.key(), entry.value(), nullptr, 0};
     if (entry.node.is_leaf()) {
       const leaf_node<T> leaf(entry.node);
-      leaf_len_ = leaf.len();
-      key_end_ = leaf.key_slots_only().slot(leaf_len_);
-    } else {
-      key_end_ = nullptr;
+      at.leaf_len = leaf.len();
+      at.key_end = leaf.key_slots_only().slot(at.leaf_len);
     }
+    return at;
   }
 
-  // Points at the entry the attached node stack ends at.
-  void point_at_stack() noexcept { point_at({stack_.node(), stack_.index()}); }
-
-  void detach_to_end() noexcept {
-    key_ = nullptr;
-    value_ = nullptr;
-    key_end_ = nullptr;
-    stack_.detach();
+  static position position_of_stack(const node_stack<T>& stack) noexcept {
+    return position_of({stack.node(), stack.index()});
   }
 
   // From a node stack at a leaf edge: the entry right of it, which may be the
   // separator after the leaf, or past the last.
-  void at_leaf_edge() noexcept {
-    const leaf_node<T> leaf = stack_.leaf();
-    if (stack_.index() < leaf.len()) {
-      point_at_stack();
-      return;
+  static position at_leaf_edge(node_stack<T>& stack) noexcept {
+    if (stack.index() < stack.leaf().len()) {
+      return position_of_stack(stack);
     }
-    climb_to_separator_after();
+    return climb_to_separator_after(stack);
   }
 
   // Attaches the node stack at the entry by searching its key, if it has
-  // none: a cursor that a lookup made.
-  void attach() noexcept {
-    if (stack_.is_attached()) {
-      sync_leaf_index();
+  // none, or brings its leaf index to where the in-leaf steps went.
+  static void attach(const tree<T>* owner, node_stack<T>& stack, const position& at) noexcept {
+    if (stack.is_attached()) {
+      if (at.key_end != nullptr) {
+        const auto from_end = static_cast<std::size_t>(reinterpret_cast<std::byte*>(at.key_end) -
+                                                       reinterpret_cast<std::byte*>(at.key)) /
+                              T::leaf.keys.key_stride;
+        stack.set_index(at.leaf_len - from_end);
+      }
       return;
     }
-    stack_.attach(tree_->root());
-    [[maybe_unused]] const bool found = stack_.search(search_key<T, K>(*key_), tree_->shared());
-    assert(found && stack_.node() == entry_node() && "a cursor's key is found at its entry");
+    stack.attach(owner->root());
+    [[maybe_unused]] const bool found = stack.search(search_key<T, K>(*at.key), owner->shared());
+    assert(found && "a cursor's key is found at its entry");
   }
 
-  // The node the cursor's entry is in, as far as its addresses tell: only
-  // for the debug check.
-  node_ptr<T> entry_node() const noexcept { return stack_.node(); }
-
-  // Brings an attached node stack's leaf index to the entry the in-leaf
-  // steps reached.
-  void sync_leaf_index() noexcept {
-    if (key_end_ != nullptr) {
-      const std::size_t from_end = static_cast<std::size_t>(reinterpret_cast<std::byte*>(key_end_) -
-                                                            reinterpret_cast<std::byte*>(key_)) /
-                                   T::leaf.keys.key_stride;
-      stack_.set_index(leaf_len_ - from_end);
-    }
-  }
-
-  void cross_forward() noexcept {
-    if (key_end_ != nullptr) {
+  [[gnu::noinline]] static position cross_forward(const tree<T>* owner, node_stack<T>& stack,
+                                                  position at) noexcept {
+    if (at.key_end != nullptr) {
       // Past the leaf's last entry: the leaf edge after it.
-      key_ = advance(key_, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
-      attach();
-      stack_.set_index(stack_.index() + 1);
-      climb_to_separator_after();
-      return;
+      at.key = advance(at.key, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
+      attach(owner, stack, at);
+      stack.set_index(stack.index() + 1);
+      return climb_to_separator_after(stack);
     }
-    attach();
+    attach(owner, stack, at);
     // At a separator: the first entry of the leftmost leaf right of it.
-    stack_.set_index(stack_.index() + 1);
-    stack_.template descend_to_leaf<node_end::first>();
-    point_at_stack();
+    stack.set_index(stack.index() + 1);
+    stack.template descend_to_leaf<node_end::first>();
+    return position_of_stack(stack);
   }
 
-  void cross_backward() noexcept {
-    attach();
-    if (stack_.ends_at_leaf()) {
+  [[gnu::noinline]] static position cross_backward(const tree<T>* owner, node_stack<T>& stack,
+                                                   position at) noexcept {
+    if (at.key == nullptr) {
+      // From past the last entry: the last.
+      if (owner->has_root()) {
+        stack.attach(owner->root());
+        if (stack.descend_to_last_key()) {
+          return position_of_stack(stack);
+        }
+        stack.detach();
+      }
+      return {};
+    }
+    attach(owner, stack, at);
+    if (stack.ends_at_leaf()) {
       // Before the leaf's first entry: the separator left of it.
-      for (std::size_t at = stack_.depth(); at-- > 0;) {
-        if (stack_.index_at(at) > 0) {
-          while (stack_.depth() > at) {
-            stack_.ascend();
+      for (std::size_t level = stack.depth(); level-- > 0;) {
+        if (stack.index_at(level) > 0) {
+          while (stack.depth() > level) {
+            stack.ascend();
           }
-          stack_.set_index(stack_.index() - 1);
-          point_at_stack();
-          return;
+          stack.set_index(stack.index() - 1);
+          return position_of_stack(stack);
         }
       }
       assert(false && "stepping before the first entry");
-      return;
+      return at;
     }
     // At a separator: the last entry of the rightmost leaf left of it.
-    stack_.template descend_to_leaf<node_end::last>();
-    stack_.set_index(stack_.index() - 1);
-    point_at_stack();
+    stack.template descend_to_leaf<node_end::last>();
+    stack.set_index(stack.index() - 1);
+    return position_of_stack(stack);
   }
 
   // From a node stack at a leaf's last edge: up to the nearest separator
   // right of it, or past the last entry.
-  void climb_to_separator_after() noexcept {
-    for (std::size_t at = stack_.depth(); at-- > 0;) {
-      if (stack_.index_at(at) < stack_.internal_at(at).len()) {
-        while (stack_.depth() > at) {
-          stack_.ascend();
+  static position climb_to_separator_after(node_stack<T>& stack) noexcept {
+    for (std::size_t level = stack.depth(); level-- > 0;) {
+      if (stack.index_at(level) < stack.internal_at(level).len()) {
+        while (stack.depth() > level) {
+          stack.ascend();
         }
-        point_at_stack();
-        return;
+        return position_of_stack(stack);
       }
     }
-    detach_to_end();
+    stack.detach();
+    return {};
   }
 
   const tree<T>* tree_ = nullptr;
-  K* key_ = nullptr;
-  V* value_ = nullptr;
-  // One past the last key of the leaf the entry is in; null at a separator.
-  K* key_end_ = nullptr;
-  std::size_t leaf_len_ = 0;
+  position at_;
   node_stack<T> stack_;
 };
 

@@ -11,6 +11,7 @@
 #include <random>
 #include <ranges>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../support/test_types.hpp"
@@ -96,6 +97,28 @@ TEST_CASE("iteration visits every entry in order, both ways", "[map]") {
   }
   CHECK(backward == std::vector<std::pair<std::uint64_t, std::uint64_t>>(model.rbegin(), model.rend()));
   CHECK(static_cast<std::size_t>(std::distance(map.begin(), map.end())) == map.size());
+}
+
+TEST_CASE("for_each visits every entry in order and writes values", "[map]") {
+  string_map map;
+  std::map<std::string, std::string> model;
+  std::vector<std::pair<std::string, std::string>> visited;
+  const auto record = [&](const std::string& key, const std::string& value) {
+    visited.emplace_back(key, value);
+  };
+  std::as_const(map).for_each(record);
+  CHECK(visited.empty());
+  for (std::uint64_t i = 0; i < 5000; ++i) {
+    const std::string key = "/srv/" + std::to_string(i * 7919 % 10007);
+    map.insert_or_assign(key, std::to_string(i));
+    model.insert_or_assign(key, std::to_string(i));
+  }
+  map.for_each([](const std::string&, std::string& value) { value += "!"; });
+  for (auto& [key, value] : model) {
+    value += "!";
+  }
+  std::as_const(map).for_each(record);
+  CHECK(visited == std::vector<std::pair<std::string, std::string>>(model.begin(), model.end()));
 }
 
 TEST_CASE("an iterator from find steps on through the tree", "[map]") {

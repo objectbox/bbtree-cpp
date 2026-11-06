@@ -31,6 +31,9 @@ void check_equal(const Set& set, const Model& model) {
   set.check_invariants();
   REQUIRE(set.size() == model.size());
   REQUIRE(std::equal(set.begin(), set.end(), model.begin(), model.end()));
+  std::vector<typename Model::value_type> visited;
+  set.for_each([&](const auto& key) { visited.push_back(key); });
+  REQUIRE(std::equal(visited.begin(), visited.end(), model.begin(), model.end()));
 }
 
 }  // namespace

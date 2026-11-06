@@ -44,3 +44,14 @@ ordered by their own bytes (integers, byte arrays). The Rust crate also
 settles a byte-string key that ends within its leaf's 8-byte inline key by
 its hash tag, an exact length below 255, reading no heap byte. String maps
 take the shared latch instead.
+
+## Iterators whose steps stay in registers
+
+Range-for steps keep the iterator's position in memory, because the leaf
+crossings take the node stack inside the iterator by address: 1.6 ns an
+entry with Clang against 0.9 for `for_each`. An iterator could keep its node
+stack outside itself (a cursor handle into a stack the range owns), or keep
+none and find the next leaf by a search from the root at each crossing,
+using the internal nodes' separators. Either way, more iterator states
+(attached, detached, at a separator) have to stay in sync with the cursor's
+removal paths.

@@ -243,9 +243,8 @@ class bbtree_map {
   template <class F>
   void for_each(F&& f) {
     tree_.change_owned([&](detail::tree<types>& whole) {
-      for (auto at = detail::cursor<types>::first(&whole); !at.is_end(); at.next()) {
-        f(std::as_const(*at.key()), *at.value());
-      }
+      auto mutable_value = [&](K& key, V& value) { f(std::as_const(key), value); };
+      detail::cursor<types>::first(&whole).visit_to_end(mutable_value);
     });
   }
 

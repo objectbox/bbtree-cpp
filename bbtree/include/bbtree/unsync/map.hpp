@@ -176,6 +176,19 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
   const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
 
+  // Runs `visit(key, value)` on every entry in key order, a leaf at a time:
+  // faster than iterators, whose steps keep their place in memory (P16).
+  template <class Visit>
+  void for_each(Visit&& visit) {
+    auto mutable_value = [&](K& key, V& value) { visit(std::as_const(key), value); };
+    cursor_type::first(&tree_).visit_to_end(mutable_value);
+  }
+  template <class Visit>
+  void for_each(Visit&& visit) const {
+    auto const_value = [&](K& key, V& value) { visit(std::as_const(key), std::as_const(value)); };
+    cursor_type::first(&tree_).visit_to_end(const_value);
+  }
+
   // --- Capacity ---
 
   [[nodiscard]] bool empty() const noexcept { return length_ == 0; }
