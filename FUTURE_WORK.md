@@ -44,3 +44,33 @@ ordered by their own bytes (integers, byte arrays). The Rust crate also
 settles a byte-string key that ends within its leaf's 8-byte inline key by
 its hash tag, an exact length below 255, reading no heap byte. String maps
 take the shared latch instead.
+
+## bbtree-store: a refused insert without an exception
+
+A store whose budget is spent refuses inserts by an `alloc_error` thrown
+from its closure inside the map and caught by `insert` (PORTING.md, [refused inserts](PORTING.md#p21-refusing-an-insert-by-throwing-not-by-a-result-type)),
+microseconds a refusal. A cache that runs at its budget refuses often; a
+refusal result threaded through `latched_changes`' insert paths, and a
+non-throwing failure of the split's page reservation, would make it as
+cheap as an insert. Not measured.
+
+## bbtree-store: heads' stubs go once their key is no longer a head
+
+A head key whose value outgrew its record keeps a stub and a target
+(PORTING.md, [heads' records](PORTING.md#p24-a-leafs-head-keys-record-stays-put)) until its key is written again or removed. A compaction
+could point a non-head key's stub's key to its target and kill the stub,
+saving the stub's bytes and the indirection on reads.
+
+## bbtree-store: smaller records for tiny values
+
+Every record keeps 8 bytes after its key so that a head's record can become
+a stub in place ([heads' records](PORTING.md#p24-a-leafs-head-keys-record-stays-put)): up to 8 bytes more than the Rust crate's for values
+under 8 bytes. A record could keep less, and a head with a tiny record grow
+by another route (a stub in a record of its own whose old bytes die only
+once no separator's reader can hold them), at the cost of a second path.
+
+## CRC32C in hardware
+
+The WAL's CRC32C is a byte-at-a-time table ([CRC32C](PORTING.md#p27-crc32c-a-table-a-byte-at-a-time)). SSE4.2's `crc32`
+instruction (8 bytes a cycle), or slicing by 8, would cut the CRC of a
+commit of many records, if appends ever show it.

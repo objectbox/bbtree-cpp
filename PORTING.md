@@ -285,3 +285,119 @@ ankerl::unordered_dense; the library stays dependency-free.
   one bound and the visitor stops it at the other. The Rust crate's scans
   take `RangeBounds` and resumable cursors (`ScanResume`, `LeafStamp`),
   which no caller here needs yet.
+
+## P23. bbtree-store: what is ported, and its API in C++
+
+- **Ported:** the store (`store.hpp`), records and their keys
+  (`record.hpp`), heap pages, chains and compaction (`heap_page.hpp`,
+  `leaf_heap.hpp`), overflow pages, copied ranges (`range.hpp`), and the
+  WAL (`wal/`), with the Rust crate's tests (`tests/store.rs`,
+  `tests/wal`, the record tests) and two more: threads changing the same
+  keys while others read and scan, under TSan; and the WAL's encoding
+  properties the Verus proofs covered (P28). **Left out:** the Verus proofs
+  (P1), and the store's bench example, which goes with the bench (M9).
+- **Keys and values are `std::span<const std::uint8_t>`**, the Rust
+  crate's `&[u8]`; `bytes_of(std::string_view)` views a string as one.
+- **`insert` returns an `insert_result`** (inserted, replaced,
+  key_too_long, value_too_long, refused) for `Result<bool, InsertError>`:
+  a refused insert is an expected outcome under a budget, not an exception.
+  Inside, the store's closures refuse by throwing `alloc_error` (P21), and
+  `insert` catches it, giving the value's overflow pages back.
+- **Ranges:** `key_range` of two `key_bound`s (unbounded, included,
+  excluded) for `RangeBounds`; a range that starts after it ends throws
+  `std::invalid_argument` where Rust panics. `scan`'s visitor returns
+  false to stop, for `ControlFlow<R>`: the caller keeps what it would break
+  with. `range_copies` has `next` and `next_back` returning
+  `std::optional`, the Rust crate's double-ended iterator.
+- **`store_key`'s pointer is a `mutable` plain pointer,** where Rust has an
+  `AtomicPtr` for interior mutability through `&StoreKey`. Every read and
+  write of it is ordered by a latch: the key's leaf's for every key, and
+  for a head, which the store never changes (P24), the internal node its
+  separator is in. Byte moves of keys (P6) stay plain `memmove`s.
+- **Generations are 7 bits** (wrapping at 128 instead of 256): a record's
+  generation byte keeps the stub bit beside it (P24). Strays still come
+  home two generations on.
+
+## P24. A leaf's head key's record stays put
+
+- **The race:** a separator is the head key of the leaf right of it (D49),
+  and a thread holding an internal node reads it without holding that leaf,
+  to refit the node's prefix (`refit_prefix`, `refit_children_to_fences`).
+  The Rust store moves records in compaction and pulls, and points keys to
+  new records when values grow, holding only the key's leaf. So a split
+  refitting a node read a head key's record while the head's leaf slid
+  records over it: ThreadSanitizer reported it in the store's threads
+  test (a refit in `refit_split_halves` against a compaction's `memmove`
+  and pointer swap). The Rust crate has the same interleaving; its
+  `AtomicPtr` hides the pointer's race, not the bytes'.
+- **Chosen:** the store leaves the head key, and every byte a separator's
+  reader reads (its key length and key bytes), as they are while it is the
+  head. Compaction treats the head's record as another leaf's (its page
+  isn't slid, and goes only as an orphan), pulls skip it, and a value too
+  long for it goes into a new record, the target, which the head's record
+  becomes a stub of, in place: the stub keeps its key and points to the
+  target, which moves and changes as any record does. To become a stub in
+  place, every record keeps at least a link's room (8 bytes) after its key.
+  `annexed_leaf` gained `has_head` and `is_head`, and its contract says
+  the head is not the closure's to change.
+- **Alternatives:** (1) refits latch each head leaf whose key they read:
+  they run mid-change, where no operation may restart, and a waiting
+  refitter could deadlock with another unless waits only go down the tree,
+  which would hold but needs every key read in the node code to know which
+  leaves its thread already holds. (2) Keep a replaced head's old record
+  alive (a zombie) until no reader can hold its address: no point is known
+  where that is true without epochs. (3) Skip refits that grow prefixes in
+  annexed maps: weaker inline keys for every store search, and an invariant
+  relaxed.
+- **Cost:** a record of a value under 8 bytes takes up to 8 more bytes
+  (17 + key bytes for an empty value, against 9 + key); a head whose value
+  outgrows its record takes a stub and a target until its key is written
+  again when not a head, or removed. Records of values of 8 bytes or more
+  are as in the Rust crate.
+
+## P25. The WAL is synchronous
+
+- **Chosen:** `wal_storage` is a concept of three blocking calls (`append`,
+  `len`, `read`) and `wal_writer`'s `open` and `append` return once the
+  storage answered. The Rust crate's are `async`, so that an S3 backend's
+  milliseconds don't hold a thread.
+- **Alternatives:** C++20 coroutines (`co_await` on each storage call),
+  which need an executor the standard doesn't have and every caller to
+  pick one; or callbacks, which turn the writer's retry and read-back
+  logic into a state machine. The writer is one thread appending one
+  append at a time, which blocks just as well; a backend can still run
+  its I/O on its own threads.
+
+## P26. WAL errors: exceptions, and the storage's `std::error_code`
+
+- **Chosen:** the writer and `read_value` throw `wal::wal_error`
+  (`kind()`: storage, tail_moved, corrupted, with `code()`, `file()`,
+  `offset()`), the Rust crate's `WalError`. A storage's `append` returns an
+  `append_result` (appended, offset_mismatch, or outcome_unknown with a
+  `std::error_code`), as the writer retries on it; `len` and `read` throw
+  `std::system_error`, which the writer turns into a storage `wal_error`.
+- **Why exceptions:** every WAL error ends the operation, and opening
+  again is the recovery, as for I/O errors elsewhere in C++ (std::
+  filesystem). C++20 has no `std::expected`.
+- **One difference:** a `read_value` past its file's end is `corrupted`
+  (the address doesn't hold its record), where Rust reports the storage's
+  `UnexpectedEof`.
+
+## P27. CRC32C: a table, a byte at a time
+
+- **Chosen:** the reflected Castagnoli polynomial (0x82F63B78), all ones in
+  and out, the `crc32c` crate's and S3's, from a 256-entry `constexpr`
+  table; checked against the standard check value and RFC 3720's.
+- **Alternatives:** SSE4.2's `crc32` instruction, as the `crc32c` crate
+  uses, or slicing by 8: faster for long records, but a second path to
+  test per CPU. The WAL appends once a commit (every 1 ms); a CRC of a few
+  KB is microseconds either way. In FUTURE_WORK.md.
+
+## P28. The WAL's proofs become tests and assertions
+
+- The Verus specs of `record.rs` and `tail.rs` (P1) become tests: every
+  record decodes from its bytes whatever follows them, a record cut short
+  decodes to nothing, any flipped bit fails its check, and a scan reads
+  back what appends wrote, with the same addresses and tail, picking up
+  where it stopped. Their preconditions (lengths fit in `u32`, appends not
+  empty) are assertions, or `std::length_error` for the caller's records.

@@ -57,6 +57,12 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [x] bbtree-mmap: typed map files (mmap, read, huge pages), var-length keys and values as spans into heap
   pages after their leaves, lookups example
 ## M7 bbtree-store (D60): leaf annex, heap pages, records, WAL
+- [x] leaf annex in the shared map (P20, P21), reverse scans (P22)
+- [x] bbtree-store: records, heap pages, chains, compaction, strays, overflow pages, scans both ways,
+  copied ranges; heads' records stay put (P23, P24); tests against std::map, budgets, churn, threads (TSan)
+- [x] WAL: records, tail, writer, storage concept, CRC32C (P25 to P28); the Rust tests and the proofs'
+  properties as tests
+- [ ] later: the store's bench example (with M9)
 ## M8 Fuzz targets (libFuzzer), racing-reads checker, kernel-target build
 ## M9 Bench harness (std::map, abseil btree_map, ankerl, std::unordered_map)
 ## M10 READMEs and docs

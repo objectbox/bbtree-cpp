@@ -44,3 +44,4 @@ endif()
 
 add_subdirectory(bbtree)
 add_subdirectory(bbtree-mmap)
+add_subdirectory(bbtree-store)
