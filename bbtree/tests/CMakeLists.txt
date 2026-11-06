@@ -5,6 +5,7 @@ set(BBTREE_TEST_SOURCES
   allocator_test.cpp
   file_test.cpp
   fuzz_harness_test.cpp
+  readme_test.cpp
   node/inline_key_test.cpp
   node/layout_test.cpp
   tree/differential_test.cpp

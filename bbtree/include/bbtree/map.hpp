@@ -41,8 +41,10 @@ class bbtree_map {
   using tree_type = detail::latched_tree<types>;
   using pages_type = detail::page_source<Allocator>;
 
+  // Lookups take `const K&`, which converts as std::map's do, and other key
+  // types with a transparent comparator.
   template <class Q>
-  static constexpr bool lookup_type = std::is_same_v<Q, K> || requires { typename Compare::is_transparent; };
+  static constexpr bool lookup_type = !std::is_same_v<Q, K> && requires { typename Compare::is_transparent; };
 
  public:
   using key_type = K;
@@ -61,6 +63,10 @@ class bbtree_map {
   // Runs `f(key, value)` on the entry at `key` while its leaf is latched
   // shared; returns what `f` returned, or nothing (for an `f` that returns
   // nothing: whether the entry was there).
+  template <class F>
+  auto read(const K& key, F&& f) const {
+    return tree_.read(key, std::forward<F>(f));
+  }
   template <class Q, class F>
     requires lookup_type<Q>
   auto read(const Q& key, F&& f) const {
@@ -69,6 +75,11 @@ class bbtree_map {
 
   // A copy of the value at `key`: read without a latch where the leaf
   // settles the key (D57); trivially copyable values only.
+  std::optional<V> get_copied(const K& key) const
+    requires std::is_trivially_copyable_v<V>
+  {
+    return tree_.get_copied(key);
+  }
   template <class Q>
     requires(lookup_type<Q> && std::is_trivially_copyable_v<V>)
   std::optional<V> get_copied(const Q& key) const {
@@ -76,14 +87,18 @@ class bbtree_map {
   }
 
   // A copy of the value at `key`, made with the leaf latched shared.
+  std::optional<V> get_cloned(const K& key) const {
+    return tree_.read(key, [](const K&, const V& value) { return V(value); });
+  }
   template <class Q>
     requires lookup_type<Q>
   std::optional<V> get_cloned(const Q& key) const {
     return tree_.read(key, [](const K&, const V& value) { return V(value); });
   }
 
+  bool contains(const K& key) const { return tree_.contains(key); }
   template <class Q>
-    requires lookup_type<Q> bool
+    requires(lookup_type<Q>) bool
   contains(const Q& key) const {
     return tree_.contains(key);
   }
@@ -97,6 +112,10 @@ class bbtree_map {
   }
 
   // The same, from the first entry not ordered before `start`.
+  template <class Visit>
+  void scan_from(const K& start, Visit&& visit) const {
+    detail::latched_scan<types>(tree_).from(&start, visit);
+  }
   template <class Q, class Visit>
     requires lookup_type<Q>
   void scan_from(const Q& start, Visit&& visit) const {
@@ -107,6 +126,10 @@ class bbtree_map {
 
   // Runs `f(key, value)` on the entry at `key` while its leaf is latched
   // exclusive; returns what `f` returned, or nothing.
+  template <class F>
+  auto update(const K& key, F&& f) {
+    return tree_.update(key, std::forward<F>(f));
+  }
   template <class Q, class F>
     requires lookup_type<Q>
   auto update(const Q& key, F&& f) {
@@ -165,6 +188,10 @@ class bbtree_map {
   }
 
   // Removes and returns the entry at `key`, if any.
+  std::optional<std::pair<K, V>> remove(const K& key) {
+    auto always = [](const K&, const V&) { return true; };
+    return changes().remove(key, always, pages());
+  }
   template <class Q>
     requires lookup_type<Q>
   std::optional<std::pair<K, V>> remove(const Q& key) {
@@ -174,14 +201,19 @@ class bbtree_map {
 
   // Removes and returns the entry at `key` if `condition(key, value)` holds
   // of it, its leaf latched exclusive.
+  template <class Condition>
+  std::optional<std::pair<K, V>> remove_if(const K& key, Condition&& condition) {
+    return changes().remove(key, condition, pages());
+  }
   template <class Q, class Condition>
     requires lookup_type<Q>
   std::optional<std::pair<K, V>> remove_if(const Q& key, Condition&& condition) {
     return changes().remove(key, condition, pages());
   }
 
+  bool erase(const K& key) { return remove(key).has_value(); }
   template <class Q>
-    requires lookup_type<Q> bool
+    requires(lookup_type<Q>) bool
   erase(const Q& key) {
     return remove(key).has_value();
   }
@@ -189,6 +221,12 @@ class bbtree_map {
   // --- The owner's ---
 
   // The value at `key`, for the owner to change in place. Owner.
+  V* get_owned(const K& key) {
+    return tree_.change_owned([&](detail::tree<types>& whole) -> V* {
+      const auto found = whole.find(key);
+      return found ? found->value() : nullptr;
+    });
+  }
   template <class Q>
     requires lookup_type<Q>
   V* get_owned(const Q& key) {
