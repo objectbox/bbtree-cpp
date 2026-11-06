@@ -55,9 +55,17 @@ class internal_node : public child_node<T, internal_node<T>, false> {
 
   // --- Children ---
 
+  // The child at edge `index`: in a file map, the edge holds the child's
+  // tagged offset from this node's page (D58).
   node_ptr<T> edge(std::size_t index) const noexcept {
     assert(index <= len() && "edge index out of bounds");
-    return *edge_slots().slot(index);
+    if constexpr (T::in_file) {
+      std::uintptr_t offset;
+      std::memcpy(&offset, edge_slots().slot(index), sizeof offset);
+      return node_ptr<T>::from_tagged(reinterpret_cast<std::uintptr_t>(node_.page()) + offset);
+    } else {
+      return *edge_slots().slot(index);
+    }
   }
   bool has_leaf_children() const noexcept { return edge(0).is_leaf(); }
   leaf_node<T> leaf_child(std::size_t index) const noexcept { return leaf_node<T>(edge(index)); }

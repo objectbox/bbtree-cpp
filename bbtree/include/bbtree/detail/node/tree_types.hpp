@@ -27,6 +27,16 @@ struct strategy_traits<latched<S>> : strategy_traits<S> {
   static constexpr bool latched = true;
 };
 
+// A file map's strategy (D58): `S`'s inline keys, nodes read where they lie
+// in a file map, each edge the offset of its child from its node's page.
+template <class S>
+struct in_file {};
+
+template <class S>
+struct strategy_traits<in_file<S>> : strategy_traits<S> {
+  static constexpr bool in_file = true;
+};
+
 template <class K, class V, class Compare, class Strategy>
 struct tree_types {
   using key_type = K;

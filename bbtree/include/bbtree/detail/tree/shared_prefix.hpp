@@ -7,6 +7,7 @@
 
 #include <bbtree/detail/node/tree_types.hpp>
 
+#include <algorithm>
 #include <array>
 #include <compare>
 #include <cstddef>
@@ -32,6 +33,15 @@ class shared_prefix {
   static shared_prefix of_key(const typename T::key_type& key) noexcept {
     shared_prefix shared;
     shared.len_ = static_cast<std::uint8_t>(T::inliner::write_leading_bytes(key, shared.bytes_));
+    return shared;
+  }
+
+  // The prefix of these bytes, at most `max_len` of them: as a file map's
+  // header keeps it.
+  static shared_prefix of_bytes(std::span<const std::uint8_t> bytes) noexcept {
+    shared_prefix shared;
+    shared.len_ = static_cast<std::uint8_t>(bytes.size() < max_len ? bytes.size() : max_len);
+    std::copy_n(bytes.begin(), shared.len_, shared.bytes_.begin());
     return shared;
   }
 
