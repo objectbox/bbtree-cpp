@@ -1,0 +1,86 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Clang, debug, tests and invariant checks",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "asan",
+      "displayName": "Clang, AddressSanitizer + UBSan (the local stand-in for Miri)",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "BBTREE_SANITIZE": "address,undefined" }
+    },
+    {
+      "name": "tsan",
+      "displayName": "Clang, ThreadSanitizer",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "BBTREE_SANITIZE": "thread" }
+    },
+    {
+      "name": "gcc",
+      "displayName": "GCC, debug, tests",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "g++", "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "displayName": "Clang, release, tests",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "bench",
+      "displayName": "Clang, release, native CPU, bench only",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BBTREE_BUILD_TESTS": "OFF",
+        "BBTREE_CHECKED": "OFF",
+        "BBTREE_BUILD_BENCH": "ON",
+        "BBTREE_NATIVE": "ON",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "fuzz",
+      "displayName": "Clang, libFuzzer + ASan",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "BBTREE_BUILD_TESTS": "OFF",
+        "BBTREE_CHECKED": "ON",
+        "BBTREE_BUILD_FUZZ": "ON",
+        "BBTREE_SANITIZE": "address,undefined"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "gcc", "configurePreset": "gcc" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "bench", "configurePreset": "bench" },
+    { "name": "fuzz", "configurePreset": "fuzz" }
+  ],
+  "testPresets": [
+    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
+    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true } },
+    { "name": "gcc", "configurePreset": "gcc", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
+  ]
+}
