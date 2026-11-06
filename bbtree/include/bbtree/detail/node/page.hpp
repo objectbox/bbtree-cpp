@@ -398,7 +398,8 @@ class node_ptr {
   }
 
   // Makes the page at `page` an empty node of the given kind, whatever it
-  // held: no keys, no head, every inline-key slot the greatest.
+  // held: no keys, no head, every inline-key slot the greatest; a leaf's
+  // annex, if it keeps one, default-constructed (D60).
   template <bool IsLeaf>
   static node_ptr initialize(std::byte* page) noexcept {
     const node_header header{0, false};
@@ -406,6 +407,9 @@ class node_ptr {
       ::new (static_cast<void*>(page)) inline_key_node_header{header, 0};
     } else {
       ::new (static_cast<void*>(page)) node_header(header);
+    }
+    if constexpr (IsLeaf && T::has_leaf_annex) {
+      ::new (static_cast<void*>(page + T::leaf_annex_offset)) typename T::annex();
     }
     key_columns<T, IsLeaf>(page).initialize();
     return IsLeaf ? leaf_at(page) : internal_at(page);

@@ -28,12 +28,12 @@ A lane rebuilds its `search_key` at each stage, which rereads a string
 query's length and pointer. The Rust crate keeps the query in the lane
 (12-batch-api.md, rule 5). It matters for string keys only.
 
-## The shared map's batches, reverse scans and copied ranges
+## The shared map's batches and copied ranges
 
 The Rust crate's shared map has batched `read_many`, `get_many_copied`,
-`get_many_cloned`, `insert_many` and `update_or_insert_many`,
-`scan_rev` and `range_cloned`. Not ported yet: the bench drives the shared
-map with single-key operations and forward scans only. The unsync map's
+`get_many_cloned`, `insert_many` and `update_or_insert_many`, and
+`range_cloned`. Not ported yet: the bench drives the shared map with
+single-key operations and scans only. The unsync map's
 level-by-level lanes ([batches](PORTING.md#p10-batches-descend-level-by-level-not-in-async-lanes)) would carry over, each lane ending in
 an optimistic leaf read.
 

@@ -15,6 +15,7 @@
 
 #include <bbtree/detail/node/layout.hpp>
 #include <bbtree/inline_key.hpp>
+#include <bbtree/leaf_annex.hpp>
 #include <bbtree/node_config.hpp>
 
 #include <algorithm>
@@ -76,6 +77,11 @@ struct strategy_traits {
 template <class S, class C>
 struct strategy_traits<configured<S, C>> : strategy_traits<S> {
   using config = C;
+};
+
+template <class S, class L>
+struct strategy_traits<with_leaf_annex<S, L>> : strategy_traits<S> {
+  using annex = L;
 };
 
 // Heap page size resolved: 0 in a config means the leaves'.

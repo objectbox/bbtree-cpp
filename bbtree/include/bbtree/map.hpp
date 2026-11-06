@@ -16,9 +16,14 @@
 //
 // Methods marked "owner" need the map to themselves, as the Rust crate's
 // `&mut self` methods do: no other thread may use the map meanwhile.
+//
+// A map whose strategy is `with_leaf_annex<S, L>` keeps an `L` in each leaf
+// (D60, `leaf_annex.hpp`), which `update_or_insert_with_leaf` and
+// `remove_with_leaf` hand their closures with the leaf they hold.
 #pragma once
 
 #include <bbtree/allocator.hpp>
+#include <bbtree/annexed_leaf.hpp>
 #include <bbtree/detail/latched/changes.hpp>
 #include <bbtree/detail/latched/latched_tree.hpp>
 #include <bbtree/detail/latched/scan.hpp>
@@ -41,14 +46,22 @@ class bbtree_map {
   using tree_type = detail::latched_tree<types>;
   using pages_type = detail::page_source<Allocator>;
 
+  using leaf = detail::leaf_node<types>;
+
   template <class Q>
   static constexpr bool lookup_type = std::is_same_v<Q, K> || requires { typename Compare::is_transparent; };
+
+  static_assert(!types::has_leaf_annex || leaf_annex_for<typename types::annex, Allocator>,
+                "a map's leaf annex releases to the map's allocator (D60)");
 
  public:
   using key_type = K;
   using mapped_type = V;
   using key_compare = Compare;
   using allocator_type = Allocator;
+  // A leaf an insert or a removal holds while it runs its caller's closure,
+  // with its annex (D60).
+  using annexed_leaf_type = annexed_leaf<types>;
 
   bbtree_map() noexcept = default;
   explicit bbtree_map(const Allocator& allocator) noexcept : allocator_(allocator) {}
@@ -103,6 +116,19 @@ class bbtree_map {
     detail::latched_scan<types>(tree_).from(&start, visit);
   }
 
+  // `scan` in reverse key order: from the last entry back.
+  template <class Visit>
+  void scan_rev(Visit&& visit) const {
+    detail::latched_scan<types>(tree_).template back_from<K>(nullptr, visit);
+  }
+
+  // The same, from the last entry not ordered after `end` back.
+  template <class Q, class Visit>
+    requires lookup_type<Q>
+  void scan_rev_from(const Q& end, Visit&& visit) const {
+    detail::latched_scan<types>(tree_).back_from(&end, visit);
+  }
+
   // --- Changes, from any thread ---
 
   // Runs `f(key, value)` on the entry at `key` while its leaf is latched
@@ -117,8 +143,8 @@ class bbtree_map {
   // it did. Throws `alloc_error`, the map unchanged, if a page is refused.
   bool insert(K key, V value) {
     struct keep_existing {
-      bool occupied(const K&, V&, V&&) noexcept { return false; }
-      bool vacant(const K&, const V&) noexcept { return true; }
+      bool occupied(leaf, const K&, V&, V&&) noexcept { return false; }
+      bool vacant(leaf, const K&, const V&) noexcept { return true; }
     } policy;
     return changes().insert(std::move(key), std::move(value), policy, pages());
   }
@@ -127,10 +153,10 @@ class bbtree_map {
   // value replaced, if any (the Rust crate's `insert`).
   std::optional<V> insert_or_assign(K key, V value) {
     struct replace {
-      std::optional<V> occupied(const K&, V& stored, V&& with) noexcept {
+      std::optional<V> occupied(leaf, const K&, V& stored, V&& with) noexcept {
         return std::exchange(stored, std::move(with));
       }
-      std::optional<V> vacant(const K&, const V&) noexcept { return std::nullopt; }
+      std::optional<V> vacant(leaf, const K&, const V&) noexcept { return std::nullopt; }
     } policy;
     return changes().insert(std::move(key), std::move(value), policy, pages());
   }
@@ -144,10 +170,10 @@ class bbtree_map {
     using result = detail::closure_result<std::invoke_result_t<F&, const K&, V&, V&&>>;
     struct merge {
       F& f;
-      typename result::type occupied(const K& stored_key, V& stored, V&& with) {
+      typename result::type occupied(leaf, const K& stored_key, V& stored, V&& with) {
         return result::of(f, stored_key, stored, std::move(with));
       }
-      typename result::type vacant(const K&, const V&) noexcept { return result::none(); }
+      typename result::type vacant(leaf, const K&, const V&) noexcept { return result::none(); }
     } policy{f};
     return changes().insert(std::move(key), std::move(value), policy, pages());
   }
@@ -158,9 +184,42 @@ class bbtree_map {
   auto get_or_insert(K key, V value, F&& f) {
     struct read {
       F& f;
-      auto occupied(const K& stored_key, V& stored, V&&) { return f(stored_key, std::as_const(stored)); }
-      auto vacant(const K& new_key, const V& new_value) { return f(new_key, new_value); }
+      auto occupied(leaf, const K& stored_key, V& stored, V&&) {
+        return f(stored_key, std::as_const(stored));
+      }
+      auto vacant(leaf, const K& new_key, const V& new_value) { return f(new_key, new_value); }
     } policy{f};
+    return changes().insert(std::move(key), std::move(value), policy, pages());
+  }
+
+  // Runs `occupied(leaf, key, value)` on the entry at `key`, its value
+  // exclusive, or, if the map holds none, `vacant(leaf, key, value)` on `key`
+  // and `value`, which go in right after; each with the leaf the entry is
+  // in, or goes in (`annexed_leaf_type`, its annex included, D60), while no
+  // other thread reads or changes that leaf. Returns what the closure
+  // returned; both return the same type, not void.
+  //
+  // A closure refuses, for want of a page, by throwing (`alloc_error`):
+  // the map is unchanged, and the exception goes on to the caller, as it does
+  // if the allocator refuses a node page. A node page is taken before `vacant`
+  // runs.
+  template <class Occupied, class Vacant>
+  auto update_or_insert_with_leaf(K key, V value, Occupied&& occupied, Vacant&& vacant) {
+    using result = std::invoke_result_t<Occupied&, annexed_leaf_type, const K&, V&>;
+    static_assert(
+        std::is_same_v<result, std::invoke_result_t<Vacant&, annexed_leaf_type, const K&, const V&>>,
+        "both closures return the same type");
+    static_assert(!std::is_void_v<result>, "the closures return a value");
+    struct with_leaf {
+      Occupied& on_occupied;
+      Vacant& on_vacant;
+      result occupied(leaf held, const K& stored_key, V& stored, V&&) {
+        return on_occupied(annexed_leaf_type(held), stored_key, stored);
+      }
+      result vacant(leaf held, const K& new_key, const V& new_value) {
+        return on_vacant(annexed_leaf_type(held), new_key, new_value);
+      }
+    } policy{occupied, vacant};
     return changes().insert(std::move(key), std::move(value), policy, pages());
   }
 
@@ -169,7 +228,8 @@ class bbtree_map {
     requires lookup_type<Q>
   std::optional<std::pair<K, V>> remove(const Q& key) {
     auto always = [](const K&, const V&) { return true; };
-    return changes().remove(key, always, pages());
+    auto nothing = [](leaf, const K&, const V&) noexcept {};
+    return changes().remove(key, always, nothing, pages());
   }
 
   // Removes and returns the entry at `key` if `condition(key, value)` holds
@@ -177,7 +237,22 @@ class bbtree_map {
   template <class Q, class Condition>
     requires lookup_type<Q>
   std::optional<std::pair<K, V>> remove_if(const Q& key, Condition&& condition) {
-    return changes().remove(key, condition, pages());
+    auto nothing = [](leaf, const K&, const V&) noexcept {};
+    return changes().remove(key, condition, nothing, pages());
+  }
+
+  // Removes and returns the entry at `key`, if any, the key as the map
+  // stored it. `f(leaf, key, value)` runs once on it, with the leaf it is in
+  // (D60), right before it comes out, while no other thread reads or changes
+  // the leaf.
+  template <class Q, class F>
+    requires lookup_type<Q>
+  std::optional<std::pair<K, V>> remove_with_leaf(const Q& key, F&& f) {
+    auto always = [](const K&, const V&) { return true; };
+    auto before_removal = [&](leaf held, const K& stored_key, const V& stored) {
+      f(annexed_leaf_type(held), stored_key, stored);
+    };
+    return changes().remove(key, always, before_removal, pages());
   }
 
   template <class Q>

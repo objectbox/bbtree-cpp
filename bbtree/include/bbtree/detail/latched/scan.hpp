@@ -1,20 +1,25 @@
-// Visiting a latched tree's entries in key order, one leaf at a time
-// (09-concurrency.md, Scans): the caller's closure runs on each entry while
-// its leaf is latched shared, the leaf's head first, then its keys.
+// Visiting a latched tree's entries in key order or in reverse, one leaf at a
+// time (09-concurrency.md, Scans): the caller's closure runs on each entry
+// while its leaf is latched shared, the leaf's head first, then its keys, or
+// in reverse its keys from the last, then its head.
 //
-// - The first leaf is where the start bound belongs; without one, or with one
-//   before every key, the tree's first leaf.
-// - The next leaf is found from the internal nodes the descent kept: from the
-//   nearest one with an edge right of the path, down first edges, each node
+// - The first leaf is where the bound the scan starts from belongs; without
+//   one, or with one before every key (after every key, in reverse), the
+//   tree's first leaf, down first edges (its last, down last edges).
+// - The next leaf is the held leaf's neighbor on the scan's side, found from
+//   the internal nodes the descent kept: from the nearest one with an edge on
+//   that side of the path, down the edges nearest the held leaf, each node
 //   read optimistically and checked hand over hand. The scan latches the next
 //   leaf before it lets go of the held one, which can't split meanwhile.
 // - If a check fails, the scan searches again for the last key it visited,
-//   still holding that key's leaf so that the key stays where it is.
+//   still holding that key's leaf so that the key stays where it is: the
+//   leaf's last key going forward, its first in reverse.
 //
 // No deadlock: a thread waits for a leaf while holding one only here, to
 // latch it shared, which waits only for exclusive holders, and those take
-// every other node without waiting. A scan is not a snapshot: an entry
-// present for the whole scan is visited exactly once.
+// every other node without waiting; so scans in either direction and writers
+// form no cycle. A scan is not a snapshot: an entry present for the whole
+// scan is visited exactly once.
 #pragma once
 
 #include <bbtree/detail/latched/held.hpp>
@@ -68,7 +73,69 @@ class latched_scan {
     }
   }
 
+  // Runs `visit(key, value)` on every entry not ordered after `end` (every
+  // entry without one), from the last back, until it returns false.
+  template <class Q, class Visit>
+  void back_from(const Q* end, Visit& visit) {
+    if (!tree_.has_root()) {
+      return;
+    }
+    tree_path<T> path;
+    held_leaf<T, leaf_mode::shared> held;
+    // The held leaf's keys left to visit, from the last: keys 0..remaining.
+    std::size_t remaining = 0;
+    if (!end_at(end, path, held, remaining)) {
+      return;
+    }
+    while (true) {
+      const leaf_node<T> leaf = held.leaf();
+      for (; remaining > 0; --remaining) {
+        if (!visit(leaf.key(remaining - 1), std::as_const(leaf.value(remaining - 1)))) {
+          return;
+        }
+      }
+      if (leaf.has_head()) {
+        if (!visit(std::as_const(leaf.head_key()), std::as_const(leaf.head_value()))) {
+          return;
+        }
+      }
+      if (!previous_leaf(path, held)) {
+        return;
+      }
+      remaining = held.leaf().len();
+    }
+  }
+
  private:
+  // Latches the first leaf of a reverse scan, and how many of its keys it
+  // visits; its head it always does. False if nothing lies at or before
+  // `end`.
+  template <class Q>
+  bool end_at(const Q* end, tree_path<T>& path, held_leaf<T, leaf_mode::shared>& held,
+              std::size_t& remaining) {
+    if (end != nullptr) {
+      const search_key<T, Q> key(*end);
+      if (auto found = tree_.template descend<leaf_mode::shared>(key, path)) {
+        held = std::move(found->leaf);
+        if (found->at_separator) {
+          remaining = 0;
+        } else {
+          const search_result place = held.leaf().search(key);
+          remaining = place.found ? place.index + 1 : place.index;
+        }
+        return true;
+      }
+      // Outside what every key shares: before every key, or after.
+      const std::optional<std::strong_ordering> outside = tree_.racing_shared().place_outside(key);
+      if (outside && *outside < 0) {
+        return false;
+      }
+    }
+    descend_to_border<node_end::last>(path, held);
+    remaining = held.leaf().len();
+    return true;
+  }
+
   // Latches the first leaf of the scan, and the place in it to start from.
   template <class Q>
   bool start_at(const Q* start, tree_path<T>& path, held_leaf<T, leaf_mode::shared>& held,
@@ -92,14 +159,16 @@ class latched_scan {
         return false;
       }
     }
-    descend_to_first(path, held);
+    descend_to_border<node_end::first>(path, held);
     position = 0;
     head_first = false;
     return true;
   }
 
-  // The tree's first leaf, latched, down first edges.
-  void descend_to_first(tree_path<T>& path, held_leaf<T, leaf_mode::shared>& held) {
+  // The tree's first leaf, latched, down first edges; or its last, down last
+  // edges.
+  template <node_end End>
+  void descend_to_border(tree_path<T>& path, held_leaf<T, leaf_mode::shared>& held) {
     while (true) {
       path.clear();
       const node_ptr<T> root = tree_.root_node();
@@ -114,24 +183,26 @@ class latched_scan {
       if (tree_.root_node() != root) {
         continue;
       }
-      if (descend_first_edges(internal_node<T>(root), version, path, held)) {
+      if (descend_border_edges<End>(internal_node<T>(root), version, path, held)) {
         return;
       }
     }
   }
 
-  // Down first edges from `node`, read at `version`, to a latched leaf,
-  // recording the path; false if a check failed.
-  bool descend_first_edges(internal_node<T> node, latch_version version, tree_path<T>& path,
-                           held_leaf<T, leaf_mode::shared>& held) {
+  // Down first edges from `node`, read at `version`, to a latched leaf, or
+  // down last edges, recording the path; false if a check failed.
+  template <node_end End>
+  bool descend_border_edges(internal_node<T> node, latch_version version, tree_path<T>& path,
+                            held_leaf<T, leaf_mode::shared>& held) {
     while (true) {
       const node_latch latch(node.node().page());
       const std::size_t len = reads::header(node.node(), internal_node<T>::capacity).first;
-      const node_ptr<T> child = reads::child(node, 0);
+      const std::size_t edge = End == node_end::first ? 0 : len;
+      const node_ptr<T> child = reads::child(node, edge);
       if (!latch.is_unchanged(version) || !child) {
         return false;
       }
-      path.record(node, version, routed{0, false, len});
+      path.record(node, version, routed{edge, false, len});
       if (child.is_leaf()) {
         held_leaf<T, leaf_mode::shared> next{leaf_node<T>(child)};
         if (!latch.is_unchanged(version)) {
@@ -168,20 +239,55 @@ class latched_scan {
       const std::size_t edge = at.route.edge + 1;
       next_path.record(at.node, at.version, routed{edge, false, at.route.len});
       held_leaf<T, leaf_mode::shared> next;
-      if (descend_from(at.node, at.version, edge, next_path, next)) {
+      if (descend_from<node_end::first>(at.node, at.version, edge, next_path, next)) {
         held = std::move(next);
         path = next_path;
         return true;
       }
       // The path changed: search again for the last key visited, holding it.
-      if (!repath(path, held)) {
+      const leaf_node<T> leaf = held.leaf();
+      if (!repath(path, leaf.len() > 0 ? leaf.key(leaf.len() - 1) : leaf.head_key())) {
+        return false;
+      }
+    }
+  }
+
+  // Latches the held leaf's left neighbor, then lets go of the held one;
+  // false before the first leaf.
+  bool previous_leaf(tree_path<T>& path, held_leaf<T, leaf_mode::shared>& held) {
+    while (true) {
+      std::size_t level = path.depth();
+      while (level > 0 && path.level(level - 1).route.edge == 0) {
+        --level;
+      }
+      if (level == 0) {
+        return false;
+      }
+      const path_level<T> at = path.level(level - 1);
+      tree_path<T> next_path;
+      for (std::size_t above = 0; above + 1 < level; ++above) {
+        next_path.record(path.level(above).node, path.level(above).version, path.level(above).route);
+      }
+      const std::size_t edge = at.route.edge - 1;
+      next_path.record(at.node, at.version, routed{edge, false, at.route.len});
+      held_leaf<T, leaf_mode::shared> next;
+      if (descend_from<node_end::last>(at.node, at.version, edge, next_path, next)) {
+        held = std::move(next);
+        path = next_path;
+        return true;
+      }
+      // The path changed: search again for the first key visited last,
+      // holding it. A leaf with a left neighbor has a head.
+      const leaf_node<T> leaf = held.leaf();
+      if (!repath(path, leaf.has_head() ? leaf.head_key() : leaf.key(0))) {
         return false;
       }
     }
   }
 
   // From edge `edge` of `node`, read at `version`, down first edges to a
-  // latched leaf.
+  // latched leaf, or down last edges.
+  template <node_end End>
   bool descend_from(internal_node<T> node, latch_version version, std::size_t edge, tree_path<T>& path,
                     held_leaf<T, leaf_mode::shared>& next) {
     const node_latch latch(node.node().page());
@@ -201,15 +307,13 @@ class latched_scan {
     if (!latch.is_unchanged(version)) {
       return false;
     }
-    return descend_first_edges(internal_node<T>(child), child_version, path, next);
+    return descend_border_edges<End>(internal_node<T>(child), child_version, path, next);
   }
 
-  // A fresh path to the held leaf, by its last key, which can't move while
-  // the leaf is held.
-  bool repath(tree_path<T>& path, const held_leaf<T, leaf_mode::shared>& held) {
-    const leaf_node<T> leaf = held.leaf();
-    const K& last = leaf.len() > 0 ? leaf.key(leaf.len() - 1) : leaf.head_key();
-    auto again = tree_.template descend<leaf_mode::optimistic>(search_key<T, K>(last), path);
+  // A fresh path to the held leaf, by `held_key`, one of its keys, which
+  // can't move while the leaf is held.
+  bool repath(tree_path<T>& path, const K& held_key) {
+    auto again = tree_.template descend<leaf_mode::optimistic>(search_key<T, K>(held_key), path);
     return again.has_value();
   }
 

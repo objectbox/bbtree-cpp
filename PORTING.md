@@ -220,3 +220,68 @@ memory of a 1 KiB node). Comparing the port under glibc's malloc against
 the original under mimalloc would measure the allocators. So the C++ bench
 links mimalloc too, a bench-only dependency beside abseil and
 ankerl::unordered_dense; the library stays dependency-free.
+
+## P20. The leaf annex: a concept, hooks in the node code, and a handle
+
+- **Chosen:** `bbtree::with_leaf_annex<S, L>` (`leaf_annex.hpp`) gives a
+  shared map's leaves an `L` after their header, as D60 does. `L` models
+  `leaf_annex`: nothrow default construction, `split(L&) noexcept`,
+  `merge(L&&) noexcept`, and `bbtree::is_trivially_relocatable`; the map
+  also checks `leaf_annex_for<L, Allocator>`, `std::move(l).release(a)
+  noexcept` with its allocator. The node code constructs it in
+  `node_ptr::initialize`, calls it from `leaf_node::split_around` and
+  `leaf_node::append`, releases it in the teardown (after the leaf's
+  entries) and when `start_tree` loses its race, and relocates it with its
+  page (`move_to`). Every hook is an `if constexpr` on
+  `tree_types::has_leaf_annex`; a `static_assert` keeps annexes out of
+  unsync maps and file maps. Probe functions without an annex (insert,
+  get_copied, erase, insert_or_assign, clear, scan; `u64` and `std::string`
+  maps, Clang `-O2 -DNDEBUG`) compile to the same instructions as before,
+  symbol names aside.
+- **Trivially relocatable:** Rust moves an annex as bytes with its leaf; the
+  node code here does too (pages are copied whole, P6), so the concept asks
+  for it rather than adding a move callback to every page copy.
+- **`release` takes the map's allocator** (Rust: `release(self, alloc:
+  &impl Allocator)`): a concept cannot quantify over allocators, so
+  `leaf_annex_for<L, A>` is checked where the map knows `A`.
+- **`annexed_leaf<T>`** is the handle the closures get (the map's
+  `annexed_leaf_type`): `annex()`, and the leaf's keys by index
+  (`key_count()`, `key(i)`, the head first) where Rust returns an
+  iterator; the store reads them by index anyway.
+- **Policies take the leaf:** every insert policy's `occupied` and `vacant`
+  get the `leaf_node` they run in, and removals take a
+  `before_removal(leaf, key, value)` hook, a no-op for `remove`, passed by
+  value so that an empty one costs no argument. **Alternative:** detect the
+  policies that want a leaf with `requires` and leave the others'
+  signatures alone; two calling conventions for one hook are more to
+  review than one unused parameter.
+
+## P21. Refusing an insert: by throwing, not by a result type
+
+- **Chosen:** `update_or_insert_with_leaf`'s closures refuse by throwing
+  (`bbtree::alloc_error`, for want of a page). They run before the tree
+  changes, and every latch, held node and reserved page is let go by a
+  destructor (`held_leaf`, `held_nodes`, `node_pages`), so the map is
+  unchanged and the exception reaches the caller, as an allocator's refusal
+  of a node page already does. Both closures return the same non-void type,
+  which the call returns.
+- **Alternative:** Rust's `Result<R, Layout>` and `InsertError<K, V>`, which
+  hand the entry back: an optional-or-entry result threaded through every
+  insert path of `latched_changes`, and a second, non-throwing way for the
+  split's page reservation to fail. More code on the hot path's types for
+  one caller, bbtree-store, whose key and value need not come back.
+- **Cost:** an exception per refused insert, which happens only once a
+  store's budget is spent.
+
+## P22. Reverse scans of the shared map
+
+- **Chosen:** `scan_rev(visit)` and `scan_rev_from(end, visit)`, the mirror
+  of `scan` and `scan_from` (`latched_scan::back_from`): the last leaf down
+  last edges; a leaf's keys from the last, then its head; the left neighbor
+  from the nearest level with an edge left of the path, down last edges; and
+  a fresh path by the held leaf's first key when a check fails.
+  bbtree-store's `scan_rev` and `range` need them.
+- **Bounds stay with the caller:** as for forward scans, a scan starts at
+  one bound and the visitor stops it at the other. The Rust crate's scans
+  take `RangeBounds` and resumable cursors (`ScanResume`, `LeafStamp`),
+  which no caller here needs yet.
