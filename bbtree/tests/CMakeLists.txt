@@ -6,7 +6,8 @@ set(BBTREE_TEST_SOURCES
   node/inline_key_test.cpp
   node/layout_test.cpp
   tree/differential_test.cpp
-  unsync/map_api_test.cpp)
+  unsync/map_api_test.cpp
+  unsync/set_test.cpp)
 
 function(bbtree_add_tests target)
   add_executable(${target} ${BBTREE_TEST_SOURCES})

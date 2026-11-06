@@ -23,6 +23,7 @@
 #include <bbtree/allocator.hpp>
 #include <bbtree/detail/tree/cursor.hpp>
 #include <bbtree/detail/tree/tree.hpp>
+#include <bbtree/detail/tree/tree_owner.hpp>
 #include <bbtree/entry_ref.hpp>
 #include <bbtree/node_config.hpp>
 
@@ -44,11 +45,14 @@ namespace bbtree::unsync {
 
 template <class K, class V, class Compare = std::less<K>, page_allocator Allocator = global_allocator,
           class Strategy = auto_inline_keys>
-class bbtree_map {
+class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, Strategy>, Allocator> {
   using types = detail::tree_types<K, V, Compare, Strategy>;
-  using tree_type = detail::tree<types>;
-  using cursor_type = detail::cursor<types>;
-  using pages_type = detail::page_source<Allocator>;
+  using owner = detail::tree_owner<types, Allocator>;
+  using owner::allocator_;
+  using owner::length_;
+  using owner::pages;
+  using owner::tree_;
+  using typename owner::cursor_type;
 
   // Whether lookups take other key types, as std::map's do with a
   // transparent comparator.
@@ -128,50 +132,30 @@ class bbtree_map {
   // --- Construction ---
 
   bbtree_map() noexcept = default;
-  explicit bbtree_map(const Allocator& allocator) noexcept : allocator_(allocator) {}
+  explicit bbtree_map(const Allocator& allocator) noexcept : owner(allocator) {}
 
   // Builds from the entries in [first, last), keeping the first of equal
   // keys as std::map does: sorted, then built full-node by full-node (D25).
   template <std::input_iterator It>
-  bbtree_map(It first, It last, const Allocator& allocator = Allocator()) : allocator_(allocator) {
+  bbtree_map(It first, It last, const Allocator& allocator = Allocator()) : owner(allocator) {
     insert(first, last);
   }
   bbtree_map(std::initializer_list<value_type> entries, const Allocator& allocator = Allocator())
-      : allocator_(allocator) {
+      : owner(allocator) {
     insert(entries.begin(), entries.end());
   }
 
-  // A copy of the same shape, node by node.
-  bbtree_map(const bbtree_map& other)
-      : allocator_(other.allocator_), tree_(other.tree_.clone(pages())), length_(other.length_) {}
-  bbtree_map(bbtree_map&& other) noexcept
-      : allocator_(other.allocator_),
-        tree_(std::move(other.tree_)),
-        length_(std::exchange(other.length_, 0)) {}
-
-  bbtree_map& operator=(const bbtree_map& other) {
-    if (this != &other) {
-      bbtree_map copy(other);
-      swap(copy);
-    }
-    return *this;
-  }
-  bbtree_map& operator=(bbtree_map&& other) noexcept {
-    if (this != &other) {
-      clear();
-      allocator_ = other.allocator_;
-      tree_ = std::move(other.tree_);
-      length_ = std::exchange(other.length_, 0);
-    }
-    return *this;
-  }
+  // Copies are of the same shape, node by node; moves take the tree.
+  bbtree_map(const bbtree_map&) = default;
+  bbtree_map(bbtree_map&&) noexcept = default;
+  bbtree_map& operator=(const bbtree_map&) = default;
+  bbtree_map& operator=(bbtree_map&&) noexcept = default;
   bbtree_map& operator=(std::initializer_list<value_type> entries) {
     clear();
     insert(entries.begin(), entries.end());
     return *this;
   }
-
-  ~bbtree_map() { tree_.destroy(pages()); }
+  ~bbtree_map() = default;
 
   allocator_type get_allocator() const noexcept { return allocator_; }
   key_compare key_comp() const noexcept { return key_compare(); }
@@ -341,17 +325,7 @@ class bbtree_map {
         ascending = false;
       }
     }
-    if (!ascending) {
-      std::stable_sort(entries.begin(), entries.end(),
-                       [](const auto& a, const auto& b) { return key_order::less(a.first, b.first); });
-      auto equal_keys = [](const auto& a, const auto& b) { return !key_order::less(a.first, b.first); };
-      entries.erase(std::unique(entries.begin(), entries.end(), equal_keys), entries.end());
-    }
-    detail::tree_builder<types, Allocator> builder(pages());
-    for (auto& entry : entries) {
-      builder.push(std::move(entry.first), std::move(entry.second));
-    }
-    adopt(std::move(builder).finish());
+    this->build_from(entries, ascending);
   }
   void insert(std::initializer_list<value_type> entries) { insert(entries.begin(), entries.end()); }
 
@@ -451,17 +425,8 @@ class bbtree_map {
   // `remove_entry`.
   std::optional<std::pair<K, V>> remove(const K& key) noexcept { return tree_.remove(key, pages(), length_); }
 
-  void clear() noexcept {
-    tree_.destroy(pages());
-    length_ = 0;
-  }
-
-  void swap(bbtree_map& other) noexcept {
-    using std::swap;
-    swap(allocator_, other.allocator_);
-    std::swap(tree_, other.tree_);
-    std::swap(length_, other.length_);
-  }
+  void clear() noexcept { this->clear_tree(); }
+  void swap(bbtree_map& other) noexcept { this->swap_with(other); }
   friend void swap(bbtree_map& a, bbtree_map& b) noexcept { a.swap(b); }
 
   // Keeps only the entries for which `keep(key, value)` holds, visiting each
@@ -488,50 +453,13 @@ class bbtree_map {
   // this map's at an equal key, as Rust's `append` does; `other` is empty
   // after. Both maps' entries move in order into one bulk build (D25), in
   // O(n + m).
-  void append(bbtree_map& other) {
-    if (other.empty()) {
-      return;
-    }
-    if (empty()) {
-      swap(other);
-      return;
-    }
-    detail::tree_builder<types, Allocator> builder(pages());
-    iterator mine = begin();
-    iterator theirs = other.begin();
-    auto take = [&](iterator& from) {
-      builder.push(std::move(*from.cursor_.key()), std::move(*from.cursor_.value()));
-      ++from;
-    };
-    while (mine != end() && theirs != other.end()) {
-      const auto order = key_order::cmp(*mine.cursor_.key(), *theirs.cursor_.key());
-      if (order < 0) {
-        take(mine);
-      } else if (order > 0) {
-        take(theirs);
-      } else {
-        ++mine;
-        take(theirs);
-      }
-    }
-    while (mine != end()) {
-      take(mine);
-    }
-    while (theirs != other.end()) {
-      take(theirs);
-    }
-    // The moved-from shells are destroyed with their trees.
-    other.clear();
-    clear();
-    adopt(std::move(builder).finish());
-  }
+  void append(bbtree_map& other) { this->append_from(other); }
 
   // Moves the entries from `key` on into a new map, which it returns: a cut
   // along the search's node stack, O(log n) (D25).
   bbtree_map split_off(const K& key) {
     bbtree_map right(allocator_);
-    auto [upper, upper_length] = tree_.split_off_at(key, detail::key_side::before, pages(), length_);
-    right.adopt({std::move(upper), upper_length});
+    this->split_off_into(key, right);
     return right;
   }
 
@@ -564,13 +492,6 @@ class bbtree_map {
  private:
   using key_order = typename types::order;
 
-  pages_type pages() const noexcept { return pages_type(allocator_); }
-
-  void adopt(std::pair<tree_type, std::size_t>&& built) noexcept {
-    tree_ = std::move(built.first);
-    length_ = built.second;
-  }
-
   iterator found_or_end(std::optional<detail::found_entry<types>> found) noexcept {
     return found ? iterator(cursor_type(&tree_, *found)) : end();
   }
@@ -588,10 +509,6 @@ class bbtree_map {
                                        pages(), length_);
     return {iterator(cursor_type(&tree_, inserted.entry)), inserted.inserted};
   }
-
-  [[no_unique_address]] Allocator allocator_;
-  tree_type tree_;
-  size_type length_ = 0;
 };
 
 }  // namespace bbtree::unsync

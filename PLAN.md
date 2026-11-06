@@ -32,8 +32,8 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [ ] map-level differential test (iterators, bounds, erase(it)) against std::map
 - [x] bulk: builder (D25), from sorted / from unsorted ranges, append by merged build, split_off by cut,
   clone by node copy
-- [ ] retain, extract_if
-- [ ] set API and set algebra
+- [x] retain/erase_if (extract_if: future work, C++ has no lazy owning iterator idiom)
+- [x] set API and set algebra (shared tree owner for map and set)
 - [ ] port `unsync/map/tests`, `unsync/set/tests`
 
 ## M4 Batches (D53)

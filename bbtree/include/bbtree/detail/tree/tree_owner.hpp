@@ -1,0 +1,139 @@
+// What a map and a set share: the tree, its length and the allocator, and the
+// operations on whole trees that don't depend on what an entry looks like to
+// the user: bulk builds (D25), merging appends, cuts, copies and teardown.
+// `unsync::bbtree_map` and `unsync::bbtree_set` derive from it.
+#pragma once
+
+#include <bbtree/detail/tree/cursor.hpp>
+#include <bbtree/detail/tree/tree.hpp>
+
+#include <algorithm>
+#include <cstddef>
+#include <utility>
+#include <vector>
+
+namespace bbtree::detail {
+
+template <class T, class Allocator>
+class tree_owner {
+ protected:
+  using K = typename T::key_type;
+  using V = typename T::mapped_type;
+  using tree_type = tree<T>;
+  using cursor_type = cursor<T>;
+  using pages_type = page_source<Allocator>;
+  using order = typename T::order;
+
+  tree_owner() noexcept = default;
+  explicit tree_owner(const Allocator& allocator) noexcept : allocator_(allocator) {}
+  tree_owner(const tree_owner& other)
+      : allocator_(other.allocator_), tree_(other.tree_.clone(pages())), length_(other.length_) {}
+  tree_owner(tree_owner&& other) noexcept
+      : allocator_(other.allocator_),
+        tree_(std::move(other.tree_)),
+        length_(std::exchange(other.length_, 0)) {}
+  tree_owner& operator=(const tree_owner& other) {
+    if (this != &other) {
+      tree_owner copy(other);
+      swap_with(copy);
+    }
+    return *this;
+  }
+  tree_owner& operator=(tree_owner&& other) noexcept {
+    if (this != &other) {
+      clear_tree();
+      allocator_ = other.allocator_;
+      tree_ = std::move(other.tree_);
+      length_ = std::exchange(other.length_, 0);
+    }
+    return *this;
+  }
+  ~tree_owner() { tree_.destroy(pages()); }
+
+  pages_type pages() const noexcept { return pages_type(allocator_); }
+
+  void clear_tree() noexcept {
+    tree_.destroy(pages());
+    length_ = 0;
+  }
+
+  void swap_with(tree_owner& other) noexcept {
+    std::swap(allocator_, other.allocator_);
+    std::swap(tree_, other.tree_);
+    std::swap(length_, other.length_);
+  }
+
+  void adopt(std::pair<tree_type, std::size_t>&& built) noexcept {
+    tree_ = std::move(built.first);
+    length_ = built.second;
+  }
+
+  // Replaces an empty tree with one built from `entries`: sorted unless
+  // `ascending`, keeping the first of equal keys, as std's containers do.
+  void build_from(std::vector<std::pair<K, V>>& entries, bool ascending) {
+    if (!ascending) {
+      std::stable_sort(entries.begin(), entries.end(),
+                       [](const auto& a, const auto& b) { return order::less(a.first, b.first); });
+      auto equal_keys = [](const auto& a, const auto& b) { return !order::less(a.first, b.first); };
+      entries.erase(std::unique(entries.begin(), entries.end(), equal_keys), entries.end());
+    }
+    tree_builder<T, Allocator> builder(pages());
+    for (auto& entry : entries) {
+      builder.push(std::move(entry.first), std::move(entry.second));
+    }
+    adopt(std::move(builder).finish());
+  }
+
+  // Moves every entry of `other` in, `other`'s winning at an equal key; both
+  // trees' entries move in order into one bulk build (D25).
+  void append_from(tree_owner& other) {
+    if (other.length_ == 0) {
+      return;
+    }
+    if (length_ == 0) {
+      swap_with(other);
+      return;
+    }
+    tree_builder<T, Allocator> builder(pages());
+    cursor_type mine = cursor_type::first(&tree_);
+    cursor_type theirs = cursor_type::first(&other.tree_);
+    auto take = [&](cursor_type& from) {
+      builder.push(std::move(*from.key()), std::move(*from.value()));
+      from.next();
+    };
+    while (!mine.is_end() && !theirs.is_end()) {
+      const auto ordering = order::cmp(*mine.key(), *theirs.key());
+      if (ordering < 0) {
+        take(mine);
+      } else if (ordering > 0) {
+        take(theirs);
+      } else {
+        mine.next();
+        take(theirs);
+      }
+    }
+    while (!mine.is_end()) {
+      take(mine);
+    }
+    while (!theirs.is_end()) {
+      take(theirs);
+    }
+    // The moved-from shells are destroyed with their trees.
+    other.clear_tree();
+    clear_tree();
+    adopt(std::move(builder).finish());
+  }
+
+  // Cuts off the entries from `key` on into `upper`, in O(log n).
+  template <class Q>
+  void split_off_into(const Q& key, tree_owner& upper) {
+    auto cut = tree_.split_off_at(key, key_side::before, pages(), length_);
+    upper.adopt(std::move(cut));
+  }
+
+  [[no_unique_address]] Allocator allocator_;
+  tree_type tree_;
+  std::size_t length_ = 0;
+};
+
+}  // namespace bbtree::detail
