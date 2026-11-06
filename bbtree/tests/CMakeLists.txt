@@ -4,7 +4,8 @@
 set(BBTREE_TEST_SOURCES
   allocator_test.cpp
   node/inline_key_test.cpp
-  node/layout_test.cpp)
+  node/layout_test.cpp
+  tree/differential_test.cpp)
 
 function(bbtree_add_tests target)
   add_executable(${target} ${BBTREE_TEST_SOURCES})
