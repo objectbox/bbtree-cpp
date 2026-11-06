@@ -151,6 +151,12 @@ D1–D60) still hold unless an entry here says otherwise.
   over a compile-time capacity, which Clang and GCC vectorize; on x86-64
   without POPCNT, the SSE2 mask path (D40, D43); on x86-64 without SSE2, a
   binary search. Hash-tag filtering uses SSE2 (D36).
+- **The count's counters have the slots' width.** With `std::size_t`
+  counters Clang widened every compared 2-byte slot to 64 bits and counted
+  4 slots a vector; with `uint16_t` ones, 16 (`-Rpass=loop-vectorize`). The
+  same pitfall D56 describes for the Rust crate's NEON count. Measured
+  (Zen 3, `u64` → `u64`, one run): 1M hit 116 → 100 ns, miss 92 → 61; 10M
+  hit 321 → 289, miss 244 → 213.
 - **Not ported:** the explicit AVX-512 counts and 8-byte equality masks
   (D41) and AArch64's NEON counts (D56). This machine (Zen 3) has neither
   AVX-512 nor NEON, so neither could be tested or measured here, and

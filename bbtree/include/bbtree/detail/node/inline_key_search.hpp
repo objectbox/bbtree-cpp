@@ -104,16 +104,21 @@ class node_inline_keys {
   // One branch-free pass over every slot counts those below the target and
   // those equal to it; slots past `len` hold the greatest inline key, so
   // they never count below, and the cuts at `len` keep the range in bounds.
+  //
+  // The counters have the slots' own width, which holds any count up to the
+  // capacity: 64-bit counters would widen every compared lane, and the
+  // compiler would count four slots a vector instead of sixteen.
   [[gnu::always_inline]] slot_range equal_range_by_count(slot_type target) const noexcept {
-    std::size_t below = 0;
-    std::size_t equal = 0;
+    static_assert(Capacity <= 0xffff, "a count fits the narrowest slot");
+    slot_type below_count = 0;
+    slot_type equal_count = 0;
     for (std::size_t index = 0; index < Capacity; ++index) {
       const slot_type slot = slots_[index];
-      below += slot < target ? 1 : 0;
-      equal += slot == target ? 1 : 0;
+      below_count = static_cast<slot_type>(below_count + (slot < target ? 1 : 0));
+      equal_count = static_cast<slot_type>(equal_count + (slot == target ? 1 : 0));
     }
-    below = below < len_ ? below : len_;
-    const std::size_t end = below + equal < len_ ? below + equal : len_;
+    const std::size_t below = below_count < len_ ? below_count : len_;
+    const std::size_t end = below + equal_count < len_ ? below + equal_count : len_;
     return {below, end};
   }
 
