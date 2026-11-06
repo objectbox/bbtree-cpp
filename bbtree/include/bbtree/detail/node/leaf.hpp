@@ -36,6 +36,7 @@ class leaf_node : public child_node<T, leaf_node<T>, true> {
   using base = child_node<T, leaf_node<T>, true>;
 
  public:
+  using types = T;
   using columns_type = typename base::columns_type;
   static constexpr leaf_layout layout = T::leaf;
   static constexpr std::size_t capacity = base::capacity;

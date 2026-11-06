@@ -43,3 +43,4 @@ if(BBTREE_BUILD_TESTS)
 endif()
 
 add_subdirectory(bbtree)
+add_subdirectory(bbtree-mmap)

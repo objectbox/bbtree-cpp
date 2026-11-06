@@ -52,7 +52,8 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 ## M6 File maps (D58) and bbtree-mmap
 - [x] file maps of plain keys and values: writer (level order, offsets from nodes), checked and unchecked
   open, lookups, bounds, iteration; layout fingerprint; corruption tests under ASan
-- [ ] bbtree-mmap: typed maps in files (mmap), var-length keys and values in heap pages after leaves
+- [x] bbtree-mmap: typed map files (mmap, read, huge pages), var-length keys and values as spans into heap
+  pages after their leaves, lookups example
 ## M7 bbtree-store (D60): leaf annex, heap pages, records, WAL
 ## M8 Fuzz targets (libFuzzer), racing-reads checker, kernel-target build
 ## M9 Bench harness (std::map, abseil btree_map, ankerl, std::unordered_map)

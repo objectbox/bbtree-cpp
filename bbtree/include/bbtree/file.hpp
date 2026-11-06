@@ -50,6 +50,37 @@ template <class T>
 concept plain_bytes = std::is_trivially_copyable_v<T> && (std::has_unique_object_representations_v<T> ||
                                                           std::is_floating_point_v<T> || std::is_empty_v<T>);
 
+// How a file map keeps a key or value type: plain, in its slot as it is (the
+// default), or as a slot whose bytes lie after its leaf, which the type's
+// library lays out and checks (bbtree-mmap's `var_bytes`). A specialization
+// has `has_bytes`, `in_writer` (the type a writer's tree holds instead), a
+// `format` number for the fingerprint, and `check(file_bytes, slot)`, which
+// throws `file_error` unless the slot at offset `slot` keeps its bytes in
+// bounds.
+template <class T>
+struct file_storage {
+  static constexpr bool has_bytes = false;
+  static constexpr std::uint64_t format = 0;
+  using in_writer = T;
+  static void check(std::span<const std::byte>, std::size_t) noexcept {}
+};
+
+// What a writer writes after each leaf: nothing, for plain keys and values.
+struct no_leaf_bytes {
+  template <class Leaf>
+  static std::size_t len(const Leaf&) noexcept {
+    return 0;
+  }
+  template <class Leaf>
+  static void write(const Leaf&, std::byte* /*page*/, std::size_t /*page_size*/,
+                    std::byte* /*bytes*/) noexcept {}
+};
+
+// What a file map's keys and values may be: plain bytes, or a type whose
+// file storage keeps bytes after its leaf.
+template <class T>
+concept file_storable = std::is_trivially_copyable_v<T> && (plain_bytes<T> || file_storage<T>::has_bytes);
+
 // Why a byte string is no file map this reader can use.
 class file_error : public std::runtime_error {
  public:
@@ -212,6 +243,24 @@ struct file_format {
     return hash;
   }
 
+  // Checks the slots of a leaf at `offset` whose bytes lie elsewhere.
+  static void check_slots(std::span<const std::byte> bytes, std::size_t offset, std::size_t len,
+                          bool has_head) {
+    if constexpr (file_storage<K>::has_bytes) {
+      for (std::size_t index = 0; index < len; ++index) {
+        file_storage<K>::check(bytes, offset + T::leaf.keys.keys_offset + index * T::leaf.keys.key_stride);
+      }
+      if (has_head) {
+        file_storage<K>::check(bytes, offset + *T::leaf.head_key_offset);
+      }
+    }
+    if constexpr (file_storage<V>::has_bytes) {
+      for (std::size_t index = has_head ? 0 : 1; index <= len; ++index) {
+        file_storage<V>::check(bytes, offset + T::leaf.head_offset + index * T::leaf.value_stride);
+      }
+    }
+  }
+
   // Checks every page reachable from the root for what keeps reads in
   // bounds: in the file map, aligned, headers in range, edges leading
   // forward to children of one kind per level, and the entry count.
@@ -245,6 +294,7 @@ struct file_format {
         }
         if (leaves) {
           entries += len + has_head;
+          check_slots(bytes, offset, len, has_head == 1);
           continue;
         }
         for (std::size_t edge = 0; edge <= len; ++edge) {
@@ -276,18 +326,28 @@ struct file_format {
 
 }  // namespace detail
 
-// Compacts a map, or entries in ascending order, into a file map.
-template <plain_bytes K, plain_bytes V, class Compare = std::less<K>, class Strategy = auto_inline_keys>
+// Compacts a map, or entries in ascending order, into a file map. For keys or
+// values whose bytes lie after their leaf, the writer's tree holds their
+// `in_writer` types, and `LeafBytes` lays the bytes out after each leaf.
+template <file_storable K, file_storable V, class Compare = std::less<K>, class Strategy = auto_inline_keys,
+          class LeafBytes = no_leaf_bytes>
 class file_writer {
-  using types = detail::tree_types<K, V, Compare, Strategy>;
+  using KW = typename file_storage<K>::in_writer;
+  using VW = typename file_storage<V>::in_writer;
+  using writer_compare = std::conditional_t<std::is_same_v<Compare, std::less<K>>, std::less<KW>, Compare>;
+  using types = detail::tree_types<KW, VW, writer_compare, Strategy>;
   using file_types = detail::tree_types<K, V, Compare, detail::in_file<Strategy>>;
   using format = detail::file_format<file_types>;
-  static_assert(format::fingerprint() == detail::file_format<types>::fingerprint(),
-                "a map's pages and its file map's are of one layout");
+  static_assert(types::leaf == file_types::leaf && types::internal == file_types::internal &&
+                    types::leaf_plan.width == file_types::leaf_plan.width &&
+                    types::leaf_plan.hash_tags == file_types::leaf_plan.hash_tags &&
+                    types::internal_plan.width == file_types::internal_plan.width,
+                "a writer's pages and its file map's are of one layout");
 
  public:
   // The entries of a map, in key order.
   template <class A>
+    requires(std::is_same_v<K, KW> && std::is_same_v<V, VW>)
   explicit file_writer(const unsync::bbtree_map<K, V, Compare, A, Strategy>& map) {
     detail::tree_builder<types, global_allocator> builder(pages());
     for (const auto& [key, value] : map) {
@@ -296,19 +356,20 @@ class file_writer {
     adopt(std::move(builder).finish());
   }
 
-  // Entries in ascending key order; throws std::invalid_argument otherwise.
+  // Entries in ascending key order, of the writer's types; throws
+  // std::invalid_argument otherwise.
   template <std::input_iterator It>
   static file_writer from_ascending(It first, It last) {
     file_writer writer;
     detail::tree_builder<types, global_allocator> builder(writer.pages());
-    std::optional<K> previous;
+    std::optional<KW> previous;
     for (; first != last; ++first) {
       const auto& [key, value] = *first;
       if (previous && !types::order::less(*previous, key)) {
         throw std::invalid_argument("file_writer: entries not in ascending key order");
       }
       previous = key;
-      builder.push(K(key), V(value));
+      builder.push(KW(key), VW(value));
     }
     writer.adopt(std::move(builder).finish());
     return writer;
@@ -395,6 +456,9 @@ class file_writer {
         at = (at + page.align - 1) / page.align * page.align;
         order.push_back({node, at, page.size});
         at += page.size;
+        if (node.is_leaf()) {
+          at += LeafBytes::len(detail::leaf_node<types>(node));
+        }
         if (!node.is_leaf()) {
           const detail::internal_node<types> internal(node);
           for (std::size_t edge = 0; edge <= internal.len(); ++edge) {
@@ -418,6 +482,7 @@ class file_writer {
     // The header's padding byte, which no write initializes.
     dest[offsetof(detail::node_header, has_head) + 1] = std::byte{0};
     if (page.node.is_leaf()) {
+      LeafBytes::write(detail::leaf_node<types>(page.node), dest, page.size, dest + page.size);
       return;
     }
     const detail::internal_node<types> internal(page.node);
@@ -437,7 +502,7 @@ class file_writer {
 
 // A file map read where it lies: lookups, bounds and iteration, by shared
 // reference, at the map's speed.
-template <plain_bytes K, plain_bytes V, class Compare = std::less<K>, class Strategy = auto_inline_keys>
+template <file_storable K, file_storable V, class Compare = std::less<K>, class Strategy = auto_inline_keys>
 class file_map {
   using types = detail::tree_types<K, V, Compare, detail::in_file<Strategy>>;
   using format = detail::file_format<types>;
