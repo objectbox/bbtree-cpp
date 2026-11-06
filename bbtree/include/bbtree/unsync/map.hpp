@@ -21,6 +21,7 @@
 #pragma once
 
 #include <bbtree/allocator.hpp>
+#include <bbtree/detail/tree/batch.hpp>
 #include <bbtree/detail/tree/cursor.hpp>
 #include <bbtree/detail/tree/tree.hpp>
 #include <bbtree/detail/tree/tree_owner.hpp>
@@ -28,6 +29,7 @@
 #include <bbtree/node_config.hpp>
 
 #include <algorithm>
+#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +37,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -284,6 +287,57 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   }
   std::pair<const_iterator, const_iterator> equal_range(const K& key) const noexcept {
     return {lower_bound(key), upper_bound(key)};
+  }
+
+  // --- Batches (D53) ---
+
+  // The value of each of `keys`, or null, in input order: looked up together,
+  // so that one key's misses overlap the others'.
+  template <class Q, std::size_t N>
+    requires(std::is_same_v<Q, K> || transparent<Q>)
+  std::array<V*, N> get_many(const std::array<Q, N>& keys) noexcept {
+    std::array<const Q*, N> pointers;
+    for (std::size_t index = 0; index < N; ++index) {
+      pointers[index] = &keys[index];
+    }
+    std::array<V*, N> values;
+    get_many(std::span<const Q* const>(pointers), std::span<V*>(values));
+    return values;
+  }
+
+  // The same for any number of keys, by pointer, into `values`.
+  template <class Q>
+    requires(std::is_same_v<Q, K> || transparent<Q>)
+  void get_many(std::span<const Q* const> keys, std::span<V*> values) noexcept {
+    std::optional<detail::found_entry<types>> found[detail::batch_lookup<types>::max_lanes];
+    for (std::size_t start = 0; start < keys.size(); start += std::size(found)) {
+      const std::size_t count = std::min(std::size(found), keys.size() - start);
+      detail::batch_lookup<types>::find_many(
+          tree_, length_, keys.subspan(start, count),
+          std::span<std::optional<detail::found_entry<types>>>(found, count));
+      for (std::size_t index = 0; index < count; ++index) {
+        values[start + index] = found[index] ? found[index]->value() : nullptr;
+      }
+    }
+  }
+
+  // Inserts or assigns each entry in input order, as `insert_or_assign` one
+  // by one would, the keys' paths fetched together first; returns whether
+  // each was new (the Rust crate's `insert_many`).
+  template <std::size_t N>
+  std::array<bool, N> insert_or_assign_many(std::array<std::pair<K, V>, N>&& entries) {
+    std::array<const K*, N> keys;
+    for (std::size_t index = 0; index < N; ++index) {
+      keys[index] = &entries[index].first;
+    }
+    std::array<V*, N> ignored;
+    get_many(std::span<const K* const>(keys), std::span<V*>(ignored));
+    std::array<bool, N> inserted;
+    for (std::size_t index = 0; index < N; ++index) {
+      inserted[index] =
+          insert_or_assign(std::move(entries[index].first), std::move(entries[index].second)).second;
+    }
+    return inserted;
   }
 
   // The first and last entries, if any.

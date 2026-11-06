@@ -145,6 +145,39 @@ D1–D60) still hold unless an entry here says otherwise.
   before the allocator, for `BBTreeMap<K, V, WithInlineKey>`; in C++
   inline keys need no strategy (P5), so it goes last.
 
+## P9. In-node counts: the compiler's, SSE2 masks, and no AVX-512 or NEON
+
+- **Chosen:** the count over every inline-key slot (04, Q6) is a plain loop
+  over a compile-time capacity, which Clang and GCC vectorize; on x86-64
+  without POPCNT, the SSE2 mask path (D40, D43); on x86-64 without SSE2, a
+  binary search. Hash-tag filtering uses SSE2 (D36).
+- **Not ported:** the explicit AVX-512 counts and 8-byte equality masks
+  (D41) and AArch64's NEON counts (D56). This machine (Zen 3) has neither
+  AVX-512 nor NEON, so neither could be tested or measured here, and
+  untested SIMD is a liability. They are in FUTURE_WORK.md.
+
+## P10. Batches descend level by level, not in async lanes
+
+- **Chosen:** `get_many` and `contains_many` move every lane down one
+  level at a time: each searches its node and prefetches its chosen edge's
+  slot, then each reads its edge and prefetches the child's header, and at
+  the leaves each prefetches its lone candidate's entry before the full
+  comparison. The only prefetches of the library are in `prefetcher`
+  (`detail/tree/batch.hpp`), as D46 allows. `insert_or_assign_many` and the
+  set's `insert_many` fetch every key's path with such a descent, then
+  insert in input order.
+- **Alternatives:** the Rust crate's async lanes (D53), as C++20
+  coroutines, or a hand-written state machine per lane. D53 measured
+  level-by-level lanes as its ceiling (60.8 against 74.8 ns per 10M `u64`
+  hit) and kept async for its inserts' sake; coroutine frames would need a
+  custom allocator to avoid the heap. Level by level is both the simpler
+  code and the faster lookup.
+- **Measured** (Zen 3, 10M `u64`, one run): 323 ns a hit one key a call,
+  198 ns a key in batches of 64.
+- Inserts in a batch search again in input order, warm from the first
+  descent; the Rust crate's saved destinations, which skip the second
+  search, are in FUTURE_WORK.md.
+
 ## P12. Bench dependencies include mimalloc
 
 The Rust bench links mimalloc as its global allocator, and D15's and D8's

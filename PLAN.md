@@ -37,7 +37,7 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [ ] port `unsync/map/tests`, `unsync/set/tests`
 
 ## M4 Batches (D53)
-- [ ] lanes, `get_many`, `insert_many`, set `contains_many`/`insert_many`
+- [x] level-by-level lanes (P10), `get_many`, `insert_or_assign_many`, set `contains_many`/`insert_many`
 
 ## M5 Shared map (`bbtree_map`, D54, D55, D57)
 - [ ] latch word, optimistic reads, page pool (type-stable pages)

@@ -10,12 +10,14 @@
 #pragma once
 
 #include <bbtree/allocator.hpp>
+#include <bbtree/detail/tree/batch.hpp>
 #include <bbtree/detail/tree/cursor.hpp>
 #include <bbtree/detail/tree/tree.hpp>
 #include <bbtree/detail/tree/tree_owner.hpp>
 #include <bbtree/node_config.hpp>
 
 #include <algorithm>
+#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +25,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -190,6 +193,53 @@ class bbtree_set
   }
   std::pair<const_iterator, const_iterator> equal_range(const K& key) const noexcept {
     return {lower_bound(key), upper_bound(key)};
+  }
+
+  // --- Batches (D53) ---
+
+  // Whether the set holds each of `keys`, in input order, looked up
+  // together.
+  template <class Q, std::size_t N>
+    requires(std::is_same_v<Q, K> || transparent<Q>)
+  std::array<bool, N> contains_many(const std::array<Q, N>& keys) const noexcept {
+    std::array<const Q*, N> pointers;
+    for (std::size_t index = 0; index < N; ++index) {
+      pointers[index] = &keys[index];
+    }
+    std::array<bool, N> held;
+    contains_many(std::span<const Q* const>(pointers), std::span<bool>(held));
+    return held;
+  }
+
+  template <class Q>
+    requires(std::is_same_v<Q, K> || transparent<Q>)
+  void contains_many(std::span<const Q* const> keys, std::span<bool> held) const noexcept {
+    std::optional<detail::found_entry<types>> found[detail::batch_lookup<types>::max_lanes];
+    for (std::size_t start = 0; start < keys.size(); start += std::size(found)) {
+      const std::size_t count = std::min(std::size(found), keys.size() - start);
+      detail::batch_lookup<types>::find_many(
+          tree_, length_, keys.subspan(start, count),
+          std::span<std::optional<detail::found_entry<types>>>(found, count));
+      for (std::size_t index = 0; index < count; ++index) {
+        held[start + index] = found[index].has_value();
+      }
+    }
+  }
+
+  // Inserts each key in input order, their paths fetched together first;
+  // returns whether each was new.
+  template <std::size_t N>
+  std::array<bool, N> insert_many(std::array<K, N>&& keys) {
+    std::array<const K*, N> pointers;
+    for (std::size_t index = 0; index < N; ++index) {
+      pointers[index] = &keys[index];
+    }
+    std::array<bool, N> inserted;
+    contains_many(std::span<const K* const>(pointers), std::span<bool>(inserted));
+    for (std::size_t index = 0; index < N; ++index) {
+      inserted[index] = insert(std::move(keys[index])).second;
+    }
+    return inserted;
   }
 
   const K* first() const noexcept {
