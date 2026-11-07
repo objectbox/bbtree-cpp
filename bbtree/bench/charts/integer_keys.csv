@@ -1,0 +1,24 @@
+cell,bbtree++,bbtree (Rust),std::map
+u64_u64_random_insert_1k,29.5,36.0,22.7
+u64_u64_sequential_insert_1k,7.07,8.04,28.5
+u64_u64_get_hit_1k,16.0,24.8,23.6
+u64_u64_get_miss_1k,14.6,23.2,22.5
+u64_u64_iterate_1k,0.267,0.318,3.06
+u64_u64_range64_1k,113,119,253
+u64_u64_random_remove_1k,38.5,44.5,50.6
+u64_u64_entry_upsert_1k,29.1,46.1,37.8
+u64_u64_pop_first_1k,14.6,14.8,8.87
+u64_u64_bulk_build_1k,4.96,3.92,31.1
+u64_u64_random_insert_1M,82.9,92.2,224
+u64_u64_sequential_insert_1M,10.3,10.2,79.5
+u64_u64_get_hit_1M,93.4,94.0,230
+u64_u64_get_miss_1M,62.4,83.3,198
+u64_u64_iterate_1M,0.632,0.729,58.8
+u64_u64_range64_1M,288,272,3205
+u64_u64_random_remove_1M,105,105,271
+u64_u64_entry_upsert_1M,84.3,94.7,196
+u64_u64_pop_first_1M,16.7,18.5,40.1
+u64_u64_bulk_build_1M,7.28,5.44,89.4
+u64_u64_random_insert_10M,260,243,725
+u64_u64_get_hit_10M,246,255,484
+u64_u64_get_miss_10M,188,197,480
