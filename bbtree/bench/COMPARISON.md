@@ -18,97 +18,92 @@ for cell, on one machine, after the port's first optimization round.
 - **Reproduce:** `bbtree-bench ci --out A` in each bench, then
   `bbtree-bench compare --head A/cpp.csv --base A/rust.csv`.
 
-## The `ci` suite: the unsync map, ns an operation (iterate: an entry)
+## Integer keys
 
-C++ ÷ Rust below 1 is the port faster.
+The unsync map with `u64` keys and values, ns an operation (iterate: an
+entry). The cells are the bench's `ci` suite, its core set at 1k, 1M and
+10M entries, named for running in continuous integration. Bold marks
+the fastest map of each row. The two right columns compare different
+maps: Rust's `BTreeMap` is a B-tree, `std::map` a red-black tree.
 
-| cell | Rust | C++ | C++ ÷ Rust | Rust `BTreeMap` | C++ `std::map` |
-|---|--:|--:|--:|--:|--:|
-| u64_u64_random_insert_1k | 36.0 | 29.5 | 0.82 | 17.5 | 22.7 |
-| u64_u64_sequential_insert_1k | 8.04 | 7.07 | 0.88 | 23.4 | 28.5 |
-| u64_u64_get_hit_1k | 24.8 | 16.0 | 0.64 | 29.5 | 23.6 |
-| u64_u64_get_miss_1k | 23.2 | 14.6 | 0.63 | 29.3 | 22.5 |
-| u64_u64_iterate_1k | 0.318 | 0.267 | 0.84 | 1.04 | 3.06 |
-| u64_u64_range64_1k | 119 | 113 | 0.95 | 106 | 253 |
-| u64_u64_random_remove_1k | 44.5 | 38.5 | 0.87 | 47.0 | 50.6 |
-| u64_u64_entry_upsert_1k | 46.1 | 29.1 | 0.63 | 37.5 | 37.8 |
-| u64_u64_pop_first_1k | 14.8 | 14.6 | 0.98 | 17.2 | 8.87 |
-| u64_u64_bulk_build_1k | 3.92 | 4.96 | **1.27** | 2.39 | 31.1 |
-| u64_u64_random_insert_1M | 92.2 | 82.9 | 0.90 | 102 | 224 |
-| u64_u64_sequential_insert_1M | 10.2 | 10.3 | 1.01 | 46.3 | 79.5 |
-| u64_u64_get_hit_1M | 94.0 | 93.4 | 0.99 | 151 | 230 |
-| u64_u64_get_miss_1M | 83.3 | 62.4 | 0.75 | 147 | 198 |
-| u64_u64_iterate_1M | 0.729 | 0.632 | 0.87 | 3.26 | 58.8 |
-| u64_u64_range64_1M | 272 | 288 | 1.06 | 375 | 3205 |
-| u64_u64_random_remove_1M | 105 | 105 | 1.01 | 118 | 271 |
-| u64_u64_entry_upsert_1M | 94.7 | 84.3 | 0.89 | 96.1 | 196 |
-| u64_u64_pop_first_1M | 18.5 | 16.7 | 0.90 | 19.8 | 40.1 |
-| u64_u64_bulk_build_1M | 5.44 | 7.28 | **1.34** | 4.56 | 89.4 |
-| u64_u64_random_insert_10M | 243 | 260 | 1.07 | 263 | 725 |
-| u64_u64_get_hit_10M † | 255 | 246 | 0.96 | 301 | 484 |
-| u64_u64_get_miss_10M | 197 | 188 | 0.95 | 344 | 480 |
-| str-16_u64_random_insert_1k | 46.6 | 59.7 | **1.28** | 82.6 | 106 |
-| str-16_u64_get_hit_1k | 44.5 | 37.4 | 0.84 | 67.3 | 84.0 |
-| str-16_u64_get_miss_1k | 29.8 | 23.0 | 0.77 | 78.7 | 79.4 |
-| str-json_u64_random_insert_1M | 182 | 258 | **1.42** | 306 | 454 |
-| str-json_u64_get_hit_1M | 278 | 273 | 0.98 | 519 | 670 |
-| str-json_u64_get_miss_1M | 210 | 161 | 0.77 | 515 | 694 |
+| cell | bbtree++ | bbtree (Rust) | Rust `BTreeMap` | C++ `std::map` |
+|---|--:|--:|--:|--:|
+| u64_u64_random_insert_1k | 29.5 | 36.0 | **17.5** | 22.7 |
+| u64_u64_sequential_insert_1k | **7.07** | 8.04 | 23.4 | 28.5 |
+| u64_u64_get_hit_1k | **16.0** | 24.8 | 29.5 | 23.6 |
+| u64_u64_get_miss_1k | **14.6** | 23.2 | 29.3 | 22.5 |
+| u64_u64_iterate_1k | **0.267** | 0.318 | 1.04 | 3.06 |
+| u64_u64_range64_1k | 113 | 119 | **106** | 253 |
+| u64_u64_random_remove_1k | **38.5** | 44.5 | 47.0 | 50.6 |
+| u64_u64_entry_upsert_1k | **29.1** | 46.1 | 37.5 | 37.8 |
+| u64_u64_pop_first_1k | 14.6 | 14.8 | 17.2 | **8.87** |
+| u64_u64_bulk_build_1k | 4.96 | 3.92 | **2.39** | 31.1 |
+| u64_u64_random_insert_1M | **82.9** | 92.2 | 102 | 224 |
+| u64_u64_sequential_insert_1M | 10.3 | **10.2** | 46.3 | 79.5 |
+| u64_u64_get_hit_1M | **93.4** | 94.0 | 151 | 230 |
+| u64_u64_get_miss_1M | **62.4** | 83.3 | 147 | 198 |
+| u64_u64_iterate_1M | **0.632** | 0.729 | 3.26 | 58.8 |
+| u64_u64_range64_1M | 288 | **272** | 375 | 3205 |
+| u64_u64_random_remove_1M | **105** | **105** | 118 | 271 |
+| u64_u64_entry_upsert_1M | **84.3** | 94.7 | 96.1 | 196 |
+| u64_u64_pop_first_1M | **16.7** | 18.5 | 19.8 | 40.1 |
+| u64_u64_bulk_build_1M | 7.28 | 5.44 | **4.56** | 89.4 |
+| u64_u64_random_insert_10M | 260 | **243** | 263 | 725 |
+| u64_u64_get_hit_10M † | **246** | 255 | 301 | 484 |
+| u64_u64_get_miss_10M | **188** | 197 | 344 | 480 |
 
 † Rust's runs of this cell ranged from 231 to 255 ns this session.
 
-The two right columns compare different maps: Rust's `BTreeMap` is a B-tree,
-`std::map` a red-black tree.
+The bulk build and iterate rows predate later changes: "What the first
+optimization round changed" has their current figures.
 
-## Many small maps (`tiny`), ns an entry
+## String keys
 
-| cell | Rust | C++ | C++ ÷ Rust |
-|---|--:|--:|--:|
-| str-json_struct32_build_many_1Mx4 | 61.0 | 80.3 | **1.32** |
-| str-json_struct32_get_many_1Mx4 | 82.2 | 74.2 | 0.90 |
-| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | **1.83** |
-| str-json_struct32_build_many_100kx32 | 60.7 | 103 | **1.69** |
-| str-json_struct32_get_many_100kx32 | 67.4 | 70.7 | 1.05 |
-| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 0.83 |
+The unsync map, ns an operation (iterate, many maps: an entry). bbtree++
+runs each string cell with the compact string that is fastest on it,
+named in the row: `compact_string` (16 bytes, a 4-byte size, up to 12
+bytes in place, the default), `compact_string<2>` (16 bytes, a 2-byte
+size, 14 in place: short for `basic_compact_string<std::uint16_t, 14>`,
+which has no alias) or `compact_string_24` (24 bytes, 20 in place);
+CPP_MAPS.md, [compact strings' variants](CPP_MAPS.md#compact-strings-variants), has every variant on every cell.
+The other maps have their language's standard string: libstdc++'s 32-byte
+`std::string` (bbtree++ too, in the `std::string` column) and the Rust
+crate's 24-byte `String`. `bbtree-bench cpp` and the Rust bench's
+`ci tiny`, the string cells, one run each in one window, started at load
+0.3. Variants within 3% of each other are within run-to-run noise. Bold
+marks the fastest map of each row.
 
-† Rust's runs of this cell ranged from 4.5 to 6.9 ns this session.
+| cell | bbtree++ | compact string | bbtree++ `std::string` | bbtree (Rust) | Rust `BTreeMap` | C++ `std::map` |
+|---|--:|---|--:|--:|--:|--:|
+| str-16_u64_random_insert_1k | **39.2** | `compact_string` | 61.2 | 49.0 | 81.3 | 106 |
+| str-16_u64_get_hit_1k | **34.5** | `compact_string_24` | 37.5 | 44.1 | 70.6 | 84.8 |
+| str-16_u64_get_miss_1k | 24.7 | `compact_string_24` | **22.5** | 29.8 | 78.1 | 81.7 |
+| str-json_u64_random_insert_1M | **168** | `compact_string<2>` | 254 | 196 | 314 | 530 |
+| str-json_u64_get_hit_1M | **238** | `compact_string_24` | 269 | 289 | 535 | 758 |
+| str-json_u64_get_miss_1M | **178** | `compact_string<2>` | 184 | 225 | 582 | 713 |
+| str-json_struct32_build_many_1Mx4 ‡ | 68.3 | `compact_string_24` | 83.5 | 59.7 | **39.3** | 51.3 |
+| str-json_struct32_get_many_1Mx4 | 78.8 | `compact_string<2>` | **78.3** | 83.7 | 97.9 | 99.0 |
+| str-json_struct32_iterate_1Mx4 | **3.21** | `compact_string` | 5.93 | 5.04 | 6.24 | 5.12 |
+| str-json_struct32_build_many_100kx32 | 60.7 | `compact_string` | 100 | 60.6 | **57.0** | 90.5 |
+| str-json_struct32_get_many_100kx32 | 64.9 | `compact_string` | 72.5 | 68.3 | **63.6** | 86.8 |
+| str-json_struct32_iterate_100kx32 | **5.32** | `compact_string<2>` | 7.46 | 9.49 | 10.6 | 26.1 |
 
-## String keys as `bbtree::compact_string`, ns an operation (iterate: an entry)
+‡ The Rust columns from a rerun of the cell with no compaction stall in
+the kernel (`compact_stall` in `/proc/vmstat`); in the window's run its
+fresh pages stalled it, 118 ns.
 
-The port's `compact_string` (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place)) is a C++ addition: a 16-byte
-string that holds up to 12 bytes in place and moves as bytes, where
-libstdc++'s `std::string` is 32 and the Rust crate's `String` 24. The
-`std::string` and Rust columns are the tables' above; the compact column is
-`bbtree-bench cpp --map bbtree-unsync-compact` on the same cells, one run
-each, started at load 0.3, after the root-leaf walk (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)); the iterate rows
-after its four-a-round root leaves, in one window with a Rust run that
-took 5.67 and 11.7.
+The `1Mx4` and `100kx32` rows are the `tiny` suite's: a million maps of 4
+entries and 100k maps of 32, keys and 32-byte values.
 
-| cell | Rust `String` | C++ `std::string` | C++ `compact_string` | compact ÷ Rust |
-|---|--:|--:|--:|--:|
-| str-16_u64_random_insert_1k | 46.6 | 59.7 | 39.1 | 0.84 |
-| str-16_u64_get_hit_1k | 44.5 | 37.4 | 39.4 | 0.89 |
-| str-16_u64_get_miss_1k | 29.8 | 23.0 | 25.1 | 0.84 |
-| str-json_u64_random_insert_1M | 182 | 258 | 161 | 0.88 |
-| str-json_u64_get_hit_1M | 278 | 273 | 249 | 0.90 |
-| str-json_u64_get_miss_1M | 210 | 161 | 176 | 0.84 |
-| str-json_struct32_build_many_1Mx4 ‡ | 61.0 | 80.3 | 66.1 | **1.08** |
-| str-json_struct32_get_many_1Mx4 | 82.2 | 74.2 | 79.5 | 0.97 |
-| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 3.23 | 0.71 |
-| str-json_struct32_build_many_100kx32 | 60.7 | 103 | 61.0 | 1.00 |
-| str-json_struct32_get_many_100kx32 | 67.4 | 70.7 | 68.3 | 1.01 |
-| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 5.41 | 0.61 |
-
-† Rust's runs of this cell ranged from 4.5 to 6.9 ns this session.
-‡ From a later run with no compaction stall in the kernel: in this one the
-cell's 1.1 GB of fresh pages stalled it for huge pages (139 ns, and
-`std::string` keys 236 in the same conditions; CPP_MAPS.md).
-
-With compact keys the port's string inserts and builds of 32-entry maps
-catch up with the Rust crate's or pass it, lookups stay where
-`std::string`'s are, and iterating maps of 4 and of 32 is faster than the
-Rust crate's. Iterating maps of 4 trailed until the root leaf's entries
-went four a round (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): one load per entry, stepping by a page from map
-to map, which the prefetcher follows.
+With compact keys the port inserts, looks up and iterates strings faster
+than the Rust crate, builds 32-entry maps as fast, and trails only in
+building many 4-entry maps, where each map takes a full 1 KiB root page
+(FUTURE_WORK.md). With `std::string` keys it looks up faster but in
+32-entry maps, and inserts and builds slower (see "Where the port
+trails"). Iterating maps of 4
+trailed until the root leaf's entries went four a round (PORTING.md,
+[iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): one load per entry, stepping by a page from map to map, which
+the prefetcher follows.
 
 ## The shared map, u64 → u64
 
@@ -116,35 +111,40 @@ The benches run the shared map at 1k only; the 8-thread rows come from the
 same probe in both languages (1M scrambled keys, 8 threads, wall time an
 operation; `bbtree::bbtree_map` against `bbtree::BBTreeMap`).
 
-| u64 → u64, 1k | Rust shared | C++ shared | Rust unsync | C++ unsync |
-|---|--:|--:|--:|--:|
-| random_insert | 37.8 | 36.9 | 33.9 | 29.3 |
-| sequential_insert | 11.6 | 9.51 | 7.89 | 6.86 |
-| get_hit | 25.5 | 19.8 | 23.8 | 15.3 |
-| get_miss | 23.7 | 17.5 | 22.4 | 14.4 |
-| iterate (a scan) | 0.829 | 0.828 | 0.325 | 0.246 |
-| range64 | 99.4 | 87.8 | 119 | 110 |
-| random_remove | 49.3 | 46.5 | 43.2 | 38.0 |
+Bold marks the faster of each pair: shared against shared, unsync
+against unsync.
 
-| 1M, 8 threads | Rust | C++ |
+| u64 → u64, 1k | bbtree++ shared | bbtree (Rust) shared | bbtree++ unsync | bbtree (Rust) unsync |
+|---|--:|--:|--:|--:|
+| random_insert | **36.9** | 37.8 | **29.3** | 33.9 |
+| sequential_insert | **9.51** | 11.6 | **6.86** | 7.89 |
+| get_hit | **19.8** | 25.5 | **15.3** | 23.8 |
+| get_miss | **17.5** | 23.7 | **14.4** | 22.4 |
+| iterate (a scan) | **0.828** | 0.829 | **0.246** | 0.325 |
+| range64 | **87.8** | 99.4 | **110** | 119 |
+| random_remove | **46.5** | 49.3 | **38.0** | 43.2 |
+
+| 1M, 8 threads | bbtree++ | bbtree (Rust) |
 |---|--:|--:|
-| insert | 42 | 45 |
-| get_copied | 54 | 56 |
-| update | 21 | 22 |
-| remove | 40 | 42 |
+| insert | 45 | **42** |
+| get_copied | 56 | **54** |
+| update | 22 | **21** |
+| remove | 42 | **40** |
 
 ## bbtree-store, `examples/bench` at 1M entries
 
-| | Rust | C++ |
+Bold marks the smaller figure of each row.
+
+| | bbtree++ | bbtree (Rust) |
 |---|--:|--:|
-| 1 thread: insert, ns | 254 | 253 |
-| 1 thread: get, ns | 233 | 224 |
-| 1 thread: scan, ns an entry | 19.1 | 28.5 (23.0 with the scan's visit inlined) |
-| nodes + heap, bytes an entry | 103.6 | 110.6 |
-| churn, heap bytes a live record byte (round 4) | 1.52 | 1.74 |
-| 8 threads: insert, ns wall | 75 | 67 |
-| 8 threads: get, ns wall | 39 | 36 |
-| 4,000-byte values: insert / get, ns | 1744 / 569 | 1879 / 721 |
+| 1 thread: insert, ns | **253** | 254 |
+| 1 thread: get, ns | **224** | 233 |
+| 1 thread: scan, ns an entry | 28.5 (23.0 with the scan's visit inlined) | **19.1** |
+| nodes + heap, bytes an entry | 110.6 | **103.6** |
+| churn, heap bytes a live record byte (round 4) | 1.74 | **1.52** |
+| 8 threads: insert, ns wall | **67** | 75 |
+| 8 threads: get, ns wall | **36** | 39 |
+| 4,000-byte values: insert / get, ns | 1879 / 721 | **1744 / 569** |
 
 The store keeps a head's record in place (the race TSan found; PORTING.md, [heads' records](../../PORTING.md#p24-a-leafs-head-keys-record-stays-put)), which
 costs up to 8 more bytes a record and the stubs churn leaves: the bytes
@@ -166,15 +166,15 @@ four entries a round, and a checksum that folds, as the Rust bench's does
 ([loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)); the store scan's visit inlined
 ([store scans](../../PORTING.md#p31-a-store-scans-visit-inlines-into-the-maps-loop)). In one window with the Rust bench, one run each:
 
-| cell | Rust | C++ | C++ ÷ Rust |
-|---|--:|--:|--:|
-| u64_u64_iterate_1k | 0.330 | 0.217 | 0.66 |
-| u64_u64_iterate_1M | 0.909 | 0.655 | 0.72 |
-| u64_u64_bulk_build_1k | 3.90 | 3.09 | 0.79 |
-| u64_u64_bulk_build_1M | 5.51 | 5.41 | 0.98 |
-| str-json_struct32_iterate_1Mx4 † | 5.67 | 6.83 | 1.20 |
-| str-json_struct32_iterate_100kx32 | 11.7 | 9.32 | 0.80 |
-| store scan, 1M, ns an entry | 20.3 | 23.0 | 1.13 |
+| cell | bbtree++ | bbtree (Rust) |
+|---|--:|--:|
+| u64_u64_iterate_1k | **0.217** | 0.330 |
+| u64_u64_iterate_1M | **0.655** | 0.909 |
+| u64_u64_bulk_build_1k | **3.09** | 3.90 |
+| u64_u64_bulk_build_1M | **5.41** | 5.51 |
+| str-json_struct32_iterate_1Mx4, `std::string` keys † | 6.83 | **5.67** |
+| str-json_struct32_iterate_100kx32, `std::string` keys | **9.32** | 11.7 |
+| store scan, 1M, ns an entry | 23.0 | **20.3** |
 
 † Across this session's windows 4.6-6.8 ns for the port and 4.9-5.7 for
 the Rust bench; a rerun right after, with no compaction stall in the
@@ -183,8 +183,8 @@ port's took 7.2-9.0.
 
 ## Where the port trails, and why
 
-- **`std::string` inserts (1.3-1.4×), small string maps' builds
-  (1.3-1.7×):** libstdc++'s `std::string` is 32 bytes against `String`'s
+- **`std::string` inserts (1.25-1.3×), small string maps' builds
+  (1.4-1.65×):** libstdc++'s `std::string` is 32 bytes against `String`'s
   24 (19 entries a `std::string` → `u64` leaf against 24: more leaves and
   misses), and it points into itself while short, so it shifts one object
   at a time where Rust moves bytes (PORTING.md, [moves](../../PORTING.md#p6-moves-relocate-only-trivially-relocatable-types-as-bytes)). Moving strings as bytes with a
@@ -192,7 +192,7 @@ port's took 7.2-9.0.
   prototype, at the cost of copying the bytes of a non-trivially-copyable
   type and depending on libstdc++'s layout: FUTURE_WORK.md.
   `bbtree::compact_string` keys, 16 bytes and moved as bytes, close the
-  insert and 32-entry build gaps (the section above).
+  insert and 32-entry build gaps (the string keys' table).
 - **Bulk builds (1.3×), closed:** the build loop read its state back
   from members after every store into a page, which C++ can't rule out
   aliasing and Rust's `&mut self` does (PORTING.md,
@@ -203,7 +203,7 @@ port's took 7.2-9.0.
   entry of a leaf with one load, whose steps no stride prefetcher follows;
   Rust's fold, vectorized four entries a round, reads each with one of its
   own. Four entries a round in a root leaf ([iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): `compact_string` keys
-  0.71× the Rust crate's `String`, `std::string` keys about even.
+  0.64-0.71× the Rust crate's `String`, `std::string` keys 1.0-1.2×.
 - **The store's scan (1.5× → 1.13×):** the scan's visit and the record's
   `value()` were calls, a third more instructions an entry, so fewer
   entries' record misses overlapped ([store scans](../../PORTING.md#p31-a-store-scans-visit-inlines-into-the-maps-loop)). What is left is the port's 7
