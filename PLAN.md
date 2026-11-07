@@ -81,3 +81,5 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
   map's unlatched append check (a porting omission: 8-thread inserts 2.4x faster)
 - [x] measured and left for later: libstdc++ strings as bytes (FUTURE_WORK.md), iterators that stay in registers
 - [x] bbtree-store's bench example; CI workflow
+## After the port
+- [x] against C++ maps: abseil's B-tree, std::map, hash maps (bbtree/bench/CPP_MAPS.md)
