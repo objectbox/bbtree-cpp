@@ -18,7 +18,7 @@
 // A step keeps the cursor's position in memory, since the outlined crossings
 // take its node stack by address: range-for over 1M u64 entries takes 1.6 ns
 // an entry with Clang, 1.3 with GCC. The maps' `for_each` walks with no
-// cursor (`walk.hpp`), as Rust's folds do: 0.9 ns (PORTING.md P16).
+// cursor (`walk.hpp`), as Rust's folds do: 0.56 ns (PORTING.md P16).
 #pragma once
 
 #include <bbtree/detail/tree/tree.hpp>

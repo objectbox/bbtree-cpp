@@ -45,7 +45,7 @@ C++ ÷ Rust below 1 is the port faster.
 | u64_u64_pop_first_1M | 18.5 | 16.7 | 0.90 | 19.8 | 40.1 |
 | u64_u64_bulk_build_1M | 5.44 | 7.28 | **1.34** | 4.56 | 89.4 |
 | u64_u64_random_insert_10M | 243 | 260 | 1.07 | 263 | 725 |
-| u64_u64_get_hit_10M | 255 | 246 | 0.96 | 301 | 484 |
+| u64_u64_get_hit_10M † | 255 | 246 | 0.96 | 301 | 484 |
 | u64_u64_get_miss_10M | 197 | 188 | 0.95 | 344 | 480 |
 | str-16_u64_random_insert_1k | 46.6 | 59.7 | **1.28** | 82.6 | 106 |
 | str-16_u64_get_hit_1k | 44.5 | 37.4 | 0.84 | 67.3 | 84.0 |
@@ -53,6 +53,8 @@ C++ ÷ Rust below 1 is the port faster.
 | str-json_u64_random_insert_1M | 182 | 258 | **1.42** | 306 | 454 |
 | str-json_u64_get_hit_1M | 278 | 273 | 0.98 | 519 | 670 |
 | str-json_u64_get_miss_1M | 210 | 161 | 0.77 | 515 | 694 |
+
+† Rust's runs of this cell ranged from 231 to 255 ns this session.
 
 The two right columns compare different maps: Rust's `BTreeMap` is a B-tree,
 `std::map` a red-black tree.

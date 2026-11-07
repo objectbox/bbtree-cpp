@@ -31,9 +31,9 @@
     },
     {
       "name": "gcc",
-      "displayName": "GCC, optimized (its optimizer warns of more), tests",
+      "displayName": "GCC, optimized with assertions (its optimizer warns of more), tests",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_CXX_COMPILER": "g++", "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "g++", "CMAKE_BUILD_TYPE": "RelWithDebInfo", "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g" }
     },
     {
       "name": "release",
