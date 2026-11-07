@@ -100,13 +100,17 @@ crate's bbtree with `String` keys, from COMPARISON.md.
 | str-16_u64_bulk_build_1k | 21.6 | 11.4 | 0.53 | | 19.2 | 129 |
 | str-json_struct32_build_many_1Mx4 ‡ | 236 | 139 | 0.59 | 61.0 | 47.6 | 50.9 |
 | str-json_struct32_get_many_1Mx4 | 74.0 | 79.5 | 1.07 | 82.2 | 76.0 | 98.4 |
-| str-json_struct32_iterate_1Mx4 † | 7.18 | 6.30 | 0.88 | 4.52 | 3.54 | 4.61 |
+| str-json_struct32_iterate_1Mx4 † § | 7.18 | 6.30 | 0.88 | 4.52 | 3.54 | 4.61 |
 | str-json_struct32_build_many_100kx32 | 105 | 61.0 | 0.58 | 60.7 | 105 | 88.7 |
 | str-json_struct32_get_many_100kx32 | 69.7 | 68.3 | 0.98 | 67.4 | 68.0 | 86.6 |
 | str-json_struct32_iterate_100kx32 † | 7.47 | 5.17 | 0.69 | 8.82 | 17.4 | 25.2 |
 | str-json_u64_random_insert_1M | 249 | 161 | 0.65 | 182 | 374 | 487 |
 | str-json_u64_get_hit_1M | 256 | 249 | 0.97 | 278 | 408 | 740 |
 | str-json_u64_get_miss_1M | 161 | 176 | **1.09** | 210 | 433 | 649 |
+
+§ Before the walk read root leaves four entries a round, which came later: 1M maps of 4 now
+iterate in 5.6 ns an entry with `std::string` keys and 3.2 with
+`compact_string` keys (COMPARISON.md).
 
 † bbtree's columns re-run after the checksum became a fold (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)).
 ‡ Not comparable with the other runs: bbtree's maps of 4 take 1.1 GB of
@@ -153,13 +157,17 @@ cell is clean here, see above).
 | str-16_u64_bulk_build_1k | 19.9 | 11.4 | 13.2 | 12.0 |
 | str-json_struct32_build_many_1Mx4 | 77.3 | 66.1 | 66.9 | 65.5 |
 | str-json_struct32_get_many_1Mx4 | 73.6 | 78.3 | 75.0 | 74.7 |
-| str-json_struct32_iterate_1Mx4 | 7.18 | 6.14 | 6.16 | 6.96 |
+| str-json_struct32_iterate_1Mx4 § | 7.18 | 6.14 | 6.16 | 6.96 |
 | str-json_struct32_build_many_100kx32 | 99.8 | 60.0 | 59.8 | 65.7 |
 | str-json_struct32_get_many_100kx32 | 71.8 | 63.4 | 63.5 | 68.6 |
 | str-json_struct32_iterate_100kx32 | 7.27 | 5.26 | 5.73 | 6.29 |
 | str-json_u64_random_insert_1M | 251 | 159 | 156 | 175 |
 | str-json_u64_get_hit_1M | 263 | 243 | 244 | 219 |
 | str-json_u64_get_miss_1M | 179 | 181 | 164 | 181 |
+
+§ Before the walk read root leaves four entries a round, which came later: 1M maps of 4 now
+iterate in 5.6 ns an entry with `std::string` keys and 3.2 with
+`compact_string` keys (COMPARISON.md).
 
 - **A 2-byte size** buys 2 bytes in place: 90% of JSON keys against 84%.
   Misses in 1M maps are 9% faster, fewer ties reading past the node; the
@@ -182,7 +190,10 @@ cell is clean here, see above).
   - random u64 inserts at 1k: 1.7×;
   - `range64`: 1.4-1.5×;
   - `pop_first`: 1.9× on u64, 2.5× on strings;
-  - many 4-entry maps: 1.6× to build, 2.4× to iterate.
+  - many 4-entry maps: 1.6× to build, 2.4× to iterate; to iterate 1.6×
+    since the walk reads root leaves four entries a round, which came after
+    these tables
+    (bbtree 5.6 ns an entry, `compact_string` keys 3.2; COMPARISON.md).
 - **About even:** removes, bulk builds, lookups in many small maps.
 - **At 1M and 10M:** bbtree misses 1.75-1.85× faster on u64 and 2.5× on
   JSON strings, hits 1.4-1.6× faster at 10M u64 and on strings, inserts
@@ -193,9 +204,12 @@ cell is clean here, see above).
 
 The Rust original has the 1k insert gap too: COMPARISON.md has Rust's
 bbtree at 36.0 ns on 1k random u64 inserts against `BTreeMap`'s 17.5, so
-that gap comes from the design, not the port. The other gaps are not
-profiled here, and no Rust `BTreeMap` figures for the many-map cells are
-at hand; in those cells each bbtree map is a cold root page (COMPARISON.md).
+that gap comes from the design, not the port. Of the many-map gaps,
+iteration was profiled: the walk read a leaf's entries with one load,
+whose steps the prefetcher didn't follow (since fixed; PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)). Building them
+pays a full 1 KiB root page a map, where abseil sizes its root leaf to its
+entries (FUTURE_WORK.md). No Rust `BTreeMap` figures for the many-map
+cells are at hand.
 
 `std::unordered_map` beats every ordered map on lookups, random inserts
 and upserts, as expected; not on sequential inserts, which bbtree appends

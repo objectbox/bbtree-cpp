@@ -125,21 +125,23 @@ branch in `size()` for long strings only, and a second layout to test.
 ## From abseil's B-tree
 
 `absl::btree_map` beats bbtree on 1k random u64 inserts (17 ns against
-30), `pop_first` (2×), `range64` (1.2-1.5×), and on every 4-entry-map cell
-(CPP_MAPS.md). The Rust crate trails `BTreeMap` the same way, so these are
-design differences, not port ones. Three of abseil's choices explain them:
+30), `pop_first` (2×), `range64` (1.2-1.5×), and on building 4-entry maps
+and iterating them with `std::string` keys (CPP_MAPS.md). The Rust crate
+trails `BTreeMap` the same way, so these are design differences, not port
+ones. Three of abseil's choices explain them:
 
 - **Root leaves sized to their entries.** abseil allocates a root leaf for
   as many slots as the map holds, and reallocates it larger as it grows,
   up to a full node: a 4-entry `std::string` → 32-byte map takes 88 bytes
   an entry against bbtree's 275, a full 1 KiB page. Building 1M such maps
-  takes abseil 48-52 ns an entry against 71 (compact keys) to 80, and
-  iterating them 3.5 against 6.3: four times the memory streamed for the
-  same five lines a map. For bbtree it means a root page of several sizes,
-  a layout per capacity (the inline keys' area scales with it), and a copy
-  each time the root grows; and it breaks the design's rule that "the
-  root page stays the root", which the shared map's racing reads rely on, so it would be the
-  unsync map's and set's only.
+  takes abseil 48-52 ns an entry against 66 (compact keys) to 77.
+  Iterating them no longer shows it once the root leaf's loads follow a
+  stride the prefetcher takes ([iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): compact keys 3.2 ns an entry against
+  abseil's 3.5, `std::string` keys 5.6. For bbtree it means a root page of
+  several sizes, a layout per capacity (the inline keys' area scales with
+  it), and a copy each time the root grows; and it breaks the design's rule
+  that "the root page stays the root", which the shared map's racing reads rely on, so it
+  would be the unsync map's and set's only.
 - **Parent pointers.** abseil's iterator is a node and an index, stepping
   through parent pointers, so it stays in registers; bbtree's keeps a node
   stack and its position in memory ([iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)), which a 64-entry range scan and

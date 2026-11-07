@@ -321,13 +321,30 @@ random order, with huge pages:
   the Rust bench's does: 1M maps of 4 `std::string` keys 7.8 → 7.2 ns an
   entry, `compact_string` keys 8.0 → 6.3 (Rust 5.1 in the same minutes).
   The walk's instructions per entry match the Rust fold's (about 22,
-  sampled); what is left is in memory: a raw loop over the same lines takes
-  5.8 ns with `std::string`'s 64-byte entries and 5.0 with compact ones.
+  sampled); what was left is in how the loads meet the prefetcher (the
+  four-a-round bullet below).
 - **A root leaf is walked in `run`, with no call** (`leaf_entries` is
   `always_inline`): small maps' walks are a call and a frame each
   otherwise, instructions that keep the next maps' loads out of the CPU's
   window. 1M maps of 4 `std::string` keys 8.3 → 7.8 ns an entry,
   `compact_string` keys 12.8 → 11.0 on a probe (P29).
+- **A root leaf's entries four a round** (`root_leaf_entries`), each entry
+  of a round read by loads of its own. In a loop of one entry a round one
+  load reads every entry: over 1M maps of 4 it steps by an entry three
+  times and then jumps to the next map's page, which no stride prefetcher
+  follows. Four loads that each step by a page from map to map, it
+  follows. Rust's fold gets this from LLVM, which vectorizes it four
+  entries at a time; Clang vectorizes the C++ loop from 17 entries only. On
+  a probe of 1M maps of 4 `compact_string` → 32-byte entries, 112 → 54
+  cycles a map, the demand fills from memory 2.8 → 1.1 a map, and 6.1 →
+  3.5 ns an entry (Rust's fold 4.6); maps of 5 and 7 entries gain as much,
+  8, 12 and 16 stay where they were. So what the bullet above left in
+  memory was not the lines but the order of the loads that read them.
+- **Only the root leaf, and only up to 16 entries:** in `leaf_entries`, the
+  rounds beside the one loop made a 1k `u64` walk 9% slower (0.239 ns an
+  entry against 0.218, three runs each), though its leaves never took
+  them: the loop's code changed. A root leaf is the leftmost leaf and has
+  no head, so `root_leaf_entries` reads none.
 - **Rejected:** a cursor walk that keeps its position in a local and runs a
   leaf's entries in one loop, crossing leaves as the iterators do, as Rust's
   fold does. It came first; the table shows why it went.

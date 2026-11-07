@@ -80,7 +80,8 @@ libstdc++'s `std::string` is 32 and the Rust crate's `String` 24. The
 `std::string` and Rust columns are the tables' above; the compact column is
 `bbtree-bench cpp --map bbtree-unsync-compact` on the same cells, one run
 each, started at load 0.3, after the root-leaf walk (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)); the iterate rows
-after its fold, in one window with a Rust run that took 5.12 and 8.97.
+after its four-a-round root leaves, in one window with a Rust run that
+took 5.67 and 11.7.
 
 | cell | Rust `String` | C++ `std::string` | C++ `compact_string` | compact ÷ Rust |
 |---|--:|--:|--:|--:|
@@ -92,10 +93,10 @@ after its fold, in one window with a Rust run that took 5.12 and 8.97.
 | str-json_u64_get_miss_1M | 210 | 161 | 176 | 0.84 |
 | str-json_struct32_build_many_1Mx4 ‡ | 61.0 | 80.3 | 66.1 | **1.08** |
 | str-json_struct32_get_many_1Mx4 | 82.2 | 74.2 | 79.5 | 0.97 |
-| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 6.30 | **1.39** |
+| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 3.23 | 0.71 |
 | str-json_struct32_build_many_100kx32 | 60.7 | 103 | 61.0 | 1.00 |
 | str-json_struct32_get_many_100kx32 | 67.4 | 70.7 | 68.3 | 1.01 |
-| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 5.17 | 0.59 |
+| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 5.41 | 0.61 |
 
 † Rust's runs of this cell ranged from 4.5 to 6.9 ns this session.
 ‡ From a later run with no compaction stall in the kernel: in this one the
@@ -104,12 +105,10 @@ cell's 1.1 GB of fresh pages stalled it for huge pages (139 ns, and
 
 With compact keys the port's string inserts and builds of 32-entry maps
 catch up with the Rust crate's or pass it, lookups stay where
-`std::string`'s are, and iterating maps of 32 is faster than the Rust
-crate's. Iterating maps of 4 still trails, 6.30 ns against 5.12 in the
-same window. The walks run about the same instructions an entry (sampled;
-PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)); a raw loop over the same lines takes 5.0 ns with compact keys, so
-the rest is the walk's per-map work, and with `std::string` keys the
-64-byte entries' extra lines.
+`std::string`'s are, and iterating maps of 4 and of 32 is faster than the
+Rust crate's. Iterating maps of 4 trailed until the root leaf's entries
+went four a round (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): one load per entry, stepping by a page from map
+to map, which the prefetcher follows.
 
 ## The shared map, u64 → u64
 
@@ -140,7 +139,7 @@ operation; `bbtree::bbtree_map` against `bbtree::BBTreeMap`).
 |---|--:|--:|
 | 1 thread: insert, ns | 254 | 253 |
 | 1 thread: get, ns | 233 | 224 |
-| 1 thread: scan, ns an entry | 19.1 | 28.5 |
+| 1 thread: scan, ns an entry | 19.1 | 28.5 (23.0 with the scan's visit inlined) |
 | nodes + heap, bytes an entry | 103.6 | 110.6 |
 | churn, heap bytes a live record byte (round 4) | 1.52 | 1.74 |
 | 8 threads: insert, ns wall | 75 | 67 |
@@ -161,26 +160,26 @@ and churn rows.
 | bulk builds: sorted ranges build in place; a leaf's run appends without the prefix shrink | 1M u64 bulk build 8.1 → 7.0 ns in the bench, 13.2 → 9.6 on a probe |
 | shared map appends check the last leaf before latching it, as the Rust crate does (a porting omission) | 8-thread inserts 110 → 45 ns; the store's 143 → 67 |
 
-The iterate cells above predate two later changes ([iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): a root leaf
-walked with no call, and a checksum that folds, as the Rust bench's does,
-in place of a `for_each` adding into a captured sum. In one window with the
-Rust bench, one run each:
+The cells above predate later changes: a root leaf walked with no call,
+four entries a round, and a checksum that folds, as the Rust bench's does
+(PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)); the bulk build's run of a leaf in locals
+([loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)); the store scan's visit inlined
+([store scans](../../PORTING.md#p31-a-store-scans-visit-inlines-into-the-maps-loop)). In one window with the Rust bench, one run each:
 
-| iterate | Rust | C++ |
-|---|--:|--:|
-| u64_u64_iterate_1k | 0.343 | 0.228 |
-| u64_u64_iterate_1M | 0.831 | 0.685 |
-| str-json_struct32_iterate_1Mx4 | 5.12 | 7.18 |
-| str-json_struct32_iterate_100kx32 | 8.97 | 7.47 |
+| cell | Rust | C++ | C++ ÷ Rust |
+|---|--:|--:|--:|
+| u64_u64_iterate_1k | 0.330 | 0.217 | 0.66 |
+| u64_u64_iterate_1M | 0.909 | 0.655 | 0.72 |
+| u64_u64_bulk_build_1k | 3.90 | 3.09 | 0.79 |
+| u64_u64_bulk_build_1M | 5.51 | 5.41 | 0.98 |
+| str-json_struct32_iterate_1Mx4 † | 5.67 | 6.83 | 1.20 |
+| str-json_struct32_iterate_100kx32 | 11.7 | 9.32 | 0.80 |
+| store scan, 1M, ns an entry | 20.3 | 23.0 | 1.13 |
 
-Bulk builds with the build's run of a leaf in locals (PORTING.md,
-[loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)), in one window with the Rust
-bench, one run each:
-
-| bulk_build | Rust | C++ |
-|---|--:|--:|
-| u64_u64_bulk_build_1k | 4.01 | 2.80 |
-| u64_u64_bulk_build_1M | 5.23 | 5.55 |
+† Across this session's windows 4.6-6.8 ns for the port and 4.9-5.7 for
+the Rust bench; a rerun right after, with no compaction stall in the
+kernel, took 5.62 against 5.29. Before the four-a-round root leaves the
+port's took 7.2-9.0.
 
 ## Where the port trails, and why
 
@@ -198,15 +197,18 @@ bench, one run each:
   from members after every store into a page, which C++ can't rule out
   aliasing and Rust's `&mut self` does (PORTING.md,
   [loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)). The probe that matched the
-  Rust bench rebuilt on warm pages, which hid it. Now 0.70× and 1.06×
+  Rust bench rebuilt on warm pages, which hid it. Now 0.79× and 0.98×
   (the table above).
-- **Iterating 1M maps of 4 entries (1.8×, with Rust's variance):** each map
-  is a cold root page; the walk itself is down to a direct loop's cost.
-- **The store's scan (1.5×) and long values (1.1-1.3×):** a scan's time
-  is in reading each entry's record in the heap pages, a cache miss an
-  entry, as in the Rust design; the port's heap takes 7 more bytes an entry
-  (87 against 80). Where the bytes and the misses differ is not pinned
-  down.
+- **Iterating 1M maps of 4 entries (1.8×), closed:** the walk read every
+  entry of a leaf with one load, whose steps no stride prefetcher follows;
+  Rust's fold, vectorized four entries a round, reads each with one of its
+  own. Four entries a round in a root leaf ([iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): `compact_string` keys
+  0.71× the Rust crate's `String`, `std::string` keys about even.
+- **The store's scan (1.5× → 1.13×):** the scan's visit and the record's
+  `value()` were calls, a third more instructions an entry, so fewer
+  entries' record misses overlapped ([store scans](../../PORTING.md#p31-a-store-scans-visit-inlines-into-the-maps-loop)). What is left is the port's 7
+  more heap bytes an entry (87 against 80; [heads' records](../../PORTING.md#p24-a-leafs-head-keys-record-stays-put)). Long values (1.1-1.3×)
+  are not looked into.
 
 Everything else is within 10% or faster, mostly from the port's lookups
 (`get_hit`/`get_miss` 0.63-0.99×) and the upsert path.

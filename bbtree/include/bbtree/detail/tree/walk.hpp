@@ -12,6 +12,7 @@
 
 #include <bbtree/detail/tree/tree.hpp>
 
+#include <cassert>
 #include <cstddef>
 #include <utility>
 
@@ -42,7 +43,7 @@ class in_order_walk {
     }
     const node_ptr<T> root = tree_.root();
     if (root.is_leaf()) {
-      return leaf_entries(leaf_node<T>(root), nullptr, std::move(accumulator), fold);
+      return root_leaf_entries(leaf_node<T>(root), std::move(accumulator), fold);
     }
     return subtree(root, nullptr, std::move(accumulator), fold);
   }
@@ -58,6 +59,37 @@ class in_order_walk {
   }
 
  private:
+  // The longest root leaf `root_leaf_entries` folds four entries a round.
+  static constexpr std::size_t short_leaf_len = 16;
+
+  // Folds the entries of the root leaf, the leftmost, which has no head. A
+  // short one, as small maps' are, four entries a round, each read by loads
+  // of its own: over many maps of one size, each such load steps by a page
+  // from map to map, a stride the CPU's prefetcher follows, where one load
+  // for every entry steps by an entry and then jumps. Rust's fold gets the
+  // same from its vectorizer (P16: 1M maps of 4, 6.1 -> 3.5 ns an entry).
+  // Other leaves take `leaf_entries`' one loop, which Clang vectorizes from
+  // 17 entries; with the rounds beside it, a 1k map's walk took 9% longer.
+  template <class A, class Fold>
+  [[gnu::always_inline]] static A root_leaf_entries(const leaf_node<T>& leaf, A accumulator, Fold& fold) {
+    assert(!leaf.has_head());
+    const std::size_t len = leaf.len();
+    if (len > short_leaf_len) {
+      return leaf_entries(leaf, nullptr, std::move(accumulator), fold);
+    }
+    std::size_t index = 0;
+    for (; index + 4 <= len; index += 4) {
+      accumulator = fold(std::move(accumulator), leaf.key(index), leaf.value(index));
+      accumulator = fold(std::move(accumulator), leaf.key(index + 1), leaf.value(index + 1));
+      accumulator = fold(std::move(accumulator), leaf.key(index + 2), leaf.value(index + 2));
+      accumulator = fold(std::move(accumulator), leaf.key(index + 3), leaf.value(index + 3));
+    }
+    for (; index < len; ++index) {
+      accumulator = fold(std::move(accumulator), leaf.key(index), leaf.value(index));
+    }
+    return accumulator;
+  }
+
   // Folds the entries of `leaf`, whose head key, if it has one, is
   // `head_key` for keys without inline keys.
   template <class A, class Fold>
