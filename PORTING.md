@@ -859,3 +859,30 @@ an owning byte string for keys that does neither.
   - **An AArch64 cross toolchain and QEMU in CI** instead of an ARM
     runner: slower and further from real hardware than GitHub's ARM
     runners.
+
+## P34. Installing: `find_package(bbtree)` with the targets' own names
+
+- **Chosen:** `cmake --install` puts the headers of the three libraries
+  under `include/` and a CMake package under `share/cmake/bbtree`:
+  `find_package(bbtree 0.2 CONFIG)`, then `bbtree::bbtree`, `bbtree::mmap`
+  and `bbtree::store`, the names `add_subdirectory` already gives, so a
+  project links the same targets either way. The include paths are build-
+  and install-interface generator expressions; `BBTREE_CHECKED`, on in the
+  tests' builds, is the build tree's only, so an installed bbtree never has
+  the checks. `BBTREE_INSTALL` (on at top level) turns the rules on. The
+  version file asks for the same minor version (`SameMinorVersion`): the
+  API may change between 0.x releases. `scripts/check-install.sh`, also a
+  CI step, installs into a prefix, moves the prefix and builds and runs a
+  consumer (`tests/installed`) against the moved copy, so that no source or
+  build path is baked in. The idea of that check is stx_btree's.
+- **Alternatives considered:**
+  - **The package named `bbtree++`:** CMake takes the name into file names
+    (`bbtree++Config.cmake`) and variables (`bbtree++_FOUND`), where `+` is
+    legal but unusual and easy to mistype in tooling; the library's
+    namespace and include directory are `bbtree`, and the package follows
+    them.
+  - **The package under `lib/cmake`:** the libraries are headers only, so
+    the package is architecture-independent (`ARCH_INDEPENDENT`), and
+    `share/cmake` is where CMake looks for those.
+  - **A pkg-config file:** none of the port's users so far builds without
+    CMake; easy to add beside the package if one does.

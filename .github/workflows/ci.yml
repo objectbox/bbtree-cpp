@@ -35,6 +35,8 @@ jobs:
         run: scripts/use-clang-15.sh clang clang++ clang-format
       - name: Format, build and test
         run: scripts/check.sh
+      - name: Install, and build a project against the install
+        run: scripts/check-install.sh
 
   # AArch64: the in-node counts as NEON vectors (the compiler's), the hash
   # tags' scalar loop and the latch's `isb` spin hint (PORTING.md, P33).

@@ -1,10 +1,12 @@
 # The library: headers under include/bbtree, no dependencies.
 add_library(bbtree INTERFACE)
 add_library(bbtree::bbtree ALIAS bbtree)
-target_include_directories(bbtree INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(bbtree INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                                           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_compile_features(bbtree INTERFACE cxx_std_20)
+# The checks are the tests' and fuzzing's: an installed bbtree never has them.
 if(BBTREE_CHECKED)
-  target_compile_definitions(bbtree INTERFACE BBTREE_CHECKED=1)
+  target_compile_definitions(bbtree INTERFACE $<BUILD_INTERFACE:BBTREE_CHECKED=1>)
 endif()
 
 if(BBTREE_BUILD_TESTS)

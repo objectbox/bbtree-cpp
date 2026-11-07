@@ -17,6 +17,9 @@ option(BBTREE_BUILD_FUZZ "Build the libFuzzer targets (Clang only)" OFF)
 # `cfg(test)`/`cfg(fuzzing)` compile them: tests and fuzz targets turn them on.
 option(BBTREE_CHECKED "Compile the trees' structural invariant checks" ${BBTREE_BUILD_TESTS})
 option(BBTREE_NATIVE "Build for the host CPU (-march=native, AArch64: -mcpu=native)" OFF)
+option(BBTREE_INSTALL "Generate the install rules and the bbtree CMake package" ${PROJECT_IS_TOP_LEVEL})
+
+include(GNUInstallDirs)
 set(BBTREE_SANITIZE "" CACHE STRING "Sanitizers: address,undefined | thread | empty")
 
 add_library(bbtree_warnings INTERFACE)
@@ -59,4 +62,25 @@ if(BBTREE_BUILD_FUZZ)
 endif()
 if(BBTREE_BUILD_BENCH)
   add_subdirectory(bbtree/bench)
+endif()
+
+# `cmake --install`: the headers of the three libraries and the `bbtree`
+# package, whose targets are named as `add_subdirectory` names them:
+# `find_package(bbtree)`, then `bbtree::bbtree`, `bbtree::mmap` or
+# `bbtree::store` (PORTING.md, P34).
+if(BBTREE_INSTALL)
+  include(CMakePackageConfigHelpers)
+  install(TARGETS bbtree bbtree_mmap bbtree_store EXPORT bbtreeTargets)
+  install(DIRECTORY bbtree/include/ bbtree-mmap/include/ bbtree-store/include/
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  set(BBTREE_PACKAGE_DIR ${CMAKE_INSTALL_DATADIR}/cmake/bbtree)
+  install(EXPORT bbtreeTargets NAMESPACE bbtree:: DESTINATION ${BBTREE_PACKAGE_DIR})
+  configure_package_config_file(cmake/bbtreeConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/bbtreeConfig.cmake
+                                INSTALL_DESTINATION ${BBTREE_PACKAGE_DIR})
+  # 0.x: a minor version may change the API, so only the same minor matches.
+  write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/bbtreeConfigVersion.cmake
+                                   COMPATIBILITY SameMinorVersion ARCH_INDEPENDENT)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/bbtreeConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/bbtreeConfigVersion.cmake
+          DESTINATION ${BBTREE_PACKAGE_DIR})
+  install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/bbtree)
 endif()

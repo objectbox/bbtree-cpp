@@ -1,0 +1,7 @@
+# The bbtree++ package: `find_package(bbtree)`, then link `bbtree::bbtree`,
+# `bbtree::mmap` (file maps) or `bbtree::store`. Headers only, no
+# dependencies.
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/bbtreeTargets.cmake")
+check_required_components(bbtree)

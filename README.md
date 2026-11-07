@@ -140,6 +140,20 @@ scripts/check.sh            # format, Clang and GCC builds, tests
 scripts/check.sh --sanitize # plus AddressSanitizer + UBSan
 cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan   # ThreadSanitizer
 cmake --preset fuzz && cmake --build --preset fuzz                          # libFuzzer targets
+scripts/check-install.sh    # install, and build a project against the install
+```
+
+To use bbtree++ from another CMake project, either add it with
+`add_subdirectory` (or `FetchContent`), or install it and find it:
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DBBTREE_BUILD_TESTS=OFF
+cmake --install build/release --prefix /opt/bbtree
+```
+
+```cmake
+find_package(bbtree 0.2 CONFIG REQUIRED)   # with /opt/bbtree in CMAKE_PREFIX_PATH
+target_link_libraries(app PRIVATE bbtree::bbtree)   # or bbtree::mmap, bbtree::store
 ```
 
 ## Layout

@@ -1,8 +1,10 @@
 # bbtree on disk: maps written to files and looked up where they lie.
 add_library(bbtree_mmap INTERFACE)
 add_library(bbtree::mmap ALIAS bbtree_mmap)
-target_include_directories(bbtree_mmap INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(bbtree_mmap INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                                               $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_link_libraries(bbtree_mmap INTERFACE bbtree::bbtree)
+set_target_properties(bbtree_mmap PROPERTIES EXPORT_NAME mmap)
 
 if(BBTREE_BUILD_TESTS)
   add_executable(bbtree_mmap_tests tests/bbtree_map_file_test.cpp)

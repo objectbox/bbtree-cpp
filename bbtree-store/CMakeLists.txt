@@ -2,8 +2,10 @@
 # every byte of its keys and values in pages from its allocator; and its WAL.
 add_library(bbtree_store INTERFACE)
 add_library(bbtree::store ALIAS bbtree_store)
-target_include_directories(bbtree_store INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(bbtree_store INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                                                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_link_libraries(bbtree_store INTERFACE bbtree::bbtree)
+set_target_properties(bbtree_store PROPERTIES EXPORT_NAME store)
 
 if(BBTREE_BUILD_TESTS)
   find_package(Threads REQUIRED)
