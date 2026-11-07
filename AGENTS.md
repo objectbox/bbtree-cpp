@@ -39,6 +39,8 @@ design, which this port follows; PORTING.md says where and why it differs.
 - Never do explicit prefetching: no software prefetch instructions or intrinsics (`_mm_prefetch`, `__builtin_prefetch`, inline `prefetcht0`, ...), not in the library, benchmarks, prototypes or A/B variants, and not behind a feature flag. Fix memory latency with layout instead: put what an operation needs in the cache lines it already loads (design/03-decisions.md, "No software prefetch").
   Exception: the batch lanes (design/12-batch-api.md) prefetch, only through `prefetcher` in `bbtree/include/bbtree/detail/tree/batch.hpp`, the line each lane reads next, the query window included. Never in single-key paths, and never whole keys or unchosen edges.
 
+- A hot loop that stores into a page keeps its state (lengths, cursors, the leaf it fills) in locals, not members: a store through `std::byte*` may alias any member, so the compiler reloads them after every store, which Rust's `&mut self` rules out (PORTING.md, [loops that store into a page](PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)).
+
 ## Verification
 
 - Local checks are `scripts/check.sh`: `clang-format --dry-run --Werror`, a warnings-as-errors build under Clang and GCC, and `ctest`. `scripts/check.sh --sanitize` adds AddressSanitizer + UBSan, the stand-in for the Rust crate's Miri.
@@ -50,4 +52,12 @@ design, which this port follows; PORTING.md says where and why it differs.
 - Never run full benchmark sweep without explicit approval.
 - It's meaningless to repeat a benchmark, if the run to run variance is high, either the machine is not stable -- then wait for it to stablize, or the benchmark/implementation is broken -- then fix it. Repeating and taking average/median is for losers to cover benchmark flaw.
 - Only run a carefully selected subset of relevant benchmarks.
+- Start a timing run only on a quiet machine: a 1-minute load under 0.3, checked every few seconds (an IDE indexing counts). Time a comparison of the port with the Rust crate in one window, both benches back to back.
+- Cells that build many maps (`1Mx4`, `100kx32`) take about a GB of fresh huge pages; when the machine's memory is mostly page cache the kernel stalls in compaction. Read `compact_stall` in `/proc/vmstat` before and after such a cell: one that stalled is not a measurement.
+- `bbtree-bench-memory` counts heap bytes, which don't depend on load: one run is exact. Its RSS columns move in 64 KiB steps, meaningless at 1k entries.
 - A probe outside the bench builds as the bench does, or it measures something else: C++ with the bench preset's flags (`-O3 -march=native -DNDEBUG`, LTO, mimalloc), Rust with `-C target-cpu=native` (the Rust bench's `.cargo/config.toml`) and its release profile. A probe that times a cold one-shot cell must not rebuild on warm pages.
+
+## Docs
+
+- General docs (the READMEs, the bench's COMPARISON.md and CPP_MAPS.md, FUTURE_WORK.md, AGENTS.md) don't cite numbered entries such as P16, D25 or M11: link the section by its name, e.g. PORTING.md, [iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds). PORTING.md, PLAN.md and `design/` own their numbers.
+- Tables comparing the port with the Rust crate put the port first as `bbtree++`, name the original `bbtree (Rust)`, and bold the fastest (or smallest) figure of each row. String-key rows run bbtree++ with the compact string fastest on the cell and name it in the row.
