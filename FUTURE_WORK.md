@@ -152,3 +152,23 @@ design differences, not port ones. Three of abseil's choices explain them:
   entries, and up to 880 bytes shifted, which a 1k map in cache pays on
   every random insert and removal. Smaller leaves for small entries would
   need the 1 KiB floor and the inline-key area's sizing revisited.
+
+## Bulk appends from set algebra and file maps
+
+`tree_builder::extend` keeps a leaf's run in locals, which took a 1M u64
+bulk build from 24.5 to 16.4 cycles an entry. The set algebra
+(`unsync/set.hpp`'s merged builds) and the file map's loading
+(`file.hpp`) still call `push` per entry, which reads the builder's
+members back after each store into the page. Feeding them through
+`extend` needs an iterator, or a callback form of it, over their merged
+or decoded entries. Not measured.
+
+## The shared prefix of lookups
+
+A lookup checks its key against what every key of the tree shares
+(`shared_prefix::place_outside`, `cmp_shared_prefix(bytes())`), from a
+span: a prefix shorter than 8 bytes may take the copy and stalled load
+that `word_at` took out of the bulk build. Maps of dense ids share such a
+prefix; the bench's random keys share none, so no cell shows it. Not
+measured.
+

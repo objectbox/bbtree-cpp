@@ -75,10 +75,7 @@ class tree_owner {
   template <std::forward_iterator It, class EntryOf>
   void build_ascending(It first, It last, EntryOf entry_of) {
     tree_builder<T, Allocator> builder(pages());
-    for (; first != last; ++first) {
-      std::pair<K, V> entry = entry_of(*first);
-      builder.push(std::move(entry.first), std::move(entry.second));
-    }
+    builder.extend(first, last, entry_of);
     adopt(std::move(builder).finish());
   }
 
@@ -92,9 +89,7 @@ class tree_owner {
       entries.erase(std::unique(entries.begin(), entries.end(), equal_keys), entries.end());
     }
     tree_builder<T, Allocator> builder(pages());
-    for (auto& entry : entries) {
-      builder.push(std::move(entry.first), std::move(entry.second));
-    }
+    builder.extend(entries.begin(), entries.end(), [](std::pair<K, V>& entry) { return std::move(entry); });
     adopt(std::move(builder).finish());
   }
 

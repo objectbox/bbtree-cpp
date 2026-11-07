@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -51,7 +52,22 @@ class shared_prefix {
   // How many of these bytes `key`'s encoding starts with.
   template <class T>
   std::size_t len_shared_with(const typename T::key_type& key) const noexcept {
-    return len_ == 0 ? 0 : T::inliner::common_prefix_len_with_bytes(key, bytes());
+    if (len_ == 0) {
+      return 0;
+    }
+    if constexpr (T::inliner::has_inline_keys && !T::inliner::is_byte_string) {
+      // A window at a time, read from the array whole (`word_at`).
+      for (std::size_t offset = 0; offset < len_; offset += sizeof(inline_word)) {
+        const inline_word differing = T::inliner::inline_key_at(key, offset) ^ word_at(offset);
+        if (differing != 0) {
+          return std::min<std::size_t>(len_,
+                                       offset + static_cast<std::size_t>(std::countl_zero(differing)) / 8);
+        }
+      }
+      return len_;
+    } else {
+      return T::inliner::common_prefix_len_with_bytes(key, bytes());
+    }
   }
 
   template <class T>
@@ -67,9 +83,7 @@ class shared_prefix {
 
   // The window of these bytes at `prefix_len`: what a border node whose
   // prefix shrinks to it fills its windows from.
-  window window_at(std::size_t prefix_len) const noexcept {
-    return {prefix_len, big_endian::window(bytes(), prefix_len)};
-  }
+  window window_at(std::size_t prefix_len) const noexcept { return {prefix_len, word_at(prefix_len)}; }
 
   // Where `key` sorts against every key of the tree if it lacks these bytes:
   // before or after them all. None if it has them, or if the nodes compare
@@ -95,6 +109,20 @@ class shared_prefix {
   }
 
  private:
+  // Bytes `offset..offset + 8` of these, zero past their length: one load of
+  // 8 bytes of the array, where a window of `bytes()` copies one shorter
+  // than 8 bytes by a call into the stack and loads it back, which stalls
+  // the load (every entry of a bulk build checks this prefix).
+  inline_word word_at(std::size_t offset) const noexcept {
+    if (offset >= len_) {
+      return 0;
+    }
+    const std::size_t start = std::min(offset, max_len - sizeof(inline_word));
+    const inline_word word = big_endian::load(bytes_.data() + start) << (8 * (offset - start));
+    const std::size_t kept = len_ - offset;
+    return kept >= sizeof(inline_word) ? word : word & ~(~inline_word{0} >> (8 * kept));
+  }
+
   std::uint8_t len_ = 0;
   std::array<std::uint8_t, max_len> bytes_{};
 };

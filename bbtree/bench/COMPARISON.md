@@ -173,6 +173,15 @@ Rust bench, one run each:
 | str-json_struct32_iterate_1Mx4 | 5.12 | 7.18 |
 | str-json_struct32_iterate_100kx32 | 8.97 | 7.47 |
 
+Bulk builds with the build's run of a leaf in locals (PORTING.md,
+[loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)), in one window with the Rust
+bench, one run each:
+
+| bulk_build | Rust | C++ |
+|---|--:|--:|
+| u64_u64_bulk_build_1k | 4.01 | 2.80 |
+| u64_u64_bulk_build_1M | 5.23 | 5.55 |
+
 ## Where the port trails, and why
 
 - **`std::string` inserts (1.3-1.4×), small string maps' builds
@@ -185,9 +194,12 @@ Rust bench, one run each:
   type and depending on libstdc++'s layout: FUTURE_WORK.md.
   `bbtree::compact_string` keys, 16 bytes and moved as bytes, close the
   insert and 32-entry build gaps (the section above).
-- **Bulk builds (1.3×):** a probe of the same build (sorted random u64,
-  huge pages) takes 5.3 ns an entry, close to the Rust bench's 5.2; the
-  bench cell's 7.0 ns stays unexplained.
+- **Bulk builds (1.3×), closed:** the build loop read its state back
+  from members after every store into a page, which C++ can't rule out
+  aliasing and Rust's `&mut self` does (PORTING.md,
+  [loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)). The probe that matched the
+  Rust bench rebuilt on warm pages, which hid it. Now 0.70× and 1.06×
+  (the table above).
 - **Iterating 1M maps of 4 entries (1.8×, with Rust's variance):** each map
   is a cold root page; the walk itself is down to a direct loop's cost.
 - **The store's scan (1.5×) and long values (1.1-1.3×):** a scan's time

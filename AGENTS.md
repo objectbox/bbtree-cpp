@@ -50,3 +50,4 @@ design, which this port follows; PORTING.md says where and why it differs.
 - Never run full benchmark sweep without explicit approval.
 - It's meaningless to repeat a benchmark, if the run to run variance is high, either the machine is not stable -- then wait for it to stablize, or the benchmark/implementation is broken -- then fix it. Repeating and taking average/median is for losers to cover benchmark flaw.
 - Only run a carefully selected subset of relevant benchmarks.
+- A probe outside the bench builds as the bench does, or it measures something else: C++ with the bench preset's flags (`-O3 -march=native -DNDEBUG`, LTO, mimalloc), Rust with `-C target-cpu=native` (the Rust bench's `.cargo/config.toml`) and its release profile. A probe that times a cold one-shot cell must not rebuild on warm pages.

@@ -678,3 +678,32 @@ an owning byte string for keys that does neither.
 - **Scope:** keys of the unsync map and set. Values of the shared map are
   untested: its unlatched copies of byte-string values (D57) assume a
   layout of their own.
+
+## P30. Loops that store into a page keep their state in locals
+
+- **Chosen:** a loop that writes a node's page keeps what it reads every
+  round in locals, not in members: the bulk build's run of a leaf
+  (`tree_builder::extend`) holds the border leaf, its length, a copy of
+  what every key shares and the count of entries it added. Rust's `extend`
+  has the same shape, and there `&mut self` tells the compiler that nothing
+  else writes the builder. In C++ a store into the page, through
+  `std::byte*`, may write any member, so the members were read back after
+  every store and the count stored every round: 24.5 cycles and 92
+  instructions an entry of a 1M `u64` build against Rust's 19.1 and 80. In
+  locals, 16.4 and 72, and the build takes 5.4 ns an entry against Rust's
+  5.7.
+  Splitting `push` into an inline run and an out-of-line rest alone gained
+  nothing: the call was not the cost.
+- **What every key shares is read whole:** `shared_prefix::word_at` loads 8
+  bytes of its array and masks those past its length, where a window of
+  `bytes()` shorter than 8 bytes copied them through a `memcpy` call into
+  the stack and loaded them back as one word, which stalls the load. Every
+  entry of a bulk build checks it, so keys sharing 1 to 7 bytes, as dense
+  ids do, built at 13.7 ns an entry (52 cycles) against Rust's 7.1 (26);
+  now at 6.0 (20).
+- **Measured** on one-shot probes of each language's build in a fresh
+  process, as the bench cell runs it (one build, cold pages), counted as
+  the difference to the same process without the build, built with
+  `NDEBUG` as the bench preset is. The earlier probe
+  rebuilt the map 30 times on warm pages and matched the Rust bench's cell,
+  which hid the gap (COMPARISON.md).

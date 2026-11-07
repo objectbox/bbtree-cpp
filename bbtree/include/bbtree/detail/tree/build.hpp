@@ -13,6 +13,7 @@
 #include <bbtree/detail/tree/tree.hpp>
 
 #include <cstddef>
+#include <iterator>
 #include <utility>
 
 namespace bbtree::detail {
@@ -30,31 +31,46 @@ class tree_builder {
 
   // Appends an entry whose key is greater than every key before it.
   void push(K&& key, V&& value) {
-    if (!tree_.has_root()) {
-      tree_.make_root(pages_);
-      border_leaf_ = leaf_node<T>(tree_.root());
-    }
-    const std::size_t len = border_leaf_.len();
-    if (length_ > 0 && len < leaf_node<T>::capacity && tree_.shared().template is_shared_by<T>(key))
-        [[likely]] {
-      // Into the border leaf, which has room, under the prefix every key
-      // shares: the run of a leaf, as Rust's `extend` loops (12% off a 1M
-      // u64 build).
+    const std::size_t len = length_ > 0 ? border_leaf_.len() : leaf_node<T>::capacity;
+    if (len < leaf_node<T>::capacity && tree_.shared().template is_shared_by<T>(key)) [[likely]] {
       border_leaf_.insert_fit(len,
                               prefixed_key<K&&>(std::move(key)).template window_at<T>(tree_.shared().len()),
                               std::move(value));
       ++length_;
       return;
     }
-    const prefixed_key<K&&> prefixed = tree_.template shrink_shared_prefix_for<K&&>(std::move(key));
-    const std::size_t shared_len = tree_.shared().len();
-    if (border_leaf_.len() < leaf_node<T>::capacity) {
-      border_leaf_.insert_fit(border_leaf_.len(), prefixed.template window_at<T>(shared_len),
-                              std::move(value));
-    } else {
-      start_leaf(prefixed.template window_at<T>(shared_len), std::move(value));
+    push_past_run(std::move(key), std::move(value));
+  }
+
+  // Appends the entries `entry_of(*it)` of [first, last), whose keys ascend
+  // past every key before them: `push` for each, with the run of a leaf (the
+  // entries into the border leaf while it has room, under the prefix every
+  // key shares) in a loop of its own, as Rust's `extend` loops. The loop
+  // keeps the leaf, what every key shares and the count in locals, which
+  // the stores into the leaf's page can't change: members would be read
+  // back after each store (a quarter off a 1M u64 build).
+  template <std::input_iterator It, class EntryOf>
+  void extend(It first, It last, EntryOf entry_of) {
+    leaf_node<T> leaf = border_leaf_;
+    shared_prefix shared = tree_.shared();
+    std::size_t len = length_ > 0 ? leaf.len() : leaf_node<T>::capacity;
+    std::size_t run = 0;
+    for (; first != last; ++first) {
+      std::pair<K, V> entry = entry_of(*first);
+      if (len < leaf_node<T>::capacity && shared.template is_shared_by<T>(entry.first)) [[likely]] {
+        leaf.insert_fit(len, prefixed_key<K&&>(std::move(entry.first)).template window_at<T>(shared.len()),
+                        std::move(entry.second));
+        ++len;
+        ++run;
+        continue;
+      }
+      length_ += std::exchange(run, 0);
+      push_past_run(std::move(entry.first), std::move(entry.second));
+      leaf = border_leaf_;
+      shared = tree_.shared();
+      len = leaf.len();
     }
-    ++length_;
+    length_ += run;
   }
 
   // The tree, with its right border fixed, and its length.
@@ -67,6 +83,24 @@ class tree_builder {
   }
 
  private:
+  // The first entry, one past a full leaf, or one whose key shares less
+  // than every key before it.
+  [[gnu::noinline]] void push_past_run(K&& key, V&& value) {
+    if (!tree_.has_root()) {
+      tree_.make_root(pages_);
+      border_leaf_ = leaf_node<T>(tree_.root());
+    }
+    const prefixed_key<K&&> prefixed = tree_.template shrink_shared_prefix_for<K&&>(std::move(key));
+    const std::size_t shared_len = tree_.shared().len();
+    if (border_leaf_.len() < leaf_node<T>::capacity) {
+      border_leaf_.insert_fit(border_leaf_.len(), prefixed.template window_at<T>(shared_len),
+                              std::move(value));
+    } else {
+      start_leaf(prefixed.template window_at<T>(shared_len), std::move(value));
+    }
+    ++length_;
+  }
+
   // Starts a new leaf, the separator's head: the separator goes into the
   // lowest border node with room, under new border nodes for each full one,
   // raising the tree if every one is full. Its pages come first.
