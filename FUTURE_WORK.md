@@ -95,7 +95,7 @@ building 100k maps of 32 `std::string` → 32-byte entries 26% faster (79 ns
 an insert to 58) in a prototype that fixed up `slots`' shifts and the paired
 entries' shift; 1M random inserts into one map gained nothing, their shifts
 overlapping the leaf's cache misses. The bench's `build_many_100kx32` cell
-is where the port trails the Rust crate most (1.7x). Doing it means: a
+is where bbtree++ trails the Rust crate most (1.7x). Doing it means: a
 relocation trait with a fix-up after byte moves (`std::string` under
 libstdc++'s C++11 ABI, whose layout the ABI freezes: data pointer first,
 buffer at 16), fix-ups in every byte-moving path (`slots`' shifts and runs,
@@ -124,7 +124,7 @@ branch in `size()` for long strings only, and a second layout to test.
 
 ## From abseil's B-tree
 
-`absl::btree_map` beats bbtree on 1k random u64 inserts (17 ns against
+`absl::btree_map` beats bbtree++ on 1k random u64 inserts (17 ns against
 30), `pop_first` (2×), `range64` (1.2-1.5×), and on building 4-entry maps
 and iterating them with `std::string` keys (CPP_MAPS.md). The Rust crate
 trails `BTreeMap` the same way, so these are design differences, not port
@@ -133,24 +133,24 @@ ones. Three of abseil's choices explain them:
 - **Root leaves sized to their entries.** abseil allocates a root leaf for
   as many slots as the map holds, and reallocates it larger as it grows,
   up to a full node: a 4-entry `std::string` → 32-byte map takes 88 bytes
-  an entry against bbtree's 275, a full 1 KiB page. Building 1M such maps
+  an entry against bbtree++'s 275, a full 1 KiB page. Building 1M such maps
   takes abseil 48-52 ns an entry against 66 (compact keys) to 77.
   Iterating them no longer shows it once the root leaf's loads follow a
   stride the prefetcher takes ([iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): compact keys 3.2 ns an entry against
-  abseil's 3.5, `std::string` keys 5.6. For bbtree it means a root page of
+  abseil's 3.5, `std::string` keys 5.6. For bbtree++ it means a root page of
   several sizes, a layout per capacity (the inline keys' area scales with
   it), and a copy each time the root grows; and it breaks the design's rule
   that "the root page stays the root", which the shared map's racing reads rely on, so it
   would be the unsync map's and set's only.
 - **Parent pointers.** abseil's iterator is a node and an index, stepping
-  through parent pointers, so it stays in registers; bbtree's keeps a node
+  through parent pointers, so it stays in registers; bbtree++'s keeps a node
   stack and its position in memory ([iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)), which a 64-entry range scan and
   `pop_first`'s descent pay. Parent pointers cost 8 bytes a node and a
   write to every child an internal split or merge moves, and the shared
   map's nodes would need them kept under its latches.
 - **256-byte nodes.** abseil sizes nodes to about 256 bytes, so a u64 →
   u64 leaf holds 15 entries and an insert shifts at most 240 bytes. A
-  bbtree leaf is at least 1 KiB (the design's floor, at least 12 keys): 55 u64
+  bbtree++ leaf is at least 1 KiB (the design's floor, at least 12 keys): 55 u64
   entries, and up to 880 bytes shifted, which a 1k map in cache pays on
   every random insert and removal. Smaller leaves for small entries would
   need the 1 KiB floor and the inline-key area's sizing revisited.

@@ -2,7 +2,7 @@
 
 `bbtree::unsync::bbtree_map` against `absl::btree_map`, `std::map` and
 `std::unordered_map` (the bench's `std-hash`). COMPARISON.md compares
-the port with the Rust original; this file compares it with other C++ maps.
+bbtree++ with the Rust original; this file compares it with other C++ maps.
 
 - **Machine and build:** as in COMPARISON.md (Ryzen 9 5950X, Clang 15,
   `--preset bench`, mimalloc 3.3.2 with huge pages), abseil 20250814.2.
@@ -10,7 +10,7 @@ the port with the Rust original; this file compares it with other C++ maps.
   122 cells, one run each in a fresh process, 21 s, load under 0.3.
 - **Sizes:** `small` runs every map at 1k entries and `tiny` on many small
   maps; `cpp`, the C++ bench's own suite, runs `ci`'s 1M and 10M workloads
-  on every map (`ci` itself runs only bbtree and `std::map`, as in the Rust
+  on every map (`ci` itself runs only bbtree++ and `std::map`, as in the Rust
   bench).
 
 ## 1k entries and many small maps, ns an operation (iterate, many maps: an entry)
@@ -18,7 +18,7 @@ the port with the Rust original; this file compares it with other C++ maps.
 Bold marks the fastest ordered map. The hash map has no order, so it has
 no `range64` or `pop_first`.
 
-| cell | bbtree | absl btree | std::map | std::unordered_map |
+| cell | bbtree++ | absl btree | std::map | std::unordered_map |
 |---|--:|--:|--:|--:|
 | u64_u64_random_insert_1k | 29.8 | **17.2** | 22.6 | 10.7 |
 | u64_u64_sequential_insert_1k | **7.30** | 15.9 | 26.4 | 10.1 |
@@ -50,10 +50,9 @@ no `range64` or `pop_first`.
 ## 1M and 10M entries, ns an operation (iterate: an entry)
 
 `bbtree-bench cpp`, 76 cells, once each, 81 s, started at load 0.1 after
-the 5-minute load average had stayed under 0.3. Two earlier runs, on a
-machine busy with an IDE's indexing, are discarded.
+the 5-minute load average had stayed under 0.3.
 
-| cell | bbtree | absl btree | std::map | std::unordered_map |
+| cell | bbtree++ | absl btree | std::map | std::unordered_map |
 |---|--:|--:|--:|--:|
 | u64_u64_random_insert_1M | **95.9** | 98.9 | 211 | 59.7 |
 | u64_u64_sequential_insert_1M | **9.83** | 33.9 | 78.7 | 61.0 |
@@ -72,21 +71,21 @@ machine busy with an IDE's indexing, are discarded.
 | str-json_u64_get_hit_1M | **274** | 432 | 689 | 153 |
 | str-json_u64_get_miss_1M | **168** | 413 | 812 | 117 |
 
-† bbtree's runs of this cell ranged from 88 to 129 ns today (93.4 in
+† bbtree++'s runs of this cell ranged from 88 to 129 ns today (93.4 in
 COMPARISON.md; 110 on a rerun of the cell alone, at load 0.8); abseil's
 from 111 to 146. Unsettled: read it as about even.
 
 ## `compact_string` keys against `std::string` keys
 
-`bbtree-unsync-compact` is bbtree's unsync map with `bbtree::compact_string`
+`bbtree-unsync-compact` is bbtree++'s unsync map with `bbtree::compact_string`
 keys (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place)): 16 bytes, up to 12 in place, moved as bytes. The
 cell turns its keys into compact strings before it times anything.
 `bbtree-bench cpp --key str-16,str-json --map
 bbtree-unsync,bbtree-unsync-compact,absl-btree,std-btree`, one run each,
-started at load 0.3, with the root-leaf walk (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)). Rust is the Rust
-crate's bbtree with `String` keys, from COMPARISON.md.
+started at load 0.3, with the root-leaf walk (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)). bbtree (Rust),
+with `String` keys, is from COMPARISON.md.
 
-| cell | `std::string` | `compact_string` | compact ÷ std | Rust | absl btree | std::map |
+| cell | `std::string` | `compact_string` | compact ÷ std | bbtree (Rust) | absl btree | std::map |
 |---|--:|--:|--:|--:|--:|--:|
 | str-16_u64_random_insert_1k | 58.9 | 39.1 | 0.66 | 46.6 | 106 | 105 |
 | str-16_u64_sequential_insert_1k | 32.1 | 16.1 | 0.50 | | 47.9 | 116 |
@@ -112,12 +111,12 @@ crate's bbtree with `String` keys, from COMPARISON.md.
 iterate in 5.6 ns an entry with `std::string` keys and 3.2 with
 `compact_string` keys (COMPARISON.md).
 
-† bbtree's columns re-run after the checksum became a fold (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)).
-‡ Not comparable with the other runs: bbtree's maps of 4 take 1.1 GB of
+† bbtree++'s columns re-run after the checksum became a fold (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)).
+‡ Not comparable with the other runs: bbtree++'s maps of 4 take 1.1 GB of
 fresh pages, and with the machine's memory mostly page cache, getting huge
 pages stalled the kernel in compaction (29 stalls in one run of the cell,
 none in abseil's, which takes a third as much). The same cell took 78 ns
-with `std::string` keys earlier in the session; the two bbtree columns of
+with `std::string` keys earlier in the session; the two bbtree++ columns of
 this run stalled alike.
 
 - **Writes:** an entry of a string → `u64` leaf shrinks from 49 bytes to
@@ -184,14 +183,14 @@ iterate in 5.6 ns an entry with `std::string` keys and 3.2 with
 The heap bytes a map holds after its build, divided by its entries:
 `bbtree-bench-memory cpp`, which counts the bytes mimalloc hands out
 (`mi_usable_size`) and frees, one run each. The counts don't depend on
-the machine's load. bbtree's string rows have the compact string that
+the machine's load. bbtree++'s string rows have the compact string that
 suits the keys (see above): `compact_string_24` (`bbtree-unsync-compact-24`,
 24 bytes, up to 20 in place) for `str-16`, whose keys it mostly holds in
 place, and the default `compact_string` (`bbtree-unsync-compact`, 16 bytes,
 a 4-byte size, up to 12 in place) for JSON keys. The other maps have
 `std::string` keys.
 
-| cell | bbtree | absl btree | std::map | std::unordered_map | bbtree ÷ std::map |
+| cell | bbtree++ | absl btree | std::map | std::unordered_map | bbtree++ ÷ std::map |
 |---|--:|--:|--:|--:|--:|
 | u64_u64_random_insert_1k | 27.7 | **20.8** | 48.0 | 42.3 | 0.58 |
 | u64_u64_sequential_insert_1k | 24.6 | **18.1** | 48.0 | 42.3 | 0.51 |
@@ -209,7 +208,7 @@ a 4-byte size, up to 12 in place) for JSON keys. The other maps have
   node is 32 bytes of links and colour beside the entry's 16, mimalloc's
   48-byte size class. With `std::string` keys a node is 72 bytes, in the
   80-byte class, plus a heap buffer for each key past 15 bytes.
-- **bbtree's** `u64` entry is its 16 bytes and a 2-byte inline key: 18.5
+- **bbtree++'s** `u64` entry is its 16 bytes and a 2-byte inline key: 18.5
   bytes in the full leaves of a bulk build, 23.6 after ascending inserts,
   26.9 after random ones, which leave leaves about 70% full. abseil's
   nodes keep no inline keys and are 1-6 bytes an entry smaller.
@@ -220,7 +219,7 @@ a 4-byte size, up to 12 in place) for JSON keys. The other maps have
   48.8 against 55.2 in a bulk build, but 68.3 against 65.5 after
   sequential inserts. On JSON keys it takes 61.5 against 51.0. The
   2-byte-size variant is 1-2.4 bytes smaller than `compact_string` on
-  every cell. With `std::string` keys bbtree takes
+  every cell. With `std::string` keys bbtree++ takes
   76.9 bytes an entry on 1M JSON keys (0.93× std::map) and 72-106 on
   `str-16` at 1k.
 - **The Rust crate** takes the same bytes on every `u64` cell; with its
@@ -228,7 +227,7 @@ a 4-byte size, up to 12 in place) for JSON keys. The other maps have
 
 ## Against abseil's B-tree
 
-- **bbtree is faster:**
+- **bbtree++ is faster:**
   - lookups: 1.5× on u64, 2-3× on 16-byte strings;
   - string inserts and upserts: 1.6×;
   - sequential inserts: 1.5-2×;
@@ -240,18 +239,18 @@ a 4-byte size, up to 12 in place) for JSON keys. The other maps have
   - many 4-entry maps: 1.6× to build, 2.4× to iterate; to iterate 1.6×
     since the walk reads root leaves four entries a round, which came after
     these tables
-    (bbtree 5.6 ns an entry, `compact_string` keys 3.2; COMPARISON.md).
+    (bbtree++ 5.6 ns an entry, `compact_string` keys 3.2; COMPARISON.md).
 - **About even:** removes, bulk builds, lookups in many small maps.
-- **At 1M and 10M:** bbtree misses 1.75-1.85× faster on u64 and 2.5× on
+- **At 1M and 10M:** bbtree++ misses 1.75-1.85× faster on u64 and 2.5× on
   JSON strings, hits 1.4-1.6× faster at 10M u64 and on strings, inserts
   JSON strings 1.5× and sequential u64 3.4× faster, and iterates 2.2×
   faster. abseil pops the first entry 2.1× faster and scans `range64`
   1.16× faster; random u64 inserts, removes, upserts and bulk builds are
   within 11%.
 
-The Rust original has the 1k insert gap too: COMPARISON.md has Rust's
-bbtree at 36.0 ns on 1k random u64 inserts against `BTreeMap`'s 17.5, so
-that gap comes from the design, not the port. Of the many-map gaps,
+The Rust original has the 1k insert gap too: COMPARISON.md has
+bbtree (Rust) at 36.0 ns on 1k random u64 inserts against `BTreeMap`'s 17.5, so
+that gap comes from the design, not bbtree++. Of the many-map gaps,
 iteration was profiled: the walk read a leaf's entries with one load,
 whose steps the prefetcher didn't follow (since fixed; PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)). Building them
 pays a full 1 KiB root page a map, where abseil sizes its root leaf to its
@@ -259,5 +258,5 @@ entries (FUTURE_WORK.md). No Rust `BTreeMap` figures for the many-map
 cells are at hand.
 
 `std::unordered_map` beats every ordered map on lookups, random inserts
-and upserts, as expected; not on sequential inserts, which bbtree appends
+and upserts, as expected; not on sequential inserts, which bbtree++ appends
 to its last leaf, or on 1M random removes.

@@ -1,6 +1,6 @@
 # bbtree-mmap
 
-bbtree on disk: compact a bbtree map to a file, map it back into memory and
+bbtree++ on disk: compact a bbtree++ map to a file, map it back into memory and
 query it at once, with the map's own lookups
 ([15-index-file.md](../design/15-index-file.md)).
 

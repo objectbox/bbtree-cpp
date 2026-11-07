@@ -1,7 +1,7 @@
 # bbtree-store
 
 An ordered store of byte strings that threads share, whose every byte lies
-in pages from its allocator: bbtree's shared map, whose keys point to their
+in pages from its allocator: bbtree++'s shared map, whose keys point to their
 records, key and value, kept in chains of heap pages beside each leaf (a
 leaf annex; [16-bbtree-store.md](../design/16-bbtree-store.md)). An
 allocator that refuses pages past a budget bounds all the memory a store

@@ -5,8 +5,8 @@ Both ran the same benchmark cells with the same inputs on one machine; see Setup
 
 ## Summary
 
-- **Integer keys:** the port is typically 1.0-1.3× as fast, up to 1.6×.
-- **String keys:** with compact strings the port is typically 1.05-1.3× as
+- **Integer keys:** bbtree++ is typically 1.0-1.3× as fast, up to 1.6×.
+- **String keys:** with compact strings bbtree++ is typically 1.05-1.3× as
   fast, up to 1.8×, and slower only building many 4-entry maps.
 - **The shared map:** faster on one thread, about 5% slower with 8 threads.
 - **bbtree-store:** inserts and gets are even or faster; scans are 13% slower.
@@ -88,11 +88,11 @@ fresh pages stalled it, 118 ns.
 The `1Mx4` and `100kx32` rows are the `tiny` suite's: a million maps of 4
 entries and 100k maps of 32, keys and 32-byte values.
 
-With compact keys the port inserts, looks up and iterates strings faster
+With compact keys bbtree++ inserts, looks up and iterates strings faster
 than the Rust crate, builds 32-entry maps as fast, and trails only in
 building many 4-entry maps, where each map takes a full 1 KiB root page
 (FUTURE_WORK.md). With `std::string` keys it looks up faster but in
-32-entry maps, and inserts and builds slower (see "Where the port
+32-entry maps, and inserts and builds slower (see "Where bbtree++
 trails"). Iterating maps of 4
 trailed until the root leaf's entries went four a round (PORTING.md,
 [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): one load per entry, stepping by a page from map to map, which
@@ -152,7 +152,7 @@ and churn rows.
 - **C++:** Clang 15, `--preset bench` (`-O3 -march=native`, LTO), mimalloc
   3.3.2 (PORTING.md, [the bench's allocator](../../PORTING.md#p17-the-benchs-allocator-mimalloc-332-behind-operator-new)).
 - **Inputs:** the same keys, values, orders and probes: `bbtree-bench
-  self-check` pins the port's generators to the Rust bench's (PORTING.md,
+  self-check` pins the C++ bench's generators to the Rust bench's (PORTING.md,
   [bench inputs](../../PORTING.md#p19-bench-inputs-the-rust-benchs-key-for-key)).
 - **Runs:** one per cell, each in a fresh process (AGENTS.md: no repeats to
   average noise away). Cells whose Rust runs varied by more than 10% across
@@ -186,12 +186,12 @@ four entries a round, and a checksum that folds, as the Rust bench's does
 | str-json_struct32_iterate_100kx32, `std::string` keys | **9.32** | 11.7 |
 | store scan, 1M, ns an entry | 23.0 | **20.3** |
 
-† Across this session's windows 4.6-6.8 ns for the port and 4.9-5.7 for
+† Across this session's windows 4.6-6.8 ns for bbtree++ and 4.9-5.7 for
 the Rust bench; a rerun right after, with no compaction stall in the
 kernel, took 5.62 against 5.29. Before the four-a-round root leaves the
-port's took 7.2-9.0.
+bbtree++'s took 7.2-9.0.
 
-## Where the port trails, and why
+## Where bbtree++ trails, and why
 
 - **`std::string` inserts (1.25-1.3×), small string maps' builds
   (1.4-1.65×):** libstdc++'s `std::string` is 32 bytes against `String`'s
@@ -216,9 +216,9 @@ port's took 7.2-9.0.
   0.64-0.71× the Rust crate's `String`, `std::string` keys 1.0-1.2×.
 - **The store's scan (1.5× → 1.13×):** the scan's visit and the record's
   `value()` were calls, a third more instructions an entry, so fewer
-  entries' record misses overlapped ([store scans](../../PORTING.md#p31-a-store-scans-visit-inlines-into-the-maps-loop)). What is left is the port's 7
+  entries' record misses overlapped ([store scans](../../PORTING.md#p31-a-store-scans-visit-inlines-into-the-maps-loop)). What is left is bbtree++'s 7
   more heap bytes an entry (87 against 80; [heads' records](../../PORTING.md#p24-a-leafs-head-keys-record-stays-put)). Long values (1.1-1.3×)
   are not looked into.
 
-Everything else is within 10% or faster, mostly from the port's lookups
+Everything else is within 10% or faster, mostly from bbtree++'s lookups
 (`get_hit`/`get_miss` 0.63-0.99×) and the upsert path.
