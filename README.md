@@ -1,8 +1,20 @@
 # bbtree++
 
-A C++20 port of [bbtree](https://github.com/XiangpengHao/bbtree), the B+-tree
-ordered map by Xiangpeng Hao: the same nodes, layouts, inline keys, prefix
-stripping, batches, optimistic lock coupling and file maps, in C++.
+bbtree++ is a C++20 port of [bbtree](https://github.com/XiangpengHao/bbtree), the B+-tree
+ordered map by Xiangpeng Hao originally implemented in Rust.
+
+* bbtree++ outperforms the original in most cases:
+  see [bbtree/bench/COMPARISON.md](bbtree/bench/COMPARISON.md) for details
+* bbtree++ outperforms the standard `std::map` in almost all cases while using less memory:
+  see [bbtree/bench/CPP_MAPS.md](bbtree/bench/CPP_MAPS.md) for details
+
+## Features
+
+bbtree++ keeps the Rust original's design: its nodes and their layouts,
+inline keys, prefix stripping, batched operations, optimistic lock coupling
+and file maps.
+[design/](design/) holds the original's design documents, which bbtree++
+follows.
 
 - `bbtree::unsync::bbtree_map` and `bbtree_set`: drop-in replacements for
   `std::map` and `std::set`, for one thread.
@@ -11,18 +23,6 @@ stripping, batches, optimistic lock coupling and file maps, in C++.
 - File maps (`bbtree/file.hpp`) and bbtree-mmap: maps compacted into a file and
   looked up where they lie.
 - Zero dependencies: headers only, C++20, Clang 15+ or GCC 13+; CMake 3.28+.
-
-[bbtree/bench/COMPARISON.md](bbtree/bench/COMPARISON.md) compares the
-port's speed with the Rust original's, cell for cell: within 10% or faster
-on most, behind on `std::string` inserts and small `std::string` maps'
-builds (which `bbtree::compact_string` keys close) and 13% behind on
-bbtree-store's scans.
-[bbtree/bench/CPP_MAPS.md](bbtree/bench/CPP_MAPS.md) compares it with
-`absl::btree_map`, `std::map` and `std::unordered_map`.
-[PORTING.md](PORTING.md) says where and why the port differs from the Rust
-original, [FUTURE_WORK.md](FUTURE_WORK.md) what is left and what would be
-faster at the cost of more code, [PLAN.md](PLAN.md) how the port went, and
-[design/](design/) holds the original's design, which the port follows.
 
 ## Usage
 
@@ -145,6 +145,31 @@ cmake --preset fuzz && cmake --build --preset fuzz                          # li
 | `bbtree-mmap/` | map files: mmap, keys and values of any length |
 | `bbtree-store/` | a memory-bounded store of byte strings on the shared map |
 | `design/` | the Rust original's design documents |
+
+## Status
+
+**Testing.** 245 Catch2 tests, built for the baseline and native targets,
+pass under Clang and GCC with warnings as errors; CI runs them again under
+AddressSanitizer and UBSan, and the shared map's under ThreadSanitizer.
+Eight libFuzzer targets check the maps and the shared map against
+`std::map`, the set algebra against std's algorithms, the tree's
+invariants after every operation, and memory safety under keys whose order
+lies. CI fuzzes each target for a minute, and the ordinary tests run the
+same harnesses on fixed inputs. Not yet ported are the Rust crate's own
+map and set test suites and a random test over iterators (PLAN.md).
+
+**How it was ported.** bbtree++ was written by an AI coding agent, Claude
+Opus 5.5, with Claude Fable 5.1 as its advisor, under a human's direction.
+The agent ported the Rust crate milestone by milestone (PLAN.md),
+following the original's design documents and the rules in
+[AGENTS.md](AGENTS.md). The human set the goals, contributed ideas, and
+reviewed and steered the work. Performance work followed the original's
+rules: reason about the cost first, then measure, on a port of the Rust
+bench that runs the same benchmarks cell for cell.
+
+[PORTING.md](PORTING.md) says where and why the port differs from the Rust
+original, [FUTURE_WORK.md](FUTURE_WORK.md) what is left and what would be
+faster at the cost of more code, and [PLAN.md](PLAN.md) how the port went.
 
 ## License
 
