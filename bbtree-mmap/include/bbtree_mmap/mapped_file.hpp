@@ -57,9 +57,14 @@ class mapped_file {
     if (mapped == MAP_FAILED) {
       throw std::system_error(errno, std::generic_category(), "bbtree_mmap: mmap");
     }
+#if defined(MADV_HUGEPAGE)
+    // Linux's transparent huge pages; other systems have no such advice.
     if (pages == os_pages::huge) {
       (void)::madvise(mapped, lead + range_len, MADV_HUGEPAGE);
     }
+#else
+    (void)pages;
+#endif
     mapped_file file;
     file.mapping_ = static_cast<std::byte*>(mapped);
     file.mapping_len_ = lead + range_len;

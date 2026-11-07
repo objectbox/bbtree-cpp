@@ -818,3 +818,44 @@ an owning byte string for keys that does neither.
   rows of 1M-entry maps read low there; resident memory grew by 33.7 bytes
   an entry for 1M `u64` entries against 25.3, the last chunks' unused
   pages and huge-page rounding.
+
+## P33. AArch64 and macOS: built and checked, not measured
+
+- **Chosen:** the library compiles for AArch64 and macOS with what it had
+  (P9: the in-node count is a plain loop, which Clang turns into NEON
+  compares, `cmhi`/`cmeq` on 8 × 16-bit and 4 × 32-bit lanes; hash tags
+  take the scalar loop beside the SSE2 one), plus two fixes:
+  - **The latch's spin hint.** Its backoff spun on `_mm_pause` on x86 and
+    on nothing elsewhere, an empty loop the compiler may delete, so that a
+    waiting thread yielded to the scheduler at once. It now issues `isb` on
+    AArch64, as Rust's `core::hint::spin_loop` does there, and a compiler
+    barrier on other targets.
+  - **`MADV_HUGEPAGE`** is Linux's: bbtree-mmap asks for huge pages only
+    where the macro exists, so it compiles on macOS. `pooled_allocator`
+    (P32) maps its 2 MiB chunks only on Linux and takes them from
+    `operator new` elsewhere.
+- **Checked:** the library, the store, the file maps and the tests
+  type-check for `aarch64-linux-gnu` with Clang 15 (`-fsyntax-only`, the
+  host's libstdc++ headers and a 64-bit word-size shim, as there is no
+  AArch64 sysroot here), with `-Wall -Wextra -Wconversion`; and the AArch64
+  assembly shows the NEON counts and `isb`. CI gains an AArch64 Linux job
+  (`ubuntu-24.04-arm`, Clang 15) and a macOS job (`macos-15`, Apple
+  silicon), which build and run the tests. Neither has run yet: nothing of
+  this branch is pushed.
+- **Native builds:** the host-CPU flag is `-march=native` on x86 and
+  `-mcpu=native` on AArch64 (`BBTREE_NATIVE`, and the tests' native
+  target), which Apple's Clang requires on Apple silicon.
+- **libc++:** the shared map's latches use `std::atomic_ref`, which libc++
+  has from version 19; the macOS job builds with Homebrew's LLVM, whose
+  libc++ is newer than some Xcode versions'. With libstdc++ (GCC 13, or
+  Clang on Linux) any version the port builds with has it.
+- **Alternatives considered:**
+  - **stx_btree's way**, GCC/Clang vector extensions over 16-byte lane
+    groups for both counts and tags, one source for SSE and NEON: the count
+    is already the compiler's vectors on both, and the tags' movemask has no
+    NEON instruction (it takes a narrowing shift and a 64-bit mask, 4 bits a
+    lane); untested on hardware here, so left to FUTURE_WORK.md with the
+    NEON counts.
+  - **An AArch64 cross toolchain and QEMU in CI** instead of an ARM
+    runner: slower and further from real hardware than GitHub's ARM
+    runners.

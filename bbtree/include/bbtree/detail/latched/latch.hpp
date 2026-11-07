@@ -61,9 +61,7 @@ class backoff {
   void wait() noexcept {
     if (step_ < spin_steps) {
       for (unsigned spin = 0; spin < (1u << step_); ++spin) {
-#if defined(__x86_64__) || defined(__i386__)
-        _mm_pause();
-#endif
+        spin_hint();
       }
       ++step_;
     } else {
@@ -73,6 +71,19 @@ class backoff {
 
  private:
   static constexpr unsigned spin_steps = 7;
+
+  // Tells the CPU this is a spin-wait, as Rust's `core::hint::spin_loop`
+  // does: `pause` on x86, `isb` on AArch64. It also keeps the compiler from
+  // deleting the spin as an empty loop, which it would on other targets.
+  static void spin_hint() noexcept {
+#if defined(__x86_64__) || defined(__i386__)
+    _mm_pause();
+#elif defined(__aarch64__)
+    __asm__ __volatile__("isb" ::: "memory");
+#else
+    __asm__ __volatile__("" ::: "memory");
+#endif
+  }
   unsigned step_ = 0;
 };
 

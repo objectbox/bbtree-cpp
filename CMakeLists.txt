@@ -16,7 +16,7 @@ option(BBTREE_BUILD_FUZZ "Build the libFuzzer targets (Clang only)" OFF)
 # The structural checks (`check_invariants`), as the Rust crate's
 # `cfg(test)`/`cfg(fuzzing)` compile them: tests and fuzz targets turn them on.
 option(BBTREE_CHECKED "Compile the trees' structural invariant checks" ${BBTREE_BUILD_TESTS})
-option(BBTREE_NATIVE "Build for the host CPU (-march=native)" OFF)
+option(BBTREE_NATIVE "Build for the host CPU (-march=native, AArch64: -mcpu=native)" OFF)
 set(BBTREE_SANITIZE "" CACHE STRING "Sanitizers: address,undefined | thread | empty")
 
 add_library(bbtree_warnings INTERFACE)
@@ -28,8 +28,14 @@ target_compile_options(bbtree_warnings INTERFACE
   # in libstdc++'s std::string too: Clang's only.
   $<$<CXX_COMPILER_ID:Clang>:-Wnull-dereference>)
 
+# The host CPU's flag: x86 names it by architecture, AArch64 by CPU.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+  set(BBTREE_NATIVE_FLAG -mcpu=native)
+else()
+  set(BBTREE_NATIVE_FLAG -march=native)
+endif()
 if(BBTREE_NATIVE)
-  add_compile_options(-march=native)
+  add_compile_options(${BBTREE_NATIVE_FLAG})
 endif()
 
 if(BBTREE_SANITIZE)

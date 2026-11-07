@@ -11,7 +11,9 @@ ones, in explicit AVX-512 vectors, takes an 8-byte equality mask for exact
 lookups, and counts every width in NEON on AArch64 (a 10M `u64` hit 389 →
 173 ns on an M1 Pro). Not ported (PORTING.md, [in-node counts](PORTING.md#p9-in-node-counts-the-compilers-sse2-masks-and-no-avx-512-or-neon)): no hardware
 here to test or measure them. Each is one more specialization of
-`node_inline_keys::equal_range`.
+`node_inline_keys::equal_range`. On AArch64 the hash tags take a scalar
+loop too (PORTING.md, [AArch64 and macOS](PORTING.md#p33-aarch64-and-macos-built-and-checked-not-measured)): a NEON compare and a narrowing
+shift give 4 bits a tag, 64 bits for 16 tags, in place of SSE2's movemask.
 
 ## Saved destinations for batched inserts
 

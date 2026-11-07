@@ -1,7 +1,8 @@
 # The port's CI, after the Rust crate's ci.yml, sanitizer.yml, shuttle.yml and
 # fuzz.yml (PORTING.md, P1): format, Clang and GCC builds with tests, the
-# tests under AddressSanitizer + UBSan and under ThreadSanitizer (the Shuttle
-# tests' stand-in), each fuzz target for a minute, and the bench's self-check.
+# tests on AArch64 Linux and on macOS, the tests under AddressSanitizer +
+# UBSan and under ThreadSanitizer (the Shuttle tests' stand-in), each fuzz
+# target for a minute, and the bench's self-check.
 # Ubuntu 24.04 ships the versions the port is developed with: Clang and
 # clang-format 15, GCC 13, CMake 3.28.
 name: test
@@ -34,6 +35,36 @@ jobs:
         run: scripts/use-clang-15.sh clang clang++ clang-format
       - name: Format, build and test
         run: scripts/check.sh
+
+  # AArch64: the in-node counts as NEON vectors (the compiler's), the hash
+  # tags' scalar loop and the latch's `isb` spin hint (PORTING.md, P33).
+  arm:
+    name: AArch64 Linux, Clang 15 + tests
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-15 ninja-build ccache
+          scripts/use-clang-15.sh clang clang++
+      - run: cmake --preset debug
+      - run: cmake --build --preset debug
+      - run: ctest --preset debug
+
+  # macOS on Apple silicon: no transparent huge pages, no `MADV_HUGEPAGE`
+  # (PORTING.md, P33). Homebrew's LLVM, whose libc++ has `std::atomic_ref`
+  # (libc++ 19 and later), which the shared map's latches use; Apple's Clang
+  # ships an older libc++ on some Xcode versions.
+  macos:
+    name: macOS (Apple silicon), Homebrew LLVM + tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: brew install ninja ccache llvm
+      - run: cmake --preset debug -DCMAKE_CXX_COMPILER="$(brew --prefix llvm)/bin/clang++"
+      - run: cmake --build --preset debug
+      - run: ctest --preset debug
 
   sanitizers:
     name: ${{ matrix.preset }}

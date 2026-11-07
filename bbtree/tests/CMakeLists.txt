@@ -1,6 +1,6 @@
-# The library's tests. They build twice: for baseline x86-64, which counts
-# inline keys with SSE2 masks (no POPCNT), and for the host CPU, where the
-# compiler vectorizes the count, so both paths are tested.
+# The library's tests. They build twice: for the baseline target (on x86-64,
+# which counts inline keys with SSE2 masks, no POPCNT) and for the host CPU,
+# where the compiler vectorizes the count, so both paths are tested.
 set(BBTREE_TEST_SOURCES
   allocator_test.cpp
   pooled_allocator_test.cpp
@@ -30,5 +30,5 @@ endfunction()
 bbtree_add_tests(bbtree_tests)
 if(NOT BBTREE_NATIVE)
   bbtree_add_tests(bbtree_tests_native)
-  target_compile_options(bbtree_tests_native PRIVATE -march=native)
+  target_compile_options(bbtree_tests_native PRIVATE ${BBTREE_NATIVE_FLAG})
 endif()
