@@ -29,8 +29,9 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 
 ## M3 Map and set API (`unsync::bbtree_map`, `unsync::bbtree_set`)
 - [x] map API: lookup, insert, erase, iterators, bounds, try_emplace/insert_or_assign/emplace
-- [~] map-level tests against std::map: iterators, bounds and erase(it) in focused tests
-  (`map_api_test.cpp`), a random one for `compact_string` keys; no random one over iterators
+- [x] map-level tests against std::map: iterators, bounds and erase(it) in focused tests
+  (`map_api_test.cpp`), a random one for `compact_string` keys, and random iterator moves
+  (`iterator_differential_test.cpp`)
 - [x] bulk: builder (D25), from sorted / from unsorted ranges, append by merged build, split_off by cut,
   clone by node copy
 - [x] retain/erase_if (extract_if: future work, C++ has no lazy owning iterator idiom)

@@ -11,6 +11,7 @@ set(BBTREE_TEST_SOURCES
   node/layout_test.cpp
   tree/differential_test.cpp
   unsync/map_api_test.cpp
+  unsync/iterator_differential_test.cpp
   unsync/set_test.cpp
   unsync/batch_test.cpp
   unsync/compact_string_test.cpp

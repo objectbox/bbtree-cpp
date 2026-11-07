@@ -58,6 +58,18 @@ using the internal nodes' separators. Either way, more iterator states
 (attached, detached, at a separator) have to stay in sync with the cursor's
 removal paths.
 
+stx_btree's iterator, compared side by side in this bench, scans `range64`
+in 0.82× ours on `u64` keys and 0.55× on 16-byte strings, with no call in
+its loop. One part of its crossing was tried here: going down to the next
+leaf once, when a step reaches the separator, and parking the cursor at that
+leaf's head, so that the separator's key and value and the next step's leaf
+come from one walk, where ours walks to the head leaf for the key, again
+for the value, and again for the next step. Fewer instructions (1.3%), but
+`range64` on 16-byte strings 254 → 228 ns while `u64` at 1k went 121 → 131
+(the walk's loads moved onto the step's critical path); not kept. The cost
+that remains is the position kept in memory (the iterator test,
+`unsync/iterator_differential_test.cpp`, covers the crossings either way).
+
 ## bbtree-store: a refused insert without an exception
 
 A store whose budget is spent refuses inserts by an `alloc_error` thrown
