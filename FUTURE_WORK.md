@@ -123,3 +123,34 @@ in place (90.3% of the bench's JSON keys against 83.9%). It costs a branch
 in `size()` for strings past 65,534 bytes, and helps neither `str-16`
 (median 16 bytes) nor the branch in `data()`, the other half of a tie's
 cost.
+
+## From abseil's B-tree
+
+`absl::btree_map` beats bbtree on 1k random u64 inserts (17 ns against
+30), `pop_first` (2×), `range64` (1.2-1.5×), and on every 4-entry-map cell
+(CPP_MAPS.md). The Rust crate trails `BTreeMap` the same way, so these are
+design differences, not port ones. Three of abseil's choices explain them:
+
+- **Root leaves sized to their entries.** abseil allocates a root leaf for
+  as many slots as the map holds, and reallocates it larger as it grows,
+  up to a full node: a 4-entry `std::string` → 32-byte map takes 88 bytes
+  an entry against bbtree's 275, a full 1 KiB page. Building 1M such maps
+  takes abseil 48-52 ns an entry against 71 (compact keys) to 80, and
+  iterating them 3.5 against 6.3: four times the memory streamed for the
+  same five lines a map. For bbtree it means a root page of several sizes,
+  a layout per capacity (the inline keys' area scales with it), and a copy
+  each time the root grows; and it breaks the design's rule that "the
+  root page stays the root", which the shared map's racing reads rely on, so it would be the
+  unsync map's and set's only.
+- **Parent pointers.** abseil's iterator is a node and an index, stepping
+  through parent pointers, so it stays in registers; bbtree's keeps a node
+  stack and its position in memory ([iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)), which a 64-entry range scan and
+  `pop_first`'s descent pay. Parent pointers cost 8 bytes a node and a
+  write to every child an internal split or merge moves, and the shared
+  map's nodes would need them kept under its latches.
+- **256-byte nodes.** abseil sizes nodes to about 256 bytes, so a u64 →
+  u64 leaf holds 15 entries and an insert shifts at most 240 bytes. A
+  bbtree leaf is at least 1 KiB (the design's floor, at least 12 keys): 55 u64
+  entries, and up to 880 bytes shifted, which a 1k map in cache pays on
+  every random insert and removal. Smaller leaves for small entries would
+  need the 1 KiB floor and the inline-key area's sizing revisited.

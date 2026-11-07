@@ -137,6 +137,31 @@ TEST_CASE("for_each visits separators' entries without inline keys too", "[map]"
   CHECK(visited == std::vector<std::pair<std::string, std::uint64_t>>(model.begin(), model.end()));
 }
 
+TEST_CASE("fold threads its accumulator through every entry in order", "[map]") {
+  using vector_of_entries = std::vector<std::pair<std::string, std::uint64_t>>;
+  const auto append = [](vector_of_entries entries, const std::string& key, const std::uint64_t& value) {
+    entries.emplace_back(key, value);
+    return entries;
+  };
+  bbtree::unsync::bbtree_map<std::string, std::uint64_t> inline_keyed;
+  bbtree::unsync::bbtree_map<std::string, std::uint64_t, std::less<>, bbtree::global_allocator,
+                             bbtree::plain_keys>
+      plain;
+  std::map<std::string, std::uint64_t> model;
+  CHECK(inline_keyed.fold(vector_of_entries{}, append).empty());
+  CHECK(inline_keyed.fold(std::uint64_t{7},
+                          [](std::uint64_t sum, const auto&, const auto&) { return sum; }) == 7);
+  for (std::uint64_t i = 0; i < 20'000; ++i) {
+    const std::string key = std::to_string(i * 7919 % 100'003);
+    inline_keyed.insert_or_assign(key, i);
+    plain.insert_or_assign(key, i);
+    model.insert_or_assign(key, i);
+  }
+  const vector_of_entries expected(model.begin(), model.end());
+  CHECK(inline_keyed.fold(vector_of_entries{}, append) == expected);
+  CHECK(plain.fold(vector_of_entries{}, append) == expected);
+}
+
 TEST_CASE("an iterator from find steps on through the tree", "[map]") {
   u64_map map;
   for (std::uint64_t key = 0; key < 4000; ++key) {

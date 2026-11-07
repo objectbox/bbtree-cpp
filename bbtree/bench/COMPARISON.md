@@ -79,7 +79,8 @@ string that holds up to 12 bytes in place and moves as bytes, where
 libstdc++'s `std::string` is 32 and the Rust crate's `String` 24. The
 `std::string` and Rust columns are the tables' above; the compact column is
 `bbtree-bench cpp --map bbtree-unsync-compact` on the same cells, one run
-each, started at load 0.3, after the root-leaf walk (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)).
+each, started at load 0.3, after the root-leaf walk (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)); the iterate rows
+after its fold, in one window with a Rust run that took 5.12 and 8.97.
 
 | cell | Rust `String` | C++ `std::string` | C++ `compact_string` | compact ÷ Rust |
 |---|--:|--:|--:|--:|
@@ -91,10 +92,10 @@ each, started at load 0.3, after the root-leaf walk (PORTING.md, [iteration](../
 | str-json_u64_get_miss_1M | 210 | 161 | 176 | 0.84 |
 | str-json_struct32_build_many_1Mx4 ‡ | 61.0 | 80.3 | 139 | — |
 | str-json_struct32_get_many_1Mx4 | 82.2 | 74.2 | 79.5 | 0.97 |
-| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 8.04 | **1.78** |
+| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 6.30 | **1.39** |
 | str-json_struct32_build_many_100kx32 | 60.7 | 103 | 61.0 | 1.00 |
 | str-json_struct32_get_many_100kx32 | 67.4 | 70.7 | 68.3 | 1.01 |
-| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 5.41 | 0.61 |
+| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 5.17 | 0.59 |
 
 † Rust's runs of this cell ranged from 4.5 to 6.9 ns this session.
 ‡ Not measured cleanly: by the time of this run the machine's memory was
@@ -105,11 +106,11 @@ conditions, against the 80.3 above (CPP_MAPS.md).
 With compact keys the port's string inserts and builds of 32-entry maps
 catch up with the Rust crate's or pass it, lookups stay where
 `std::string`'s are, and iterating maps of 32 is faster than the Rust
-crate's. Iterating maps of 4 still trails, at `std::string`'s speed. Each
-map is a cold root page in both languages, and the walk overlaps a few
-maps' loads at a time, as many as the CPU's reorder window holds maps'
-instructions (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place)): the Rust crate's fold likely runs fewer instructions a
-map. Counting them in both benches' cell is the next step, not yet taken.
+crate's. Iterating maps of 4 still trails, 6.30 ns against 5.12 in the
+same window. The walks run about the same instructions an entry (sampled;
+PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)); a raw loop over the same lines takes 5.0 ns with compact keys, so
+the rest is the walk's per-map work, and with `std::string` keys the
+64-byte entries' extra lines.
 
 ## The shared map, u64 → u64
 
@@ -161,9 +162,17 @@ and churn rows.
 | bulk builds: sorted ranges build in place; a leaf's run appends without the prefix shrink | 1M u64 bulk build 8.1 → 7.0 ns in the bench, 13.2 → 9.6 on a probe |
 | shared map appends check the last leaf before latching it, as the Rust crate does (a porting omission) | 8-thread inserts 110 → 45 ns; the store's 143 → 67 |
 
-The iterate cells above predate a later change, a root leaf walked with no
-call (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): it took u64 1k to 0.249 ns, u64 1M to 0.600, and maps of 4 and
-of 32 `std::string` keys to 7.95 and 7.40, one run each.
+The iterate cells above predate two later changes ([iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): a root leaf
+walked with no call, and a checksum that folds, as the Rust bench's does,
+in place of a `for_each` adding into a captured sum. In one window with the
+Rust bench, one run each:
+
+| iterate | Rust | C++ |
+|---|--:|--:|
+| u64_u64_iterate_1k | 0.343 | 0.228 |
+| u64_u64_iterate_1M | 0.831 | 0.685 |
+| str-json_struct32_iterate_1Mx4 | 5.12 | 7.18 |
+| str-json_struct32_iterate_100kx32 | 8.97 | 7.47 |
 
 ## Where the port trails, and why
 

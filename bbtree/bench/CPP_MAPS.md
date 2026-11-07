@@ -100,14 +100,15 @@ crate's bbtree with `String` keys, from COMPARISON.md.
 | str-16_u64_bulk_build_1k | 21.6 | 11.4 | 0.53 | | 19.2 | 129 |
 | str-json_struct32_build_many_1Mx4 ‡ | 236 | 139 | 0.59 | 61.0 | 47.6 | 50.9 |
 | str-json_struct32_get_many_1Mx4 | 74.0 | 79.5 | 1.07 | 82.2 | 76.0 | 98.4 |
-| str-json_struct32_iterate_1Mx4 | 7.95 | 8.04 | 1.01 | 4.52 | 3.54 | 4.61 |
+| str-json_struct32_iterate_1Mx4 † | 7.18 | 6.30 | 0.88 | 4.52 | 3.54 | 4.61 |
 | str-json_struct32_build_many_100kx32 | 105 | 61.0 | 0.58 | 60.7 | 105 | 88.7 |
 | str-json_struct32_get_many_100kx32 | 69.7 | 68.3 | 0.98 | 67.4 | 68.0 | 86.6 |
-| str-json_struct32_iterate_100kx32 | 7.40 | 5.41 | 0.73 | 8.82 | 17.4 | 25.2 |
+| str-json_struct32_iterate_100kx32 † | 7.47 | 5.17 | 0.69 | 8.82 | 17.4 | 25.2 |
 | str-json_u64_random_insert_1M | 249 | 161 | 0.65 | 182 | 374 | 487 |
 | str-json_u64_get_hit_1M | 256 | 249 | 0.97 | 278 | 408 | 740 |
 | str-json_u64_get_miss_1M | 161 | 176 | **1.09** | 210 | 433 | 649 |
 
+† bbtree's columns re-run after the checksum became a fold (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)).
 ‡ Not comparable with the other runs: bbtree's maps of 4 take 1.1 GB of
 fresh pages, and with the machine's memory mostly page cache, getting huge
 pages stalled the kernel in compaction (29 stalls in one run of the cell,
@@ -119,8 +120,8 @@ this run stalled alike.
   33 and shifts by one `memmove`: 1M JSON-key inserts 249 → 161 ns, below
   the Rust crate's 182; removes, upserts, bulk builds and builds of
   32-entry maps 0.5-0.66×; `pop_first` 0.21×.
-- **Iteration:** at `std::string`'s speed for maps of 4, 0.73× for maps
-  of 32, faster than the Rust crate's. A first layout with 15 bytes in
+- **Iteration:** 0.88× `std::string`'s for maps of 4, 0.69× for maps of
+  32, faster than the Rust crate's. A first layout with 15 bytes in
   place decoded the size in eight instructions and walked 1.2-1.4× slower;
   PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place), has the measurement.
 - **Lookups** are within 10%, behind for `str-16` at 1k and misses at 1M:

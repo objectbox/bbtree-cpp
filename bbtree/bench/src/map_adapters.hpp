@@ -99,20 +99,23 @@ class std_interface_map {
 
   // Visits every entry, in key order for ordered maps, and returns their
   // checksum.
-  // bbtree's map walks a leaf at a time in `for_each`, as the Rust crate's
-  // iterators do in the `fold` that the Rust bench's checksum compiles to;
-  // the other maps visit through their iterators.
+  // bbtree's map folds a leaf at a time, as the Rust crate's iterators do in
+  // the `fold` that the Rust bench's checksum is; the other maps visit
+  // through their iterators.
   std::uint64_t checksum_all() const noexcept {
-    std::uint64_t sum = 0;
-    const auto add = [&sum](const K& key, const V& value) { sum += checksum::of(key, value); };
-    if constexpr (requires { map_.for_each(add); }) {
-      map_.for_each(add);
+    const auto add_entry = [](std::uint64_t sum, const K& key, const V& value) {
+      return sum + checksum::of(key, value);
+    };
+    if constexpr (requires { map_.fold(std::uint64_t{0}, add_entry); }) {
+      return map_.fold(std::uint64_t{0}, add_entry);
     } else {
+      std::uint64_t sum = 0;
+      const auto add = [&sum](const K& key, const V& value) { sum += checksum::of(key, value); };
       for (auto&& [key, value] : map_) {
         add(key, value);
       }
+      return sum;
     }
-    return sum;
   }
 
   // Visits up to `count` entries in key order, from the first key at or

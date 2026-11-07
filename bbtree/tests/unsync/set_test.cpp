@@ -34,6 +34,11 @@ void check_equal(const Set& set, const Model& model) {
   std::vector<typename Model::value_type> visited;
   set.for_each([&](const auto& key) { visited.push_back(key); });
   REQUIRE(std::equal(visited.begin(), visited.end(), model.begin(), model.end()));
+  const auto folded = set.fold(std::vector<typename Model::value_type>{}, [](auto keys, const auto& key) {
+    keys.push_back(key);
+    return keys;
+  });
+  REQUIRE(std::equal(folded.begin(), folded.end(), model.begin(), model.end()));
 }
 
 }  // namespace

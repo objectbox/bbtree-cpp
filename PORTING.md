@@ -311,6 +311,18 @@ random order, with huge pages:
   and 1M maps of 4 `std::string` → 32-byte entries 10 ns against 17 on a
   cursor: the cursor's outlined crossings kept the CPU from starting the
   next map's loads early.
+- **`fold(init, f)` beside `for_each`**, on the unsync map and set, as
+  Rust's `iter().fold`: the walk threads the accumulator by value through
+  its recursion. A visitor that adds into a variable it captures by
+  reference keeps that variable on the stack, since the reference reaches
+  the recursive `subtree` call: every entry stored and reloaded it, inside
+  the chain of adds that waits on the entry's loads, and Clang checked per
+  leaf that the entries don't overlap it. The bench's checksum folds, as
+  the Rust bench's does: 1M maps of 4 `std::string` keys 7.8 → 7.2 ns an
+  entry, `compact_string` keys 8.0 → 6.3 (Rust 5.1 in the same minutes).
+  The walk's instructions per entry match the Rust fold's (about 22,
+  sampled); what is left is in memory: a raw loop over the same lines takes
+  5.8 ns with `std::string`'s 64-byte entries and 5.0 with compact ones.
 - **A root leaf is walked in `run`, with no call** (`leaf_entries` is
   `always_inline`): small maps' walks are a call and a frame each
   otherwise, instructions that keep the next maps' loads out of the CPU's

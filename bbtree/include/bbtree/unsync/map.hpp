@@ -15,7 +15,7 @@
 //   (`allocator.hpp`), not a std allocator.
 // - Keys and values must not throw from their move constructors and
 //   destructors, nor comparators and inline-key specializations (D48).
-// Extras from the Rust crate: `first`/`last`, `pop_first`/`pop_last`,
+// Extras from the Rust crate: `fold`, `first`/`last`, `pop_first`/`pop_last`,
 // `retain`, `extract_if`, `append`, `split_off`, the batches `get_many` and
 // `insert_many`, and `check_invariants`.
 #pragma once
@@ -187,6 +187,18 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   void for_each(Visit&& visit) const {
     auto const_value = [&](const K& key, V& value) { visit(key, std::as_const(value)); };
     detail::in_order_walk<types>(tree_).run(const_value);
+  }
+
+  // `fold(accumulator, key, value)` over every entry in key order, from
+  // `init`, returning the last accumulator: Rust's `iter().fold`. Prefer it
+  // to a `for_each` whose visitor accumulates into a captured variable,
+  // which stays in memory (PORTING.md, P16).
+  template <class A, class Fold>
+  A fold(A init, Fold&& fold) const {
+    auto const_value = [&fold](A accumulator, const K& key, V& value) {
+      return fold(std::move(accumulator), key, std::as_const(value));
+    };
+    return detail::in_order_walk<types>(tree_).fold(std::move(init), const_value);
   }
 
   // --- Capacity ---

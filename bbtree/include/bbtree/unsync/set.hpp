@@ -162,6 +162,16 @@ class bbtree_set
     detail::in_order_walk<types>(tree_).run(key_only);
   }
 
+  // `fold(accumulator, key)` over every key in order, from `init`, returning
+  // the last accumulator: Rust's `iter().fold` (P16).
+  template <class A, class Fold>
+  A fold(A init, Fold&& fold) const {
+    auto key_only = [&fold](A accumulator, const K& key, detail::set_value&) {
+      return fold(std::move(accumulator), key);
+    };
+    return detail::in_order_walk<types>(tree_).fold(std::move(init), key_only);
+  }
+
   // --- Capacity ---
 
   [[nodiscard]] bool empty() const noexcept { return length_ == 0; }
