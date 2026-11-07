@@ -88,8 +88,8 @@ suite_request suite_request::parse(std::span<const std::string> arguments) {
     } else if (*argument == "--out") {
       request.output_directory_ = std::filesystem::path(std::string(cursor.value_of(*argument)));
     } else if (*argument == "all") {
-      request.suites_.insert(request.suites_.end(), enum_traits<suite>::all.begin(),
-                             enum_traits<suite>::all.end());
+      request.suites_.insert(request.suites_.end(), enum_traits<suite>::shared_with_rust.begin(),
+                             enum_traits<suite>::shared_with_rust.end());
     } else if (argument->starts_with("--")) {
       request.filter_.parse_flag(*argument, cursor);
     } else {

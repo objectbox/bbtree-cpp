@@ -45,6 +45,11 @@ Suites: `ci`, `small`, `tiny`, `realkeys`, or `all`. Filters (`--map`,
 `--list` work as in the Rust bench. A full suite at full size takes minutes
 to tens of minutes: run filtered, quick subsets unless you mean it.
 
+`cpp` is the C++ bench's own suite, with no Rust counterpart: `ci`'s
+workloads at 1M and 10M on every map, abseil's B-tree and the hash maps
+too, in under two minutes (CPP_MAPS.md). `all` runs the Rust bench's
+suites only, so that it names the same cells in both benches.
+
 `--perf` needs every event of the Rust bench's group; on Zen 3 neither bench
 gets `L1-dcache-load-misses:u` and both refuse with the same message.
 

@@ -82,4 +82,4 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [x] measured and left for later: libstdc++ strings as bytes (FUTURE_WORK.md), iterators that stay in registers
 - [x] bbtree-store's bench example; CI workflow
 ## After the port
-- [x] against C++ maps: abseil's B-tree, std::map, hash maps (bbtree/bench/CPP_MAPS.md)
+- [x] against C++ maps: abseil's B-tree, std::map, hash maps; the bench's `cpp` suite (bbtree/bench/CPP_MAPS.md)

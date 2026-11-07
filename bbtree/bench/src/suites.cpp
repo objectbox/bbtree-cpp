@@ -24,6 +24,7 @@ std::span<const map_kind> enum_traits<suite>::maps(suite s) noexcept {
       return ordered_baseline;
     case suite::tiny:
     case suite::small:
+    case suite::cpp_maps:
       return enum_traits<map_kind>::all;
   }
   return {};
@@ -66,6 +67,14 @@ std::vector<workload> enum_traits<suite>::workloads(suite s) {
                                std::array{map_size::ten_million}, inserts_hits_and_misses));
       append(workload::product(std::array{key_kind::crate_string}, u64_values,
                                std::array{map_size::one_thousand}, inserts_hits_and_misses));
+      append(workload::product(std::array{key_kind::json_string}, u64_values,
+                               std::array{map_size::one_million}, inserts_hits_and_misses));
+      break;
+    case suite::cpp_maps:
+      workloads = workload::product(std::array{key_kind::u64_random}, u64_values,
+                                    std::array{map_size::one_million}, enum_traits<operation>::on_one_map);
+      append(workload::product(std::array{key_kind::u64_random}, u64_values,
+                               std::array{map_size::ten_million}, inserts_hits_and_misses));
       append(workload::product(std::array{key_kind::json_string}, u64_values,
                                std::array{map_size::one_million}, inserts_hits_and_misses));
       break;

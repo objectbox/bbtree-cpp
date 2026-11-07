@@ -8,12 +8,12 @@ the port with the Rust original; this file compares it with other C++ maps.
   `--preset bench`, mimalloc 3.3.2 with huge pages), abseil 20250814.2.
 - **Run:** `bbtree-bench small tiny --key u64,str-16,str-json`, every map,
   122 cells, one run each in a fresh process, 21 s, load under 0.3.
-- **Sizes:** the suites run every map at 1k entries (`small`) and on many
-  small maps (`tiny`). The 1M and 10M cells (`ci`) run only bbtree and
-  `std::map`, as in the Rust bench, so abseil at those sizes is not measured
-  here.
+- **Sizes:** `small` runs every map at 1k entries and `tiny` on many small
+  maps; `cpp`, the C++ bench's own suite, runs `ci`'s 1M and 10M workloads
+  on every map (`ci` itself runs only bbtree and `std::map`, as in the Rust
+  bench).
 
-## ns an operation (iterate: an entry; many maps: an entry)
+## 1k entries and many small maps, ns an operation (iterate, many maps: an entry)
 
 Bold marks the fastest ordered map. The hash map has no order, so it has
 no `range64` or `pop_first`.
@@ -47,6 +47,35 @@ no `range64` or `pop_first`.
 | str-json_struct32_get_many_100kx32 | 68.2 | **65.7** | 83.6 | 47.1 |
 | str-json_struct32_iterate_100kx32 | **7.33** | 17.1 | 24.9 | 21.4 |
 
+## 1M and 10M entries, ns an operation (iterate: an entry)
+
+`bbtree-bench cpp`, 76 cells, once each, 81 s, started at load 0.1 after
+the 5-minute load average had stayed under 0.3. Two earlier runs, on a
+machine busy with an IDE's indexing, are discarded.
+
+| cell | bbtree | absl btree | std::map | std::unordered_map |
+|---|--:|--:|--:|--:|
+| u64_u64_random_insert_1M | **95.9** | 98.9 | 211 | 59.7 |
+| u64_u64_sequential_insert_1M | **9.83** | 33.9 | 78.7 | 61.0 |
+| u64_u64_get_hit_1M † | 129 | **111** | 213 | 28.6 |
+| u64_u64_get_miss_1M | **67.4** | 118 | 214 | 27.4 |
+| u64_u64_iterate_1M | **0.753** | 1.68 | 61.3 | 30.8 |
+| u64_u64_range64_1M | 256 | **221** | 3360 | — |
+| u64_u64_random_remove_1M | 95.5 | **90.9** | 325 | 97.4 |
+| u64_u64_entry_upsert_1M | **81.9** | 87.3 | 226 | 45.9 |
+| u64_u64_pop_first_1M | 16.9 | **8.01** | 43.3 | — |
+| u64_u64_bulk_build_1M | 7.12 | **6.44** | 88.4 | 57.4 |
+| u64_u64_random_insert_10M | 264 | **250** | 703 | 197 |
+| u64_u64_get_hit_10M | **255** | 351 | 499 | 39.0 |
+| u64_u64_get_miss_10M | **174** | 320 | 513 | 41.8 |
+| str-json_u64_random_insert_1M | **254** | 389 | 481 | 153 |
+| str-json_u64_get_hit_1M | **274** | 432 | 689 | 153 |
+| str-json_u64_get_miss_1M | **168** | 413 | 812 | 117 |
+
+† bbtree's runs of this cell ranged from 88 to 129 ns today (93.4 in
+COMPARISON.md; 110 on a rerun of the cell alone, at load 0.8); abseil's
+from 111 to 146. Unsettled: read it as about even.
+
 ## Against abseil's B-tree
 
 - **bbtree is faster:**
@@ -60,6 +89,12 @@ no `range64` or `pop_first`.
   - `pop_first`: 1.9× on u64, 2.5× on strings;
   - many 4-entry maps: 1.6× to build, 2.4× to iterate.
 - **About even:** removes, bulk builds, lookups in many small maps.
+- **At 1M and 10M:** bbtree misses 1.75-1.85× faster on u64 and 2.5× on
+  JSON strings, hits 1.4-1.6× faster at 10M u64 and on strings, inserts
+  JSON strings 1.5× and sequential u64 3.4× faster, and iterates 2.2×
+  faster. abseil pops the first entry 2.1× faster and scans `range64`
+  1.16× faster; random u64 inserts, removes, upserts and bulk builds are
+  within 11%.
 
 The Rust original has the 1k insert gap too: COMPARISON.md has Rust's
 bbtree at 36.0 ns on 1k random u64 inserts against `BTreeMap`'s 17.5, so
@@ -69,4 +104,4 @@ at hand; in those cells each bbtree map is a cold root page (COMPARISON.md).
 
 `std::unordered_map` beats every ordered map on lookups, random inserts
 and upserts, as expected; not on sequential inserts, which bbtree appends
-to its last leaf.
+to its last leaf, or on 1M random removes.

@@ -32,11 +32,19 @@ enum class suite {
   // operation, and at 10M inserts and lookups; and strings -> `u64` at 1k and
   // 1M, inserts and lookups. Generated keys only.
   ci,
+  // The C++ bench's own, which the Rust bench has no counterpart of: `ci`'s
+  // workloads at 1M and 10M on every map, abseil's B-tree and the hash maps
+  // too (CPP_MAPS.md).
+  cpp_maps,
 };
 
 template <>
 struct enum_traits<suite> {
-  static constexpr std::array all{suite::real_keys, suite::tiny, suite::small, suite::ci};
+  static constexpr std::array all{suite::real_keys, suite::tiny, suite::small, suite::ci, suite::cpp_maps};
+  // What `all` runs: the Rust bench's suites, so that `all` names the same
+  // cells in both benches. `cpp` lists `ci`'s workloads again, which a row
+  // under `ci` would take, with `ci`'s maps.
+  static constexpr std::array shared_with_rust{suite::real_keys, suite::tiny, suite::small, suite::ci};
 
   static constexpr std::string_view name(suite s) noexcept {
     switch (s) {
@@ -48,6 +56,8 @@ struct enum_traits<suite> {
         return "small";
       case suite::ci:
         return "ci";
+      case suite::cpp_maps:
+        return "cpp";
     }
     return "";
   }
@@ -55,7 +65,8 @@ struct enum_traits<suite> {
   // The maps the suite's workloads run on. The real-keys suite compares the
   // ordered maps only: at 10M entries of long strings, building each map
   // takes seconds, and the hash maps wouldn't fit its time budget. CI
-  // compares bbtree's unsync map with its baseline, the std B-tree.
+  // compares bbtree's unsync map with its baseline, the std B-tree; `cpp`
+  // with every map.
   static std::span<const map_kind> maps(suite s) noexcept;
 
   static std::vector<workload> workloads(suite s);
