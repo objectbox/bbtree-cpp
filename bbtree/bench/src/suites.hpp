@@ -32,9 +32,10 @@ enum class suite {
   // operation, and at 10M inserts and lookups; and strings -> `u64` at 1k and
   // 1M, inserts and lookups. Generated keys only.
   ci,
-  // The C++ bench's own, which the Rust bench has no counterpart of: `ci`'s
-  // workloads at 1M and 10M on every map, abseil's B-tree and the hash maps
-  // too (CPP_MAPS.md).
+  // The C++ bench's own, which the Rust bench has no counterpart of: the
+  // generated-key workloads of `small` and `tiny`, and `ci`'s at 1M and 10M,
+  // on every map: abseil's B-tree, the hash maps, and bbtree's map with
+  // `compact_string` keys (CPP_MAPS.md).
   cpp_maps,
 };
 

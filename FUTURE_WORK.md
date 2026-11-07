@@ -102,3 +102,14 @@ buffer at 16), fix-ups in every byte-moving path (`slots`' shifts and runs,
 `entry_shift`, whole-leaf copies), a test that checks the layout, and
 copying the bytes of an object that isn't trivially copyable, which the
 standard leaves undefined.
+
+## `std::string` keys stored as compact strings
+
+`bbtree::compact_string` keys need the map's key type to say so. A
+`bbtree_map<std::string, V>` that stored them anyway would make the switch
+transparent: `entry_ref` would hand out a proxy key that converts to
+`std::string_view` and `std::string` in place of `const std::string&`, and
+the nodes' plan would be the compact type's. It changes what `*it` is for
+every map, so code that binds `const std::string&` to a key, or passes
+`it->first` where a `std::string&` is wanted, stops compiling: a deviation
+from std::map that the opt-in key type avoids.

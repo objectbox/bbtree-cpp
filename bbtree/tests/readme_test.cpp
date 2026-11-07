@@ -1,4 +1,5 @@
 // The README's examples, compiled and run, so that they stay true.
+#include <bbtree/compact_string.hpp>
 #include <bbtree/map.hpp>
 #include <bbtree/unsync/map.hpp>
 
@@ -7,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <thread>
 
 TEST_CASE("the README's one-thread example", "[readme]") {
@@ -44,4 +46,12 @@ TEST_CASE("the README's threads example", "[readme]") {
     return true;
   });
   CHECK(visited == 2);
+}
+
+TEST_CASE("the README's compact_string example", "[readme]") {
+  bbtree::unsync::bbtree_map<bbtree::compact_string, int, std::less<>> map;
+  map[std::string("key")] = 1;
+  CHECK(map.find(std::string_view("key"))->second == 1);
+  std::string_view first = map.begin()->first;
+  CHECK(first == "key");
 }

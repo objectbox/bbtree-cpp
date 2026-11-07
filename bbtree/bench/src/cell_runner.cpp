@@ -144,9 +144,23 @@ cell_measurement cell_run::with_value_type(Keys&& keys) const {
   throw bench_error("unknown value kind");
 }
 
-// Puts the keys and values in the cell that times them.
+// Puts the keys and values in the cell that times them; for
+// `bbtree-unsync-compact`, string keys as compact strings first, so that no
+// timed operation makes one.
 template <class K, class V, class Keys>
 cell_measurement cell_run::with_prepared_cell(Keys&& keys, value_maker<V> values) const {
+  if constexpr (std::is_same_v<K, std::string>) {
+    if (request_.measured().map() == map_kind::unsync_compact) {
+      using compact = bbtree::compact_string;
+      if (auto* single = std::get_if<single_map_keys<K>>(&keys)) {
+        return with_prepared_cell<compact>(
+            cell_keys<compact>(single_map_keys<compact>::converted_from(*single)), values);
+      }
+      return with_prepared_cell<compact>(
+          cell_keys<compact>(many_maps_keys<compact>::converted_from(std::get<many_maps_keys<K>>(keys))),
+          values);
+    }
+  }
   if (auto* single = std::get_if<single_map_keys<K>>(&keys)) {
     single_map_cell<K, V> prepared(std::move(*single), values,
                                    enum_traits<scale>::operation_budget(request_.run_scale()));
@@ -158,6 +172,17 @@ cell_measurement cell_run::with_prepared_cell(Keys&& keys, value_maker<V> values
 
 template <class K, class V, class Prepared>
 cell_measurement cell_run::with_map_type(Prepared& prepared) const {
+  if constexpr (std::is_same_v<K, bbtree::compact_string>) {
+    bench_error::unless(request_.measured().map() == map_kind::unsync_compact,
+                        "compact-string keys are bbtree-unsync-compact's only");
+    return measure<unsync_bbtree<K, V>>(prepared);
+  } else {
+    return with_std_key_map_type<K, V>(prepared);
+  }
+}
+
+template <class K, class V, class Prepared>
+cell_measurement cell_run::with_std_key_map_type(Prepared& prepared) const {
   switch (request_.measured().map()) {
     case map_kind::bbtree:
       return measure<counted_bbtree<K, V>>(prepared);
@@ -171,6 +196,8 @@ cell_measurement cell_run::with_map_type(Prepared& prepared) const {
       } else {
         throw bench_error("bbtree-unsync-inline runs on integer keys only");
       }
+    case map_kind::unsync_compact:
+      throw bench_error("bbtree-unsync-compact runs on string keys only");
     case map_kind::std_btree:
       return measure<std_btree<K, V>>(prepared);
     case map_kind::absl_btree:

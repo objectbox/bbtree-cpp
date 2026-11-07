@@ -4,6 +4,8 @@
 // for key.
 #pragma once
 
+#include <bbtree/compact_string.hpp>
+
 #include <array>
 #include <cstdint>
 #include <format>
@@ -124,6 +126,11 @@ struct key_traits<std::uint64_t> {
 template <>
 struct key_traits<std::string> {
   static std::uint64_t fingerprint(const std::string& key) noexcept { return key.size(); }
+};
+
+template <>
+struct key_traits<bbtree::compact_string> {
+  static std::uint64_t fingerprint(const bbtree::compact_string& key) noexcept { return key.size(); }
 };
 
 // How the candidates of one string key kind look: JSON object keys,

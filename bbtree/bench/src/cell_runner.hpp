@@ -79,6 +79,10 @@ class cell_run {
   template <class K, class V, class Prepared>
   cell_measurement with_map_type(Prepared& prepared) const;
 
+  // The maps of keys of a std type: all but `bbtree-unsync-compact`.
+  template <class K, class V, class Prepared>
+  cell_measurement with_std_key_map_type(Prepared& prepared) const;
+
   map_size size() const noexcept { return request_.measured().work().size(); }
 
   cell_request request_;

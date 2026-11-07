@@ -52,6 +52,13 @@ class single_map_keys {
     return single_map_keys(std::move(present), std::move(absent));
   }
 
+  // `keys` as keys of this type, each made from its counterpart there.
+  template <class From>
+  static single_map_keys converted_from(const single_map_keys<From>& keys) {
+    return single_map_keys(std::vector<K>(keys.present().begin(), keys.present().end()),
+                           std::vector<K>(keys.absent().begin(), keys.absent().end()));
+  }
+
   const std::vector<K>& present() const noexcept { return present_; }
   const std::vector<K>& absent() const noexcept { return absent_; }
 

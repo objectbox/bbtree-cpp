@@ -72,6 +72,39 @@ The two right columns compare different maps: Rust's `BTreeMap` is a B-tree,
 
 † Rust's runs of this cell ranged from 4.5 to 6.9 ns this session.
 
+## String keys as `bbtree::compact_string`, ns an operation (iterate: an entry)
+
+The port's `compact_string` (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-15-bytes-in-place-no-prefix-beside-the-pointer)) is a C++ addition: a 16-byte
+string that holds up to 15 bytes in place and moves as bytes, where
+libstdc++'s `std::string` is 32 and the Rust crate's `String` 24. The
+`std::string` and Rust columns are the tables' above; the compact column is
+`bbtree-bench cpp --map bbtree-unsync-compact` on the same cells, one run
+each, at load 0.3.
+
+| cell | Rust `String` | C++ `std::string` | C++ `compact_string` | compact ÷ Rust |
+|---|--:|--:|--:|--:|
+| str-16_u64_random_insert_1k | 46.6 | 59.7 | 39.5 | 0.85 |
+| str-16_u64_get_hit_1k | 44.5 | 37.4 | 38.4 | 0.86 |
+| str-16_u64_get_miss_1k | 29.8 | 23.0 | 26.0 | 0.87 |
+| str-json_u64_random_insert_1M ‡ | 182 | 258 | 179 | 0.98 |
+| str-json_u64_get_hit_1M | 278 | 273 | 254 | 0.91 |
+| str-json_u64_get_miss_1M | 210 | 161 | 165 | 0.79 |
+| str-json_struct32_build_many_1Mx4 | 61.0 | 80.3 | 70.8 | **1.16** |
+| str-json_struct32_get_many_1Mx4 | 82.2 | 74.2 | 80.7 | 0.98 |
+| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 11.2 | **2.47** |
+| str-json_struct32_build_many_100kx32 | 60.7 | 103 | 60.9 | 1.00 |
+| str-json_struct32_get_many_100kx32 | 67.4 | 70.7 | 68.3 | 1.01 |
+| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 8.61 | 0.98 |
+
+† Rust's runs of this cell ranged from 4.5 to 6.9 ns this session.
+‡ The compact map's runs of this cell were 162 and 179 ns.
+
+With compact keys the port's string inserts and builds of 32-entry maps
+catch up with the Rust crate's; lookups stay where `std::string`'s are.
+Small maps still trail: building 4-entry maps (1.16×) and iterating them,
+which compact keys make slower than `std::string` keys (11.2 ns against
+8.3), not yet explained (CPP_MAPS.md).
+
 ## The shared map, u64 → u64
 
 The benches run the shared map at 1k only; the 8-thread rows come from the
@@ -132,6 +165,8 @@ and churn rows.
   pointer fix-up made 100k maps of 32 strings 26% faster to build in a
   prototype, at the cost of copying the bytes of a non-trivially-copyable
   type and depending on libstdc++'s layout: FUTURE_WORK.md.
+  `bbtree::compact_string` keys, 16 bytes and moved as bytes, close the
+  insert and 32-entry build gaps (the section above).
 - **Bulk builds (1.3×):** a probe of the same build (sorted random u64,
   huge pages) takes 5.3 ns an entry, close to the Rust bench's 5.2; the
   bench cell's 7.0 ns stays unexplained.

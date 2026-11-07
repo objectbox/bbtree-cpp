@@ -99,6 +99,12 @@ class many_maps_keys {
     return many_maps_keys(std::move(vocabulary), std::move(maps));
   }
 
+  // `keys` as keys of this type, each made from its counterpart there.
+  template <class From>
+  static many_maps_keys converted_from(const many_maps_keys<From>& keys) {
+    return many_maps_keys(std::vector<K>(keys.vocabulary().begin(), keys.vocabulary().end()), keys.maps());
+  }
+
   std::size_t map_count() const noexcept { return maps_.map_count(); }
   std::size_t entry_count() const noexcept { return maps_.pick_count(); }
   const picks_per_map& maps() const noexcept { return maps_; }

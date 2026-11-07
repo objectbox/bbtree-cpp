@@ -76,6 +76,52 @@ machine busy with an IDE's indexing, are discarded.
 COMPARISON.md; 110 on a rerun of the cell alone, at load 0.8); abseil's
 from 111 to 146. Unsettled: read it as about even.
 
+## `compact_string` keys against `std::string` keys
+
+`bbtree-unsync-compact` is bbtree's unsync map with `bbtree::compact_string`
+keys (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-15-bytes-in-place-no-prefix-beside-the-pointer)): 16 bytes, up to 15 in place, moved as bytes. The
+cell turns its keys into compact strings before it times anything.
+`bbtree-bench cpp --key str-16,str-json --map
+bbtree-unsync,bbtree-unsync-compact,absl-btree,std-btree`, one run each, at
+load 0.2. Rust is the Rust crate's bbtree with `String` keys, from
+COMPARISON.md.
+
+| cell | `std::string` | `compact_string` | compact ÷ std | Rust | absl btree | std::map |
+|---|--:|--:|--:|--:|--:|--:|
+| str-16_u64_random_insert_1k | 61.4 | 40.6 | 0.66 | 46.6 | 109 | 106 |
+| str-16_u64_sequential_insert_1k | 31.4 | 20.0 | 0.64 | | 47.9 | 121 |
+| str-16_u64_get_hit_1k | 37.2 | 36.5 | 0.98 | 44.5 | 69.5 | 84.0 |
+| str-16_u64_get_miss_1k | 22.9 | 26.9 | **1.18** | 29.8 | 76.1 | 78.0 |
+| str-16_u64_iterate_1k | 0.525 | 0.523 | 1.00 | | 1.29 | 3.57 |
+| str-16_u64_range64_1k | 226 | 210 | 0.93 | | 167 | 329 |
+| str-16_u64_random_remove_1k | 112 | 67.5 | 0.60 | | 108 | 114 |
+| str-16_u64_entry_upsert_1k | 69.4 | 46.8 | 0.67 | | 117 | 99.4 |
+| str-16_u64_pop_first_1k | 72.3 | 21.2 | 0.29 | | 30.6 | 16.2 |
+| str-16_u64_bulk_build_1k | 21.0 | 14.2 | 0.68 | | 20.9 | 124 |
+| str-json_struct32_build_many_1Mx4 | 78.4 | 71.6 | 0.91 | 61.0 | 51.6 | 52.3 |
+| str-json_struct32_get_many_1Mx4 | 86.5 | 91.5 | 1.06 | 82.2 | 74.5 | 98.2 |
+| str-json_struct32_iterate_1Mx4 | 9.24 | 11.4 | **1.23** | 4.52 | 3.45 | 4.55 |
+| str-json_struct32_build_many_100kx32 | 103 | 61.1 | 0.59 | 60.7 | 102 | 85.4 |
+| str-json_struct32_get_many_100kx32 | 71.7 | 68.9 | 0.96 | 67.4 | 68.8 | 86.9 |
+| str-json_struct32_iterate_100kx32 | 7.23 | 8.53 | **1.18** | 8.82 | 17.0 | 25.6 |
+| str-json_u64_random_insert_1M | 255 | 162 | 0.64 | 182 | 401 | 499 |
+| str-json_u64_get_hit_1M | 265 | 259 | 0.98 | 278 | 433 | 720 |
+| str-json_u64_get_miss_1M | 169 | 171 | 1.01 | 210 | 474 | 691 |
+
+- **Predicted and measured:** an entry of a string → `u64` leaf shrinks
+  from 49 bytes to 33 and shifts by one `memmove`, so writes gain and
+  lookups stay: 1M JSON-key inserts go from 255 ns to 162, below the Rust
+  crate's 182; removes, upserts and builds of 32-entry maps take 0.6-0.7×
+  the time; `pop_first` 0.29×. Lookups are within 6%, but for one cell.
+- **Not explained:** `str-16` misses at 1k (1.18×) and the many-map
+  iterations (1.18-1.23×). `size()` is a conditional move (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-15-bytes-in-place-no-prefix-beside-the-pointer)) and the
+  walk reads nothing else of a key; `data()` is a branch on the form, and
+  half of `str-16`'s keys are past 15 bytes, which a miss's tie would
+  mispredict. Neither is profiled yet.
+- The `compact_string` map beats abseil's at every write and lookup here,
+  ties it on lookups in 32-entry maps (68.9 against 68.8),
+  and trails it on `range64` and the 4-entry maps.
+
 ## Against abseil's B-tree
 
 - **bbtree is faster:**

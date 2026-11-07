@@ -593,3 +593,50 @@ datasets' lines split as `str::lines` splits them.
   back what appends wrote, with the same addresses and tail, picking up
   where it stopped. Their preconditions (lengths fit in `u32`, appends not
   empty) are assertions, or `std::length_error` for the caller's records.
+
+## P29. `compact_string`: 15 bytes in place, no prefix beside the pointer
+
+The C++ addition the M11 comparison asked for: libstdc++'s `std::string`
+is 32 bytes and points into itself while short, so `std::string` keys fill
+a leaf with fewer entries than the Rust crate's `String` and shift one
+object at a time (P6). `bbtree::compact_string` (`compact_string.hpp`) is
+an owning byte string for keys that does neither.
+
+- **Chosen:** 16 bytes. Up to 15 bytes in place, with byte 15 holding
+  `15 - size` (zero for a 15-byte string, so `c_str()` holds); longer
+  strings on the heap, a pointer and a 7-byte size, with byte 15 a tag. No
+  pointer into itself, so it is `is_trivially_relocatable` and shifts by
+  `memmove`; `byte_string` gives it std::string's inline keys. A
+  `std::string` → `u64` leaf entry shrinks from 49 bytes to 33.
+- **Alternative: Umbra's "German" string**, 16 bytes too: a 4-byte size, a
+  4-byte prefix, and 8 more bytes in place or a pointer, so 12 bytes in
+  place. Its prefix lets a database compare strings without loading their
+  bytes. bbtree's nodes already keep an 8-byte inline key of every key
+  (D18) and its length (D36), and a search reads a stored key's bytes only
+  past them (`search_key::cmp_tied` starts at the window's prefix length
+  plus its width; `equals_whole_bytes` runs after the tag and the inline
+  key matched). Only the sorted-append check compares from byte 0. The
+  prefix would save no load and cost 3 bytes in place: JSON object keys
+  (the bench's `str-json`, p90 14 bytes) fit 15 bytes far more often than
+  12.
+- **Alternative: libstdc++ strings moved as bytes** with a pointer fix-up:
+  undefined behaviour and libstdc++'s layout (P6, FUTURE_WORK.md).
+- **`size()` picks between both forms' sizes** with a conditional move:
+  keys of both forms mix in a map (`str-16`'s median is 16 bytes). `data()`
+  stays a branch: Clang does not load the pointer ahead of the test,
+  however the source selects it (checked in its assembly).
+- **API:** it converts implicitly from anything a `std::string_view` is made
+  from and to `std::string_view`, explicitly to `std::string`; it compares
+  with those types without a conversion. With `std::less<>`, lookups by
+  `std::string`, `std::string_view` and C strings make no `compact_string`
+  and compare by bytes, as `std::string` keys do.
+- **Not transparent for `std::string`:** a `bbtree_map<std::string, V>`
+  can't store compact strings, as iterators hand out `const K&`. Inputs take
+  `std::string` as they are; outputs are `const compact_string&`, which
+  converts to `std::string_view` and explicitly to `std::string`, but code
+  that binds `const std::string&` to a key needs a copy. A map of
+  `std::string` keys that stores compact strings would need a proxy key in
+  `entry_ref` (FUTURE_WORK.md).
+- **Scope:** keys of the unsync map and set. Values of the shared map are
+  untested: its unlatched copies of byte-string values (D57) assume a
+  layout of their own.

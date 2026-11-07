@@ -18,12 +18,19 @@ constexpr std::array inserts_hits_and_misses{operation::random_insert, operation
 
 std::span<const map_kind> enum_traits<suite>::maps(suite s) noexcept {
   static constexpr std::array ordered_baseline{map_kind::unsync, map_kind::std_btree};
+  // Every map but `bbtree-unsync-compact`, which the Rust bench has no
+  // counterpart of.
+  static constexpr std::array rust_counterparts{
+      map_kind::bbtree,     map_kind::unsync,    map_kind::unsync_inline, map_kind::std_btree,
+      map_kind::absl_btree, map_kind::hashbrown, map_kind::std_hash,
+  };
   switch (s) {
     case suite::real_keys:
     case suite::ci:
       return ordered_baseline;
     case suite::tiny:
     case suite::small:
+      return rust_counterparts;
     case suite::cpp_maps:
       return enum_traits<map_kind>::all;
   }
@@ -71,8 +78,15 @@ std::vector<workload> enum_traits<suite>::workloads(suite s) {
                                std::array{map_size::one_million}, inserts_hits_and_misses));
       break;
     case suite::cpp_maps:
-      workloads = workload::product(std::array{key_kind::u64_random}, u64_values,
-                                    std::array{map_size::one_million}, enum_traits<operation>::on_one_map);
+      // `small`'s and `tiny`'s workloads of generated keys, and `ci`'s at 1M
+      // and 10M.
+      workloads = workload::product(std::array{key_kind::u64_random, key_kind::crate_string}, u64_values,
+                                    std::array{map_size::one_thousand}, enum_traits<operation>::on_one_map);
+      append(workload::product(std::array{key_kind::json_string}, struct_values,
+                               std::array{map_size::four_entry_maps, map_size::thirty_two_entry_maps},
+                               std::array{operation::build_many, operation::get_many, operation::iterate}));
+      append(workload::product(std::array{key_kind::u64_random}, u64_values,
+                               std::array{map_size::one_million}, enum_traits<operation>::on_one_map));
       append(workload::product(std::array{key_kind::u64_random}, u64_values,
                                std::array{map_size::ten_million}, inserts_hits_and_misses));
       append(workload::product(std::array{key_kind::json_string}, u64_values,

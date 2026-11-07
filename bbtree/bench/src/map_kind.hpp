@@ -28,6 +28,11 @@ enum class map_kind {
   // as `bbtree-unsync`, kept under its name so that `--map` and the CSVs
   // line up (PORTING.md, P18). Runs only when `--map` names it.
   unsync_inline,
+  // `bbtree::unsync::bbtree_map` with `bbtree::compact_string` keys, on
+  // string keys only, which the cell turns into compact strings before it
+  // times anything (CPP_MAPS.md). The C++ bench's own: no Rust counterpart,
+  // so the suites shared with the Rust bench leave it out.
+  unsync_compact,
   // `std::map`, the counterpart of Rust's `BTreeMap`.
   std_btree,
   // `absl::btree_map`: a B-tree of std::map's interface, the C++ bench's
@@ -45,8 +50,8 @@ enum class map_kind {
 template <>
 struct enum_traits<map_kind> {
   static constexpr std::array all{
-      map_kind::bbtree,     map_kind::unsync,    map_kind::unsync_inline, map_kind::std_btree,
-      map_kind::absl_btree, map_kind::hashbrown, map_kind::std_hash,
+      map_kind::bbtree,    map_kind::unsync,     map_kind::unsync_inline, map_kind::unsync_compact,
+      map_kind::std_btree, map_kind::absl_btree, map_kind::hashbrown,     map_kind::std_hash,
   };
 
   static constexpr std::string_view name(map_kind map) noexcept {
@@ -57,6 +62,8 @@ struct enum_traits<map_kind> {
         return "bbtree-unsync";
       case map_kind::unsync_inline:
         return "bbtree-unsync-inline";
+      case map_kind::unsync_compact:
+        return "bbtree-unsync-compact";
       case map_kind::std_btree:
         return "std-btree";
       case map_kind::absl_btree:
@@ -78,6 +85,8 @@ struct enum_traits<map_kind> {
         return "bbtree unsync";
       case map_kind::unsync_inline:
         return "bbtree unsync, inline keys";
+      case map_kind::unsync_compact:
+        return "bbtree unsync, compact_string";
       case map_kind::std_btree:
         return "std::map";
       case map_kind::absl_btree:
@@ -95,9 +104,16 @@ struct enum_traits<map_kind> {
   static bool supports(map_kind map, operation op) noexcept;
 
   // Whether the map runs on keys of `key`: `bbtree-unsync-inline` only on
-  // integers.
+  // integers, `bbtree-unsync-compact` only on strings.
   static constexpr bool supports_key(map_kind map, key_kind key) noexcept {
-    return map != map_kind::unsync_inline || enum_traits<key_kind>::is_inline_keyed_integer(key);
+    switch (map) {
+      case map_kind::unsync_inline:
+        return enum_traits<key_kind>::is_inline_keyed_integer(key);
+      case map_kind::unsync_compact:
+        return !enum_traits<key_kind>::is_inline_keyed_integer(key);
+      default:
+        return true;
+    }
   }
 
   // Whether the map runs only when `--map` names it.
