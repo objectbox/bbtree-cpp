@@ -886,3 +886,26 @@ an owning byte string for keys that does neither.
     `share/cmake` is where CMake looks for those.
   - **A pkg-config file:** none of the port's users so far builds without
     CMake; easy to add beside the package if one does.
+
+## P35. A short byte string's window: overlapping loads, not a copy
+
+- **Chosen:** the window of a byte string with fewer than 8 bytes left
+  (`big_endian::window`, every string key's inline key and every tie's
+  comparison) is two fixed-size loads from either end of the bytes, 4 + 4
+  or 2 + 2 bytes, which overlap and never read past them, shifted into
+  place; one byte is one load. It was a copy of the remaining bytes into a
+  zeroed buffer, which, its length varying, Clang compiled to a call to
+  `memcpy` on every short window: 8 calls in a string lookup's descent.
+  About half of the JSON keys are 7 bytes or shorter.
+- **Measured** (`cpp`/`ci` string cells, two A/B runs, load under 0.3): 1M
+  JSON keys, misses 177 → 155 and 171 → 150 ns, hits 249 → 235 and 256 →
+  247, inserts 252 → 249 and 256 → 231; 16-byte keys, which have no short
+  windows, unchanged.
+- **Source:** stx_btree, another C++ form of bbtree, builds its short
+  windows this way (`short_prefix_word`); its byte-by-byte loader is not
+  merged into one load by Clang 15, so the loads here are this port's own.
+- **Alternatives considered:** a fixed 8-byte load that may read past the
+  bytes, masked: faster still, but a `std::string`'s bytes can end at a page
+  boundary only for heap strings longer than the small buffer, and a span
+  from a user's `string_view` can end anywhere, so an over-read is not safe
+  in general.

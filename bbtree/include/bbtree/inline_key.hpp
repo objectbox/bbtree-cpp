@@ -92,9 +92,45 @@ struct big_endian {
     if (offset >= len) {
       return 0;
     }
-    std::uint8_t padded[sizeof(inline_word)] = {};
-    std::memcpy(padded, bytes.data() + offset, len - offset);
-    return load(padded);
+    return short_tail(bytes.data() + offset, len - offset);
+  }
+
+ private:
+  // The `count` bytes at `bytes` (1 to 7), big-endian at the word's top and
+  // zero-padded: two fixed-size loads from either end, which overlap, so
+  // that no load reads past the bytes, in place of a copy of `count` bytes,
+  // which compilers make a call to `memcpy` (the idea is stx_btree's).
+  static inline_word short_tail(const std::uint8_t* bytes, std::size_t count) noexcept {
+    const auto shift = static_cast<unsigned>(64 - 8 * count);
+    if (count >= 4) {
+      const inline_word first = load_u32(bytes);
+      const inline_word last = load_u32(bytes + count - 4);
+      return (first << 32) | (last << shift);
+    }
+    if (count >= 2) {
+      const inline_word first = load_u16(bytes);
+      const inline_word last = load_u16(bytes + count - 2);
+      return (first << 48) | (last << shift);
+    }
+    return inline_word{bytes[0]} << 56;
+  }
+
+  static inline_word load_u32(const std::uint8_t* bytes) noexcept {
+    std::uint32_t word;
+    std::memcpy(&word, bytes, sizeof word);
+    if constexpr (std::endian::native == std::endian::little) {
+      word = __builtin_bswap32(word);
+    }
+    return word;
+  }
+
+  static inline_word load_u16(const std::uint8_t* bytes) noexcept {
+    std::uint16_t word;
+    std::memcpy(&word, bytes, sizeof word);
+    if constexpr (std::endian::native == std::endian::little) {
+      word = __builtin_bswap16(word);
+    }
+    return word;
   }
 };
 

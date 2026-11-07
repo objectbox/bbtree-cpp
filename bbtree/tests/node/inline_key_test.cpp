@@ -227,3 +227,21 @@ TEST_CASE("hash tags find none, one, two or many candidates", "[inline_key]") {
     }
   }
 }
+
+TEST_CASE("a byte string's window is its bytes, big-endian and zero-padded", "[inline_key]") {
+  std::uint8_t bytes[24];
+  for (std::size_t b = 0; b < sizeof bytes; ++b) {
+    bytes[b] = static_cast<std::uint8_t>(0x80 + 13 * b);
+  }
+  for (std::size_t len = 0; len < sizeof bytes; ++len) {
+    for (std::size_t offset = 0; offset < len + 5; ++offset) {
+      std::uint64_t expected = 0;
+      for (std::size_t b = 0; b < 8; ++b) {
+        const std::size_t at = offset + b;
+        expected = (expected << 8) | (at < len ? bytes[at] : 0);
+      }
+      INFO("len " << len << ", offset " << offset);
+      REQUIRE(bbtree::detail::big_endian::window({bytes, len}, offset) == expected);
+    }
+  }
+}
