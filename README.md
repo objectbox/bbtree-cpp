@@ -15,8 +15,8 @@ stripping, batches, optimistic lock coupling and file maps, in C++.
 [bbtree/bench/COMPARISON.md](bbtree/bench/COMPARISON.md) compares the
 port's speed with the Rust original's, cell for cell: within 10% or faster
 on most, behind on `std::string` inserts and small `std::string` maps'
-builds (which `bbtree::compact_string` keys close) and on bbtree-store's
-scans.
+builds (which `bbtree::compact_string` keys close) and 13% behind on
+bbtree-store's scans.
 [bbtree/bench/CPP_MAPS.md](bbtree/bench/CPP_MAPS.md) compares it with
 `absl::btree_map`, `std::map` and `std::unordered_map`.
 [PORTING.md](PORTING.md) says where and why the port differs from the Rust

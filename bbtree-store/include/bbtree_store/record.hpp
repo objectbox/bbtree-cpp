@@ -248,14 +248,15 @@ class record {
     record_fields::write_len(at_, len_size, to.value_len());
   }
 
+  // Not recursive, so that it inlines into a scan's visit: a stub's target,
+  // which holds the value, is no stub.
   record_value<C> value() const noexcept {
-    if (is_stub()) {
-      return target().value();
-    }
-    const std::size_t key_size = key_len();
-    const std::size_t value_size = value_len();
+    const record holder = is_stub() ? target() : *this;
+    assert(!holder.is_stub() && "a stub's target is a record");
+    const std::size_t key_size = holder.key_len();
+    const std::size_t value_size = holder.value_len();
     const std::size_t kept = kept_len(key_size, value_size);
-    const std::byte* after_key = at_ + header_size + key_size;
+    const std::byte* after_key = holder.at_ + header_size + key_size;
     if (kept == value_size) {
       return {as_bytes(after_key, value_size), overflow<C>(), 0};
     }

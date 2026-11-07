@@ -185,7 +185,10 @@ class bbtree_store {
   void scan(const key_range& keys, Visit&& visit) const {
     keys.check();
     std::vector<std::uint8_t> gathered;
-    const auto in_range = [&](const store_key& stored, const no_value&) {
+    // Inline in the map's loop over a leaf's entries: as a call, an entry
+    // took a third more instructions, and so fewer entries' record loads
+    // were in flight at once (P31).
+    const auto in_range = [&](const store_key& stored, const no_value&) __attribute__((always_inline)) {
       const bytes key = stored.key();
       if (!keys.start.admits_from_start(key)) {
         return true;
@@ -208,7 +211,8 @@ class bbtree_store {
   void scan_rev(const key_range& keys, Visit&& visit) const {
     keys.check();
     std::vector<std::uint8_t> gathered;
-    const auto in_range = [&](const store_key& stored, const no_value&) {
+    // Inline, as `scan`'s.
+    const auto in_range = [&](const store_key& stored, const no_value&) __attribute__((always_inline)) {
       const bytes key = stored.key();
       if (!keys.end.admits_from_end(key)) {
         return true;

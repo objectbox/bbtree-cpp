@@ -707,3 +707,21 @@ an owning byte string for keys that does neither.
   `NDEBUG` as the bench preset is. The earlier probe
   rebuilt the map 30 times on warm pages and matched the Rust bench's cell,
   which hid the gap (COMPARISON.md).
+
+## P31. A store scan's visit inlines into the map's loop
+
+- **Chosen:** `bbtree_store::scan` and `scan_rev` hand the map a visit that
+  is `always_inline`, and `record::value()` resolves a stub without
+  recursing (a stub's target is never a stub), so that it inlines too. Each
+  entry's record is a cache miss in a heap page (the scan's records lie in
+  insertion order, not key order, in both languages); misses whose
+  addresses the leaf already holds overlap, as many as the CPU's window
+  takes entries. As calls, the visit and `value()` made an entry 78
+  instructions against the Rust scan's 56, and 121 cycles against 90. Now
+  47 instructions and 94-97 cycles: a 1M entry scan 27.7 → 21.0 ns an
+  entry on a probe, against Rust's 19.1. The rest is the port's 7 more
+  heap bytes an entry (P24), 7% more pages to miss in.
+- **Measured** on copies of both `examples/bench` that scan 20 times,
+  counted as the difference to one scan, with `NDEBUG` as the bench preset
+  builds.
+
