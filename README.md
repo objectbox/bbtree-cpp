@@ -12,6 +12,9 @@ stripping, batches, optimistic lock coupling and file maps, in C++.
   looked up where they lie.
 - Zero dependencies: headers only, C++20, Clang 15+ or GCC 13+; CMake 3.28+.
 
+[bbtree/bench/COMPARISON.md](bbtree/bench/COMPARISON.md) compares the
+port's speed with the Rust original's, cell for cell: within 10% or faster
+on most, behind on `std::string` inserts and bulk builds.
 [PORTING.md](PORTING.md) says where and why the port differs from the Rust
 original, [FUTURE_WORK.md](FUTURE_WORK.md) what is left and what would be
 faster at the cost of more code, [PLAN.md](PLAN.md) how the port went, and

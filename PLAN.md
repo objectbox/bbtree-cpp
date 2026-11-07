@@ -62,7 +62,7 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
   copied ranges; heads' records stay put (P23, P24); tests against std::map, budgets, churn, threads (TSan)
 - [x] WAL: records, tail, writer, storage concept, CRC32C (P25 to P28); the Rust tests and the proofs'
   properties as tests
-- [ ] later: the store's bench example (with M9)
+- [x] the store's bench example (with M11)
 ## M8 Fuzz targets (libFuzzer), racing-reads checker, kernel-target build
 - [x] libFuzzer targets for every node-plan row, the shared map, set algebra and hostile keys; harnesses also
   run on fixed random inputs in the tests
@@ -72,4 +72,12 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
   adapters, child process per cell, CSV, report, `compare` across languages, perf counters, datasets, memory
   binary; mimalloc 3.3.2 as the Rust bench's (P17-P19)
 ## M10 READMEs and docs
+- [x] README (usage, deviations from std::map, build, layout), the crates' READMEs, PORTING.md, FUTURE_WORK.md,
+  design/ copied
 ## M11 Measure against the Rust original, profile, optimize
+- [x] cell-for-cell comparison with the Rust bench (bbtree/bench/COMPARISON.md); the first gaps were the bench's
+  allocator (huge pages, P12)
+- [x] `for_each` as a depth-first walk (P16), one move per shifted object (P6), bulk builds in place, the shared
+  map's unlatched append check (a porting omission: 8-thread inserts 2.4x faster)
+- [x] measured and left for later: libstdc++ strings as bytes (FUTURE_WORK.md), iterators that stay in registers
+- [x] bbtree-store's bench example; CI workflow
