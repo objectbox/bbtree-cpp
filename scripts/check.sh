@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 
 files=$(git ls-files '*.hpp' '*.cpp')
 if [ -n "$files" ]; then
+  clang-format --version
   # shellcheck disable=SC2086
   clang-format --dry-run --Werror $files
 fi

@@ -46,6 +46,7 @@
       "displayName": "Clang, release, native CPU, bench only",
       "inherits": "base",
       "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
         "CMAKE_BUILD_TYPE": "Release",
         "BBTREE_BUILD_TESTS": "OFF",
         "BBTREE_CHECKED": "OFF",
