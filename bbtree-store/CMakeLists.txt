@@ -12,3 +12,10 @@ if(BBTREE_BUILD_TESTS)
                         Threads::Threads)
   catch_discover_tests(bbtree_store_tests DISCOVERY_MODE PRE_TEST TEST_PREFIX "bbtree_store_tests: ")
 endif()
+
+# The Rust crate's `examples/bench.rs`, on mimalloc as it is: with the bench.
+if(BBTREE_BUILD_BENCH)
+  find_package(Threads REQUIRED)
+  add_executable(bbtree-store-bench examples/bench.cpp)
+  target_link_libraries(bbtree-store-bench PRIVATE bbtree::store bbtree_warnings mimalloc-static Threads::Threads)
+endif()

@@ -121,6 +121,27 @@ class racing_node_reads {
     return {leaf_candidate::kind::unknown, 0, prefix_len};
   }
 
+  // Whether `key` may go after every key of `leaf`, read without a latch:
+  // the leaf has a key, and its last key's inline key alone doesn't sort it
+  // after `key`. A hint for an append, which latches the leaf to be sure
+  // (D45): an insert that won't append latches nothing of the last leaf, as
+  // every thread inserting at once would wait on it.
+  template <class Q>
+  static bool may_go_last(leaf_node<T> leaf, const search_key<T, Q>& key) noexcept {
+    const racing_reads reads;
+    const auto [len, prefix_len] = header(leaf.node(), leaf_node<T>::capacity);
+    if (len == 0) {
+      return false;
+    }
+    if constexpr (search_key<T, Q>::compares_inline) {
+      return !key_columns<T, true>(leaf.node().page())
+                  .inline_keys(len)
+                  .is_above(len - 1, key.inline_target(prefix_len).inline_key());
+    } else {
+      return true;
+    }
+  }
+
   // The bytes of slot `index`'s key or value, copied without a latch.
   template <class U>
   static std::array<std::byte, sizeof(U)> copy_bytes(const U* slot) noexcept {

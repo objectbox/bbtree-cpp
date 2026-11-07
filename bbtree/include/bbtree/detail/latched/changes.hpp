@@ -165,6 +165,14 @@ class latched_changes {
       return std::nullopt;
     }
     const leaf_node<T> leaf(last);
+    // Whether the key may go last, read unlatched at the leaf's version,
+    // checked before choosing to latch the leaf.
+    const node_latch latch(leaf.node().page());
+    const latch_version version = latch.read_version();
+    const bool may_go_last = racing_node_reads<T>::may_go_last(leaf, search_key<T, K>(key));
+    if (!latch.is_unchanged(version) || !may_go_last) {
+      return std::nullopt;
+    }
     held_leaf<T, leaf_mode::exclusive> held(leaf);
     if (rightmost_leaf() != last) {
       return std::nullopt;
