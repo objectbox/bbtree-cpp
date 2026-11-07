@@ -35,13 +35,12 @@ std::string text_of(std::size_t size, char first = 'a') {
 }  // namespace
 
 TEST_CASE("a compact string holds its bytes, short or long", "[compact_string]") {
-  for (const std::size_t size : {0u, 1u, 7u, 14u, 15u, 16u, 17u, 100u, 5000u}) {
+  for (const std::size_t size : {0u, 1u, 7u, 11u, 12u, 13u, 15u, 16u, 100u, 5000u}) {
     const std::string text = text_of(size);
     const compact_string s(text);
     CHECK(s.size() == size);
     CHECK(s.empty() == (size == 0));
     CHECK(s.view() == text);
-    CHECK(std::string_view(s.c_str()) == text);
     CHECK(static_cast<std::string>(s) == text);
     // The short form holds its bytes in place, the long form elsewhere.
     const auto* object = reinterpret_cast<const char*>(&s);
@@ -50,7 +49,7 @@ TEST_CASE("a compact string holds its bytes, short or long", "[compact_string]")
 }
 
 TEST_CASE("compact strings copy, move, assign and swap in both forms", "[compact_string]") {
-  for (const std::size_t size : {3u, 15u, 16u, 40u}) {
+  for (const std::size_t size : {3u, 12u, 13u, 40u}) {
     const std::string text = text_of(size);
     compact_string original(text);
     compact_string copy(original);
@@ -121,7 +120,7 @@ TEST_CASE("a compact-string map does what std::map<std::string> does", "[compact
   std::mt19937_64 random(29);
   compact_map map;
   std::map<std::string, std::uint64_t, std::less<>> expected;
-  // Sizes around the 15-byte boundary and past the 8-byte inline key, and
+  // Sizes around the 12-byte boundary and past the 8-byte inline key, and
   // keys that share long prefixes, as paths do.
   const auto key_of = [&random] {
     const std::size_t size = random() % 40;

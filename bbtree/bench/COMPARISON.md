@@ -74,36 +74,42 @@ The two right columns compare different maps: Rust's `BTreeMap` is a B-tree,
 
 ## String keys as `bbtree::compact_string`, ns an operation (iterate: an entry)
 
-The port's `compact_string` (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-15-bytes-in-place-no-prefix-beside-the-pointer)) is a C++ addition: a 16-byte
-string that holds up to 15 bytes in place and moves as bytes, where
+The port's `compact_string` (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place)) is a C++ addition: a 16-byte
+string that holds up to 12 bytes in place and moves as bytes, where
 libstdc++'s `std::string` is 32 and the Rust crate's `String` 24. The
 `std::string` and Rust columns are the tables' above; the compact column is
 `bbtree-bench cpp --map bbtree-unsync-compact` on the same cells, one run
-each, at load 0.3.
+each, started at load 0.3, after the root-leaf walk (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)).
 
 | cell | Rust `String` | C++ `std::string` | C++ `compact_string` | compact ÷ Rust |
 |---|--:|--:|--:|--:|
-| str-16_u64_random_insert_1k | 46.6 | 59.7 | 39.5 | 0.85 |
-| str-16_u64_get_hit_1k | 44.5 | 37.4 | 38.4 | 0.86 |
-| str-16_u64_get_miss_1k | 29.8 | 23.0 | 26.0 | 0.87 |
-| str-json_u64_random_insert_1M ‡ | 182 | 258 | 179 | 0.98 |
-| str-json_u64_get_hit_1M | 278 | 273 | 254 | 0.91 |
-| str-json_u64_get_miss_1M | 210 | 161 | 165 | 0.79 |
-| str-json_struct32_build_many_1Mx4 | 61.0 | 80.3 | 70.8 | **1.16** |
-| str-json_struct32_get_many_1Mx4 | 82.2 | 74.2 | 80.7 | 0.98 |
-| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 11.2 | **2.47** |
-| str-json_struct32_build_many_100kx32 | 60.7 | 103 | 60.9 | 1.00 |
+| str-16_u64_random_insert_1k | 46.6 | 59.7 | 39.1 | 0.84 |
+| str-16_u64_get_hit_1k | 44.5 | 37.4 | 39.4 | 0.89 |
+| str-16_u64_get_miss_1k | 29.8 | 23.0 | 25.1 | 0.84 |
+| str-json_u64_random_insert_1M | 182 | 258 | 161 | 0.88 |
+| str-json_u64_get_hit_1M | 278 | 273 | 249 | 0.90 |
+| str-json_u64_get_miss_1M | 210 | 161 | 176 | 0.84 |
+| str-json_struct32_build_many_1Mx4 ‡ | 61.0 | 80.3 | 139 | — |
+| str-json_struct32_get_many_1Mx4 | 82.2 | 74.2 | 79.5 | 0.97 |
+| str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 8.04 | **1.78** |
+| str-json_struct32_build_many_100kx32 | 60.7 | 103 | 61.0 | 1.00 |
 | str-json_struct32_get_many_100kx32 | 67.4 | 70.7 | 68.3 | 1.01 |
-| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 8.61 | 0.98 |
+| str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 5.41 | 0.61 |
 
 † Rust's runs of this cell ranged from 4.5 to 6.9 ns this session.
-‡ The compact map's runs of this cell were 162 and 179 ns.
+‡ Not measured cleanly: by the time of this run the machine's memory was
+mostly page cache, and the cell's 1.1 GB of fresh pages stalled the kernel
+in compaction for huge pages; `std::string` keys took 236 ns in the same
+conditions, against the 80.3 above (CPP_MAPS.md).
 
 With compact keys the port's string inserts and builds of 32-entry maps
-catch up with the Rust crate's; lookups stay where `std::string`'s are.
-Small maps still trail: building 4-entry maps (1.16×) and iterating them,
-which compact keys make slower than `std::string` keys (11.2 ns against
-8.3), not yet explained (CPP_MAPS.md).
+catch up with the Rust crate's or pass it, lookups stay where
+`std::string`'s are, and iterating maps of 32 is faster than the Rust
+crate's. Iterating maps of 4 still trails, at `std::string`'s speed. Each
+map is a cold root page in both languages, and the walk overlaps a few
+maps' loads at a time, as many as the CPU's reorder window holds maps'
+instructions (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place)): the Rust crate's fold likely runs fewer instructions a
+map. Counting them in both benches' cell is the next step, not yet taken.
 
 ## The shared map, u64 → u64
 
@@ -154,6 +160,10 @@ and churn rows.
 | one move per shifted object, not two through a temporary ([moves](../../PORTING.md#p6-moves-relocate-only-trivially-relocatable-types-as-bytes)) | 1M `std::string` inserts 252 → 221 ns |
 | bulk builds: sorted ranges build in place; a leaf's run appends without the prefix shrink | 1M u64 bulk build 8.1 → 7.0 ns in the bench, 13.2 → 9.6 on a probe |
 | shared map appends check the last leaf before latching it, as the Rust crate does (a porting omission) | 8-thread inserts 110 → 45 ns; the store's 143 → 67 |
+
+The iterate cells above predate a later change, a root leaf walked with no
+call (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): it took u64 1k to 0.249 ns, u64 1M to 0.600, and maps of 4 and
+of 32 `std::string` keys to 7.95 and 7.40, one run each.
 
 ## Where the port trails, and why
 

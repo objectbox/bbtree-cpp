@@ -311,6 +311,11 @@ random order, with huge pages:
   and 1M maps of 4 `std::string` → 32-byte entries 10 ns against 17 on a
   cursor: the cursor's outlined crossings kept the CPU from starting the
   next map's loads early.
+- **A root leaf is walked in `run`, with no call** (`leaf_entries` is
+  `always_inline`): small maps' walks are a call and a frame each
+  otherwise, instructions that keep the next maps' loads out of the CPU's
+  window. 1M maps of 4 `std::string` keys 8.3 → 7.8 ns an entry,
+  `compact_string` keys 12.8 → 11.0 on a probe (P29).
 - **Rejected:** a cursor walk that keeps its position in a local and runs a
   leaf's entries in one loop, crossing leaves as the iterators do, as Rust's
   fold does. It came first; the table shows why it went.
@@ -594,7 +599,7 @@ datasets' lines split as `str::lines` splits them.
   where it stopped. Their preconditions (lengths fit in `u32`, appends not
   empty) are assertions, or `std::length_error` for the caller's records.
 
-## P29. `compact_string`: 15 bytes in place, no prefix beside the pointer
+## P29. `compact_string`: 12 bytes in place, the size in one place
 
 The C++ addition the M11 comparison asked for: libstdc++'s `std::string`
 is 32 bytes and points into itself while short, so `std::string` keys fill
@@ -602,29 +607,40 @@ a leaf with fewer entries than the Rust crate's `String` and shift one
 object at a time (P6). `bbtree::compact_string` (`compact_string.hpp`) is
 an owning byte string for keys that does neither.
 
-- **Chosen:** 16 bytes. Up to 15 bytes in place, with byte 15 holding
-  `15 - size` (zero for a 15-byte string, so `c_str()` holds); longer
-  strings on the heap, a pointer and a 7-byte size, with byte 15 a tag. No
-  pointer into itself, so it is `is_trivially_relocatable` and shifts by
-  `memmove`; `byte_string` gives it std::string's inline keys. A
+- **Chosen:** 16 bytes, the size in bytes 12..16 in either form; up to 12
+  bytes in place, longer strings on the heap behind a pointer in bytes
+  0..8. No pointer into itself, so it is `is_trivially_relocatable` and
+  shifts by `memmove`; `byte_string` gives it std::string's inline keys. A
   `std::string` → `u64` leaf entry shrinks from 49 bytes to 33.
+- **Measured and replaced: 15 bytes in place**, byte 15 holding `15 - size`
+  for a short string and a tag for a long one, whose size took bytes 8..15.
+  It held more JSON object keys in place (91.7% of the bench's `str-json`
+  against 83.9%), but `size()` became eight instructions, a shift, a mask
+  and a conditional move between the forms' sizes. The walk over 1M maps of
+  4 entries waits on memory, about 2.5 maps' loads in flight, and how many
+  overlap depends on how many maps' instructions the CPU's reorder window
+  holds: the decode alone took it from 8.2 ns an entry (reading the same
+  word undecoded) to 12.8. With the size in one place, 11.2 → 8.0 ns in the
+  bench, and 100k maps of 32 8.6 → 5.4. Writes and lookups stayed within
+  10% (CPP_MAPS.md); misses in 1M maps went 165 → 176 ns, as more keys'
+  ties read past the node.
 - **Alternative: Umbra's "German" string**, 16 bytes too: a 4-byte size, a
   4-byte prefix, and 8 more bytes in place or a pointer, so 12 bytes in
-  place. Its prefix lets a database compare strings without loading their
-  bytes. bbtree's nodes already keep an 8-byte inline key of every key
-  (D18) and its length (D36), and a search reads a stored key's bytes only
-  past them (`search_key::cmp_tied` starts at the window's prefix length
-  plus its width; `equals_whole_bytes` runs after the tag and the inline
-  key matched). Only the sorted-append check compares from byte 0. The
-  prefix would save no load and cost 3 bytes in place: JSON object keys
-  (the bench's `str-json`, p90 14 bytes) fit 15 bytes far more often than
-  12.
+  place, as here. Its prefix lets a database compare strings without
+  loading their bytes. bbtree's nodes already keep an 8-byte inline key of
+  every key (D18) and its length (D36), and a search reads a stored key's
+  bytes only past them (`search_key::cmp_tied` starts at the window's
+  prefix length plus its width; `equals_whole_bytes` runs after the tag and
+  the inline key matched). Only the sorted-append check compares from byte
+  0. The prefix would save no load, so a long string leaves bytes 8..12
+  unused, and a short one's bytes start at byte 0, where a long one's
+  pointer is.
 - **Alternative: libstdc++ strings moved as bytes** with a pointer fix-up:
   undefined behaviour and libstdc++'s layout (P6, FUTURE_WORK.md).
-- **`size()` picks between both forms' sizes** with a conditional move:
-  keys of both forms mix in a map (`str-16`'s median is 16 bytes). `data()`
-  stays a branch: Clang does not load the pointer ahead of the test,
-  however the source selects it (checked in its assembly).
+- **`data()` is a branch** on the size: Clang does not load the pointer
+  ahead of the test, however the source selects it (checked in its
+  assembly). It is not zero-terminated for a 12-byte string, so there is no
+  `c_str()`.
 - **API:** it converts implicitly from anything a `std::string_view` is made
   from and to `std::string_view`, explicitly to `std::string`; it compares
   with those types without a conversion. With `std::less<>`, lookups by

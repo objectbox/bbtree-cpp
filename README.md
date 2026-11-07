@@ -89,11 +89,11 @@ Specialize `bbtree::is_trivially_relocatable<T>` for a key or value type that
 can move as its bytes, for the fastest shifts (PORTING.md, [moves](PORTING.md#p6-moves-relocate-only-trivially-relocatable-types-as-bytes)).
 
 For string keys, `bbtree::compact_string` (`bbtree/compact_string.hpp`) is
-16 bytes against libstdc++'s 32, holds up to 15 bytes in place, and moves as
+16 bytes against libstdc++'s 32, holds up to 12 bytes in place, and moves as
 bytes. It takes `std::string`, `std::string_view` and C strings wherever a
 key goes in, and with `std::less<>` looks them up without converting; keys
 come out as `const compact_string&`, a `std::string_view` by conversion
-(PORTING.md, [compact_string](PORTING.md#p29-compact_string-15-bytes-in-place-no-prefix-beside-the-pointer)):
+(PORTING.md, [compact_string](PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place)):
 
 ```cpp
 bbtree::unsync::bbtree_map<bbtree::compact_string, int, std::less<>> map;

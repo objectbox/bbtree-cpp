@@ -79,48 +79,57 @@ from 111 to 146. Unsettled: read it as about even.
 ## `compact_string` keys against `std::string` keys
 
 `bbtree-unsync-compact` is bbtree's unsync map with `bbtree::compact_string`
-keys (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-15-bytes-in-place-no-prefix-beside-the-pointer)): 16 bytes, up to 15 in place, moved as bytes. The
+keys (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place)): 16 bytes, up to 12 in place, moved as bytes. The
 cell turns its keys into compact strings before it times anything.
 `bbtree-bench cpp --key str-16,str-json --map
-bbtree-unsync,bbtree-unsync-compact,absl-btree,std-btree`, one run each, at
-load 0.2. Rust is the Rust crate's bbtree with `String` keys, from
-COMPARISON.md.
+bbtree-unsync,bbtree-unsync-compact,absl-btree,std-btree`, one run each,
+started at load 0.3, with the root-leaf walk (PORTING.md, [iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)). Rust is the Rust
+crate's bbtree with `String` keys, from COMPARISON.md.
 
 | cell | `std::string` | `compact_string` | compact ÷ std | Rust | absl btree | std::map |
 |---|--:|--:|--:|--:|--:|--:|
-| str-16_u64_random_insert_1k | 61.4 | 40.6 | 0.66 | 46.6 | 109 | 106 |
-| str-16_u64_sequential_insert_1k | 31.4 | 20.0 | 0.64 | | 47.9 | 121 |
-| str-16_u64_get_hit_1k | 37.2 | 36.5 | 0.98 | 44.5 | 69.5 | 84.0 |
-| str-16_u64_get_miss_1k | 22.9 | 26.9 | **1.18** | 29.8 | 76.1 | 78.0 |
-| str-16_u64_iterate_1k | 0.525 | 0.523 | 1.00 | | 1.29 | 3.57 |
-| str-16_u64_range64_1k | 226 | 210 | 0.93 | | 167 | 329 |
-| str-16_u64_random_remove_1k | 112 | 67.5 | 0.60 | | 108 | 114 |
-| str-16_u64_entry_upsert_1k | 69.4 | 46.8 | 0.67 | | 117 | 99.4 |
-| str-16_u64_pop_first_1k | 72.3 | 21.2 | 0.29 | | 30.6 | 16.2 |
-| str-16_u64_bulk_build_1k | 21.0 | 14.2 | 0.68 | | 20.9 | 124 |
-| str-json_struct32_build_many_1Mx4 | 78.4 | 71.6 | 0.91 | 61.0 | 51.6 | 52.3 |
-| str-json_struct32_get_many_1Mx4 | 86.5 | 91.5 | 1.06 | 82.2 | 74.5 | 98.2 |
-| str-json_struct32_iterate_1Mx4 | 9.24 | 11.4 | **1.23** | 4.52 | 3.45 | 4.55 |
-| str-json_struct32_build_many_100kx32 | 103 | 61.1 | 0.59 | 60.7 | 102 | 85.4 |
-| str-json_struct32_get_many_100kx32 | 71.7 | 68.9 | 0.96 | 67.4 | 68.8 | 86.9 |
-| str-json_struct32_iterate_100kx32 | 7.23 | 8.53 | **1.18** | 8.82 | 17.0 | 25.6 |
-| str-json_u64_random_insert_1M | 255 | 162 | 0.64 | 182 | 401 | 499 |
-| str-json_u64_get_hit_1M | 265 | 259 | 0.98 | 278 | 433 | 720 |
-| str-json_u64_get_miss_1M | 169 | 171 | 1.01 | 210 | 474 | 691 |
+| str-16_u64_random_insert_1k | 58.9 | 39.1 | 0.66 | 46.6 | 106 | 105 |
+| str-16_u64_sequential_insert_1k | 32.1 | 16.1 | 0.50 | | 47.9 | 116 |
+| str-16_u64_get_hit_1k | 36.1 | 39.4 | **1.09** | 44.5 | 71.5 | 84.4 |
+| str-16_u64_get_miss_1k | 22.9 | 25.1 | **1.10** | 29.8 | 75.6 | 81.0 |
+| str-16_u64_iterate_1k | 0.540 | 0.465 | 0.86 | | 1.29 | 3.70 |
+| str-16_u64_range64_1k | 249 | 188 | 0.76 | | 168 | 331 |
+| str-16_u64_random_remove_1k | 107 | 67.0 | 0.62 | | 110 | 113 |
+| str-16_u64_entry_upsert_1k | 70.6 | 43.5 | 0.62 | | 115 | 101 |
+| str-16_u64_pop_first_1k | 71.9 | 15.0 | 0.21 | | 28.9 | 15.8 |
+| str-16_u64_bulk_build_1k | 21.6 | 11.4 | 0.53 | | 19.2 | 129 |
+| str-json_struct32_build_many_1Mx4 ‡ | 236 | 139 | 0.59 | 61.0 | 47.6 | 50.9 |
+| str-json_struct32_get_many_1Mx4 | 74.0 | 79.5 | 1.07 | 82.2 | 76.0 | 98.4 |
+| str-json_struct32_iterate_1Mx4 | 7.95 | 8.04 | 1.01 | 4.52 | 3.54 | 4.61 |
+| str-json_struct32_build_many_100kx32 | 105 | 61.0 | 0.58 | 60.7 | 105 | 88.7 |
+| str-json_struct32_get_many_100kx32 | 69.7 | 68.3 | 0.98 | 67.4 | 68.0 | 86.6 |
+| str-json_struct32_iterate_100kx32 | 7.40 | 5.41 | 0.73 | 8.82 | 17.4 | 25.2 |
+| str-json_u64_random_insert_1M | 249 | 161 | 0.65 | 182 | 374 | 487 |
+| str-json_u64_get_hit_1M | 256 | 249 | 0.97 | 278 | 408 | 740 |
+| str-json_u64_get_miss_1M | 161 | 176 | **1.09** | 210 | 433 | 649 |
 
-- **Predicted and measured:** an entry of a string → `u64` leaf shrinks
-  from 49 bytes to 33 and shifts by one `memmove`, so writes gain and
-  lookups stay: 1M JSON-key inserts go from 255 ns to 162, below the Rust
-  crate's 182; removes, upserts and builds of 32-entry maps take 0.6-0.7×
-  the time; `pop_first` 0.29×. Lookups are within 6%, but for one cell.
-- **Not explained:** `str-16` misses at 1k (1.18×) and the many-map
-  iterations (1.18-1.23×). `size()` is a conditional move (PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-15-bytes-in-place-no-prefix-beside-the-pointer)) and the
-  walk reads nothing else of a key; `data()` is a branch on the form, and
-  half of `str-16`'s keys are past 15 bytes, which a miss's tie would
-  mispredict. Neither is profiled yet.
+‡ Not comparable with the other runs: bbtree's maps of 4 take 1.1 GB of
+fresh pages, and with the machine's memory mostly page cache, getting huge
+pages stalled the kernel in compaction (29 stalls in one run of the cell,
+none in abseil's, which takes a third as much). The same cell took 78 ns
+with `std::string` keys earlier in the session; the two bbtree columns of
+this run stalled alike.
+
+- **Writes:** an entry of a string → `u64` leaf shrinks from 49 bytes to
+  33 and shifts by one `memmove`: 1M JSON-key inserts 249 → 161 ns, below
+  the Rust crate's 182; removes, upserts, bulk builds and builds of
+  32-entry maps 0.5-0.66×; `pop_first` 0.21×.
+- **Iteration:** at `std::string`'s speed for maps of 4, 0.73× for maps
+  of 32, faster than the Rust crate's. A first layout with 15 bytes in
+  place decoded the size in eight instructions and walked 1.2-1.4× slower;
+  PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place), has the measurement.
+- **Lookups** are within 10%, behind for `str-16` at 1k and misses at 1M:
+  with 12 bytes in place, 16% of JSON keys and most `str-16` keys live on
+  the heap, so a tie reads a line past the node, and `data()` branches on
+  the form. Not profiled further.
 - The `compact_string` map beats abseil's at every write and lookup here,
-  ties it on lookups in 32-entry maps (68.9 against 68.8),
-  and trails it on `range64` and the 4-entry maps.
+  ties it on lookups in 32-entry maps (68.3 against 68.0), and trails it on
+  `range64` and the 4-entry maps.
 
 ## Against abseil's B-tree
 

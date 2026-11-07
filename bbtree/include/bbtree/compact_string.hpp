@@ -2,35 +2,34 @@
 // keys of bbtree's maps (PORTING.md, P29).
 //
 //   bbtree::unsync::bbtree_map<bbtree::compact_string, int, std::less<>> map;
-//   map["short key"] = 1;                 // up to 15 bytes: no allocation
+//   map["short key"] = 1;                 // up to 12 bytes: no allocation
 //   map.find(std::string("short key"));   // lookups take std::string,
 //   map.find(std::string_view("..."));    // string_view, const char*
 //   std::string_view key = map.begin()->first;
 //
 // Why not `std::string`: libstdc++'s is 32 bytes and points into itself while
 // short, so a leaf holds fewer of them and shifts them one move at a time.
-// This one is 16 bytes, holds up to 15 bytes in itself with no pointer to
+// This one is 16 bytes, holds up to 12 bytes in itself with no pointer to
 // them, and moves as bytes (`is_trivially_relocatable`), so a leaf shifts its
 // keys with one memmove.
 //
-// Layout, 16 bytes:
-// - short (size <= 15): bytes 0..15 are the string, byte 15 is 15 - size, so
-//   a 15-byte string ends in a zero byte; the bytes after a shorter one are
-//   zero, and `c_str()` holds for both;
-// - long: bytes 0..8 point to `size + 1` heap bytes (the string and a zero),
-//   bytes 8..15 hold the size, little-endian, and byte 15 is `long_tag`.
+// Layout, 16 bytes; bytes 12..16 are the size in either form, so reading it
+// is one load (P29):
+// - short (size <= 12): bytes 0..12 are the string, zero after it;
+// - long: bytes 0..8 point to `size + 1` heap bytes (the string and a zero).
+// `data()` is not zero-terminated for a 12-byte string, so there is no
+// `c_str()`.
 //
 // No prefix of the bytes is kept beside the pointer, as Umbra's "German"
 // strings keep 4: bbtree's nodes keep their own 8-byte inline key of every
 // key and compare a stored key's bytes only past it (P29), so a prefix would
-// cost 3 bytes that short strings hold in place and save no load.
+// save no load.
 #pragma once
 
 #include <bbtree/inline_key.hpp>
 #include <bbtree/relocation.hpp>
 
 #include <algorithm>
-#include <bit>
 #include <compare>
 #include <concepts>
 #include <cstddef>
@@ -48,9 +47,9 @@ namespace bbtree {
 class compact_string {
  public:
   // The longest string held in place.
-  static constexpr std::size_t short_capacity = 15;
-  // The longest string at all: the size has 7 bytes.
-  static constexpr std::size_t max_size = (std::size_t{1} << 56) - 1;
+  static constexpr std::size_t short_capacity = 12;
+  // The longest string at all: the size has 4 bytes.
+  static constexpr std::size_t max_size = 0xffff'ffff;
 
   compact_string() noexcept { set_short_size(0); }
 
@@ -93,21 +92,17 @@ class compact_string {
     std::memcpy(other.bytes_, held, sizeof bytes_);
   }
 
-  // Both forms' sizes are computed and one is picked, a conditional move:
-  // keys of either form mix in a map, and a branch on the form would
-  // mispredict. (`data()` stays a branch: Clang does not load the pointer
-  // before the test, whatever the source says.)
+  // One load for either form: the walk over a map's entries reads it for
+  // every key (P29).
   std::size_t size() const noexcept {
-    const std::uint64_t tail = tail_word();
-    const std::size_t long_size = tail & ~(std::uint64_t{0xff} << 56);
-    const std::size_t short_size = short_capacity - (tail >> 56);
-    return (tail >> 56) == long_tag ? long_size : short_size;
+    std::uint32_t size = 0;
+    std::memcpy(&size, bytes_ + size_offset, sizeof size);
+    return size;
   }
   bool empty() const noexcept { return size() == 0; }
   const char* data() const noexcept {
-    return is_long() ? heap_bytes() : reinterpret_cast<const char*>(bytes_);
+    return size() > short_capacity ? heap_bytes() : reinterpret_cast<const char*>(bytes_);
   }
-  const char* c_str() const noexcept { return data(); }
   std::string_view view() const noexcept { return {data(), size()}; }
 
   operator std::string_view() const noexcept { return view(); }  // NOLINT(google-explicit-constructor)
@@ -135,34 +130,24 @@ class compact_string {
   }
 
  private:
-  static constexpr std::size_t tag_index = 15;
-  static constexpr unsigned char long_tag = 0x80;
+  static constexpr std::size_t size_offset = 12;
 
-  bool is_long() const noexcept { return bytes_[tag_index] == long_tag; }
+  bool is_long() const noexcept { return size() > short_capacity; }
 
   void set_short_size(std::size_t size) noexcept {
     std::memset(bytes_, 0, sizeof bytes_);
-    bytes_[tag_index] = static_cast<unsigned char>(short_capacity - size);
+    store_size(size);
+  }
+
+  void store_size(std::size_t size) noexcept {
+    const auto stored = static_cast<std::uint32_t>(size);
+    std::memcpy(bytes_ + size_offset, &stored, sizeof stored);
   }
 
   const char* heap_bytes() const noexcept {
     const char* heap = nullptr;
     std::memcpy(&heap, bytes_, sizeof heap);
     return heap;
-  }
-
-  // Bytes 8..16 as a little-endian word: the long form's size, and the tag
-  // in the top byte.
-  std::uint64_t tail_word() const noexcept {
-    std::uint64_t word = 0;
-    if constexpr (std::endian::native == std::endian::little) {
-      std::memcpy(&word, bytes_ + 8, sizeof word);
-    } else {
-      for (std::size_t byte = 0; byte < 8; ++byte) {
-        word |= std::uint64_t{bytes_[8 + byte]} << (8 * byte);
-      }
-    }
-    return word;
   }
 
   // Makes this a copy of `count` bytes at `text`; this holds nothing yet.
@@ -180,11 +165,9 @@ class compact_string {
     char* heap = new char[count + 1];
     std::memcpy(heap, text, count);
     heap[count] = '\0';
+    std::memset(bytes_, 0, sizeof bytes_);
     std::memcpy(bytes_, &heap, sizeof heap);
-    for (std::size_t byte = 0; byte < 7; ++byte) {
-      bytes_[8 + byte] = static_cast<unsigned char>(count >> (8 * byte));
-    }
-    bytes_[tag_index] = long_tag;
+    store_size(count);
   }
 
   void release() noexcept {

@@ -24,33 +24,47 @@ class in_order_walk {
  public:
   explicit in_order_walk(const tree<T>& whole) noexcept : tree_(whole) {}
 
-  // Runs `visit(key, value)` on every entry in key order.
+  // Runs `visit(key, value)` on every entry in key order. A root leaf, every
+  // small map's, is walked here, with no call: a call and its frame per map
+  // are instructions that keep the next maps' loads out of the CPU's window.
   template <class Visit>
   void run(Visit& visit) const {
-    if (tree_.has_root()) {
-      subtree(tree_.root(), nullptr, visit);
+    if (!tree_.has_root()) {
+      return;
+    }
+    const node_ptr<T> root = tree_.root();
+    if (root.is_leaf()) {
+      leaf_entries(leaf_node<T>(root), nullptr, visit);
+    } else {
+      subtree(root, nullptr, visit);
     }
   }
 
  private:
+  // The entries of `leaf`, whose head key, if it has one, is `head_key` for
+  // keys without inline keys.
+  template <class Visit>
+  [[gnu::always_inline]] static void leaf_entries(const leaf_node<T>& leaf, const K* head_key, Visit& visit) {
+    if (leaf.has_head()) {
+      if constexpr (T::has_inline_keys) {
+        visit(leaf.head_key(), leaf.head_value());
+      } else {
+        visit(*head_key, leaf.head_value());
+      }
+    }
+    const std::size_t len = leaf.len();
+    for (std::size_t index = 0; index < len; ++index) {
+      visit(leaf.key(index), leaf.value(index));
+    }
+  }
+
   // The entries under `node`, whose leftmost leaf's head key, if it has one,
   // is `head_key`: the separator left of the subtree, kept in the internal
   // node above for keys without inline keys (D49).
   template <class Visit>
   static void subtree(node_ptr<T> node, const K* head_key, Visit& visit) {
     if (node.is_leaf()) {
-      const leaf_node<T> leaf(node);
-      if (leaf.has_head()) {
-        if constexpr (T::has_inline_keys) {
-          visit(leaf.head_key(), leaf.head_value());
-        } else {
-          visit(*head_key, leaf.head_value());
-        }
-      }
-      const std::size_t len = leaf.len();
-      for (std::size_t index = 0; index < len; ++index) {
-        visit(leaf.key(index), leaf.value(index));
-      }
+      leaf_entries(leaf_node<T>(node), head_key, visit);
       return;
     }
     const internal_node<T> internal(node);
