@@ -8,6 +8,13 @@ ordered map by Xiangpeng Hao originally implemented in Rust.
 * bbtree++ outperforms the standard `std::map` in almost all cases while using less memory:
   see [bbtree/bench/CPP_MAPS.md](bbtree/bench/CPP_MAPS.md) for details
 
+![Integer keys, 1M entries: bbtree++ and bbtree (Rust) against std::map](bbtree/bench/charts/integer_keys_1m.png)
+
+![String keys, 1M entries: bbtree++ and bbtree (Rust) against std::map](bbtree/bench/charts/string_keys_1m.png)
+
+These show maps of 1M entries; [bbtree/bench/charts](bbtree/bench/charts/README.md)
+has the charts of every size.
+
 ## Features
 
 bbtree++ keeps the Rust original's design: its nodes and their layouts,
