@@ -88,15 +88,17 @@ commit of many records, if appends ever show it.
 
 ## libstdc++ strings moved as bytes, their short-string pointer fixed
 
-libstdc++'s `std::string` points into itself while short, so it is not
-trivially relocatable, and shifting `std::string` keys moves them one at a
-time: move constructor, a variable-length `memcpy` call, destructor. That is
-still about 18% of a 1M random `std::string` insert (220 ns, after moving
-straight into the destination slot). Moving a run of them as bytes, then
-pointing each short string's data pointer at its own new buffer, would make
-them shift like Rust's `String`. It depends on libstdc++'s layout (the data
-pointer first, the buffer at 16), which needs a test that checks it, and on
-a fix-up in every byte-moving path: `slots`' shifts and runs, the paired
-entries' `entry_shift`, and whole-node moves. A prototype that fixed only
-`slots` gained 3%, since paired entries then shift one at a time.
-
+libstdc++'s `std::string` points into itself while short, so `std::string`
+keys shift one object at a time. Moving a run of them as bytes, then
+pointing each short string's data pointer back at its own buffer, made
+building 100k maps of 32 `std::string` → 32-byte entries 26% faster (79 ns
+an insert to 58) in a prototype that fixed up `slots`' shifts and the paired
+entries' shift; 1M random inserts into one map gained nothing, their shifts
+overlapping the leaf's cache misses. The bench's `build_many_100kx32` cell
+is where the port trails the Rust crate most (1.7x). Doing it means: a
+relocation trait with a fix-up after byte moves (`std::string` under
+libstdc++'s C++11 ABI, whose layout the ABI freezes: data pointer first,
+buffer at 16), fix-ups in every byte-moving path (`slots`' shifts and runs,
+`entry_shift`, whole-leaf copies), a test that checks the layout, and
+copying the bytes of an object that isn't trivially copyable, which the
+standard leaves undefined.

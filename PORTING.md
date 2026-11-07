@@ -102,7 +102,15 @@ D1–D60) still hold unless an entry here says otherwise.
   fewer too. Both show in the comparison with the Rust crate (M11). A
   one-at-a-time move constructs straight into the destination slot and
   destroys the source, one move each, not two through a temporary: 12% off
-  a 1M random `std::string` insert. FUTURE_WORK.md has the byte moves.
+  a 1M random `std::string` insert.
+- **Measured and rejected:** moving libstdc++ strings as bytes and then
+  pointing each short string's data pointer at its own new buffer, in every
+  byte-moving path (`slots`, the paired entries' shift). It depends on
+  libstdc++'s layout, and a prototype gained nothing on 1M random
+  `std::string` inserts (235 ns against 229): the shifts overlap the leaf's
+  cache misses. It gains on maps that stay in cache (FUTURE_WORK.md). The rest of the gap to the Rust crate's 180 ns (the Rust
+  bench's `str-json` cell) is the 32-byte key: 19 entries a leaf against 24,
+  so more leaves, more levels and more misses.
 
 ## P7. Iterators: proxy references, and node stacks attached lazily
 
