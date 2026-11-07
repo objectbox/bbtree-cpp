@@ -39,6 +39,9 @@ enum class map_kind {
   unsync_compact_u16,
   // `bbtree::compact_string_24`: 24 bytes, a 4-byte size, 20 in place.
   unsync_compact_24,
+  // `bbtree::unsync::bbtree_map` on `bbtree::pooled_allocator`, its pages
+  // packed into chunks (PORTING.md, P32); opt-in.
+  unsync_pooled,
   // `std::map`, the counterpart of Rust's `BTreeMap`.
   std_btree,
   // `absl::btree_map`: a B-tree of std::map's interface, the C++ bench's
@@ -62,6 +65,7 @@ struct enum_traits<map_kind> {
       map_kind::unsync_compact,
       map_kind::unsync_compact_u16,
       map_kind::unsync_compact_24,
+      map_kind::unsync_pooled,
       map_kind::std_btree,
       map_kind::absl_btree,
       map_kind::hashbrown,
@@ -82,6 +86,8 @@ struct enum_traits<map_kind> {
         return "bbtree-unsync-compact-u16";
       case map_kind::unsync_compact_24:
         return "bbtree-unsync-compact-24";
+      case map_kind::unsync_pooled:
+        return "bbtree-unsync-pooled";
       case map_kind::std_btree:
         return "std-btree";
       case map_kind::absl_btree:
@@ -109,6 +115,8 @@ struct enum_traits<map_kind> {
         return "bbtree unsync, compact string, 2-byte size";
       case map_kind::unsync_compact_24:
         return "bbtree unsync, compact_string_24";
+      case map_kind::unsync_pooled:
+        return "bbtree unsync, pooled pages";
       case map_kind::std_btree:
         return "std::map";
       case map_kind::absl_btree:
@@ -142,7 +150,7 @@ struct enum_traits<map_kind> {
 
   // Whether the map runs only when `--map` names it.
   static constexpr bool is_opt_in(map_kind map) noexcept {
-    return map == map_kind::unsync_inline || map == map_kind::bbtree;
+    return map == map_kind::unsync_inline || map == map_kind::bbtree || map == map_kind::unsync_pooled;
   }
 };
 

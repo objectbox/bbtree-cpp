@@ -1,7 +1,8 @@
 # The bench harness, a port of the Rust crate's `bbtree/bench` (PORTING.md,
-# P12, P17-P19). Two binaries share every source but the one that fixes the global
-# allocator: `bbtree-bench` times cells on plain mimalloc, and
-# `bbtree-bench-memory` counts the live bytes of the maps instead.
+# P12, P17-P19). Three binaries share every source but the one that fixes the
+# global allocator: `bbtree-bench` times cells on plain mimalloc,
+# `bbtree-bench-memory` counts the live bytes of the maps instead, and
+# `bbtree-bench-system` times cells on the system's allocator.
 #
 # The bench-only dependencies, pinned to releases; the library stays
 # dependency-free. `SYSTEM` keeps their headers out of the bench's warnings,
@@ -80,3 +81,6 @@ target_link_libraries(bbtree-bench PRIVATE bbtree_bench_core bbtree_warnings)
 
 add_executable(bbtree-bench-memory src/memory_main.cpp)
 target_link_libraries(bbtree-bench-memory PRIVATE bbtree_bench_core bbtree_warnings)
+
+add_executable(bbtree-bench-system src/system_allocator_main.cpp)
+target_link_libraries(bbtree-bench-system PRIVATE bbtree_bench_core bbtree_warnings)

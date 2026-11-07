@@ -15,6 +15,7 @@
 #include <absl/container/btree_map.h>
 #include <ankerl/unordered_dense.h>
 #include <bbtree/map.hpp>
+#include <bbtree/pooled_allocator.hpp>
 #include <bbtree/unsync/map.hpp>
 
 #include <array>
@@ -170,6 +171,12 @@ class std_interface_map {
 
 template <class K, class V>
 using unsync_bbtree = std_interface_map<bbtree::unsync::bbtree_map<K, V>, true>;
+
+// `bbtree::unsync::bbtree_map` on `bbtree::pooled_allocator`: its pages packed
+// into chunks (PORTING.md, P32).
+template <class K, class V>
+using pooled_unsync_bbtree =
+    std_interface_map<bbtree::unsync::bbtree_map<K, V, std::less<K>, bbtree::pooled_allocator>, true>;
 
 template <class K, class V>
 using std_btree = std_interface_map<std::map<K, V>, true>;

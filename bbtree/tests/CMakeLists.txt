@@ -3,6 +3,7 @@
 # compiler vectorizes the count, so both paths are tested.
 set(BBTREE_TEST_SOURCES
   allocator_test.cpp
+  pooled_allocator_test.cpp
   file_test.cpp
   fuzz_harness_test.cpp
   readme_test.cpp

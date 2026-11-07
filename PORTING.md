@@ -742,3 +742,79 @@ an owning byte string for keys that does neither.
   counted as the difference to one scan, with `NDEBUG` as the bench preset
   builds.
 
+
+## P32. `pooled_allocator`: pages packed into chunks, opt-in
+
+- **Chosen:** `bbtree::pooled_allocator` (`bbtree/pooled_allocator.hpp`), an
+  allocator beside `global_allocator`, which stays the default. Its copies
+  share one pool. The pool carves the pages of each layout one after another
+  from chunks that double from one page to 2 MiB; on Linux the 2 MiB chunks
+  are `mmap`ed, aligned to 2 MiB and `madvise(MADV_HUGEPAGE)`d, so that they
+  come zeroed and on huge pages where transparent huge pages are on for
+  regions that ask (Ubuntu's default, `madvise`). Pages given back go on a
+  free list per layout and are reused; chunks go back to the system when the
+  last copy of the allocator goes. A mutex guards the pool, so maps on
+  several threads, and the shared map's threads, may share one. Layouts that
+  don't pack back to back, and pages over a quarter of a chunk, go to
+  `operator new` directly. Constructing the allocator allocates the pool, which may throw
+  `std::bad_alloc`; a map default-constructed on it ends the program then,
+  its constructor being `noexcept`, so a caller that handles running out of
+  memory constructs the allocator first. A pool made at the first page
+  instead would split copies made before it.
+- **Why:** the bench runs on mimalloc, as the Rust bench does (P17), so it
+  never measured what a map gets by default. A third bench binary,
+  `bbtree-bench-system`, times cells on the system's allocator (glibc 2.39
+  here). There the global allocator's aligned `operator new` places 1 KiB
+  pages with gaps between them and on 4 KiB pages, and bbtree++ lost far
+  more than the other maps (1M `u64` entries, ns an operation, iterate and
+  bulk build an entry):
+
+  | cell | mimalloc | glibc | glibc, pooled |
+  |---|--:|--:|--:|
+  | random insert | 88.0 | 142 | 90.2 |
+  | sequential insert | 11.4 | 34.7 | 14.8 |
+  | get hit | 83.1 | 111 | 92.2 |
+  | get miss | 59.9 | 84.0 | 66.6 |
+  | iterate | 0.715 | 2.34 | 0.773 |
+  | range64 | 301 | 513 | 296 |
+  | bulk build | 4.93 | 24.8 | 8.48 |
+  | 10M random insert | 264 | 318 | 257 |
+  | 10M get miss | 166 | 216 | 184 |
+
+  On glibc, abseil's B-tree, whose 256-byte nodes `malloc` packs, lost
+  1.15-2.2×, so bbtree++'s lead over it mostly went. On mimalloc the pool is
+  within run-to-run noise but for bulk builds (4.9 → 5.9 ns), which fault in
+  its fresh mappings where mimalloc reuses memory the cell's setup freed.
+- **Why not the default:** a pool per map costs small maps. A pool is about
+  200 bytes of its own, and the doubling chunks leave pages unused: 1M maps
+  of 4 entries took 331 bytes an entry against 275, 100k maps of 32 took 237
+  against 147, and building them took 357 ns an entry against 315 on glibc
+  and 92 against 78 on mimalloc. Many maps that share one allocator pay none
+  of it and gain what large maps gain: on glibc, 1M maps of 4 built in 91.6
+  ns an entry against 314 and iterated in 5.67 against 7.72 (an experiment
+  with a pool shared by every map of the cell; mimalloc 75.8 and 5.29). A
+  default that shared one pool would be a mutable global (AGENTS.md) whose
+  memory never goes back. And a pool keeps a shrunk map's pages for reuse,
+  as a `std::vector` keeps its capacity, where the global allocator gives
+  them back: a choice for the user to make.
+- **Alternatives considered:**
+  - **stx_btree's `PooledPageAllocator`**, the idea's source (another C++
+    form of bbtree): chunks growing from 64 KiB to 2 MiB from `operator new`.
+    A 64 KiB first chunk is 16 times a 4-entry map's root page, and
+    `operator new` gives glibc's 4 KiB pages; chunks from one page and 2 MiB
+    huge pages take both.
+  - **Pages' layouts as template constants**, a size class per kind with no
+    lookup: the list of classes holds two or three entries, a scan of a few
+    compares beside a mutex and a `memset`.
+  - **No mutex for the unsync map** (a policy parameter): the lock is once a
+    page, about one in 50 inserts, and a pool that copies share must be safe
+    for maps on different threads; not measured to matter.
+  - **Returning chunks whose pages are all free:** a count per chunk and a
+    search on every free, for maps that shrink a lot; left to FUTURE_WORK.md.
+- **Measured** with `bbtree-bench-system` and `bbtree-bench`, `cpp` suite,
+  `bbtree-unsync` against `bbtree-unsync-pooled` (opt-in), one run each at
+  load under 0.3; memory with `bbtree-bench-memory`. The memory binary
+  counts `operator new`, not the pool's `mmap`ed chunks, so the pooled
+  rows of 1M-entry maps read low there; resident memory grew by 33.7 bytes
+  an entry for 1M `u64` entries against 25.3, the last chunks' unused
+  pages and huge-page rounding.

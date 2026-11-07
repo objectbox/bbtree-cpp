@@ -174,3 +174,15 @@ that `word_at` took out of the bulk build. Maps of dense ids share such a
 prefix; the bench's random keys share none, so no cell shows it. Not
 measured.
 
+
+## A pooled allocator that gives back free chunks
+
+`pooled_allocator` (PORTING.md, [pooled pages](PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in)) keeps every chunk until its last copy goes, so a
+map that grows to 10M entries and shrinks to 10 holds its peak's pages.
+Giving back a chunk whose pages are all free takes a count per chunk and,
+on every free, finding the page's chunk: a search over the chunks, or
+chunks aligned to their size so that the address names it, which 2 MiB
+chunks already are. The free list would then have to drop the chunk's
+pages, which a list per chunk does at the cost of choosing a chunk on each
+allocation. Worth it for long-lived maps whose size swings by orders of
+magnitude; not measured.

@@ -21,7 +21,10 @@ unordered_dense 4.9.2 and mimalloc 3.3.2, pinned; the library itself has no
 dependencies. Two binaries land in `build/bench/bbtree/bench/`:
 
 - `bbtree-bench` times cells on mimalloc;
-- `bbtree-bench-memory` reports the bytes the maps of build operations hold.
+- `bbtree-bench-memory` reports the bytes the maps of build operations hold;
+- `bbtree-bench-system` times cells on the system's allocator (glibc's
+  `malloc` on Linux), what a map gets where nothing replaces `operator new`
+  (PORTING.md, [pooled pages](../../PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in)).
 
 ## Run
 

@@ -29,6 +29,11 @@ follows.
   coupling, with closures instead of handles.
 - File maps (`bbtree/file.hpp`) and bbtree-mmap: maps compacted into a file and
   looked up where they lie.
+- `bbtree::pooled_allocator`: packs a map's pages into 2 MiB chunks on huge
+  pages. Without mimalloc or another allocator replacing `operator new`, it
+  makes large maps up to 3× faster to walk and build on glibc; give many
+  small maps copies of one allocator to share its pool (PORTING.md,
+  [pooled pages](PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in)).
 - Zero dependencies: headers only, C++20, Clang 15+ or GCC 13+; CMake 3.28+.
 
 ## Usage

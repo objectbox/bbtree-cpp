@@ -53,10 +53,18 @@ class counting_allocator {
 class run_mode {
  public:
   // Time, on plain mimalloc.
-  static run_mode timing() noexcept { return run_mode(nullptr); }
+  static run_mode timing() noexcept { return run_mode(nullptr, "mimalloc"); }
+
+  // Time, on the system's allocator (glibc's `malloc` on Linux): what a map
+  // gets by default where nothing replaces `operator new`.
+  static run_mode timing_on_system_allocator() noexcept {
+    return run_mode(nullptr, "the system allocator (no replacement of operator new)");
+  }
 
   // The memory a cell's maps hold, from the counting allocator.
-  static run_mode memory(counting_allocator& allocator) noexcept { return run_mode(&allocator); }
+  static run_mode memory(counting_allocator& allocator) noexcept {
+    return run_mode(&allocator, "mimalloc, wrapped in a live-byte counter");
+  }
 
   bool is_memory() const noexcept { return allocator_ != nullptr; }
 
@@ -65,14 +73,14 @@ class run_mode {
   std::string_view name() const noexcept { return is_memory() ? "memory" : "timing"; }
 
   // The global allocator, for report headers.
-  std::string_view allocator_description() const noexcept {
-    return is_memory() ? "mimalloc, wrapped in a live-byte counter" : "mimalloc";
-  }
+  std::string_view allocator_description() const noexcept { return allocator_description_; }
 
  private:
-  explicit run_mode(counting_allocator* allocator) noexcept : allocator_(allocator) {}
+  run_mode(counting_allocator* allocator, std::string_view allocator_description) noexcept
+      : allocator_(allocator), allocator_description_(allocator_description) {}
 
   counting_allocator* allocator_;
+  std::string_view allocator_description_;
 };
 
 // The process's resident set, from `/proc/self/status`; zero where that
