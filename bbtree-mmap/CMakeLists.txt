@@ -12,3 +12,11 @@ if(BBTREE_BUILD_TESTS)
   add_executable(bbtree_mmap_lookups examples/lookups.cpp)
   target_link_libraries(bbtree_mmap_lookups PRIVATE bbtree::mmap bbtree_warnings)
 endif()
+
+# The Rust crate's other examples, on mimalloc as they are: with the bench.
+if(BBTREE_BUILD_BENCH)
+  foreach(example first_query huge_pages var_bytes_lookups)
+    add_executable(bbtree_mmap_${example} examples/${example}.cpp)
+    target_link_libraries(bbtree_mmap_${example} PRIVATE bbtree::mmap bbtree_warnings mimalloc-static)
+  endforeach()
+endif()
