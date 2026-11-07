@@ -179,6 +179,53 @@ iterate in 5.6 ns an entry with `std::string` keys and 3.2 with
 - `compact_string` stays the 16-byte default: no cap, and nothing the
   2-byte size wins is outside noise but one cell.
 
+## Memory, bytes an entry
+
+The heap bytes a map holds after its build, divided by its entries:
+`bbtree-bench-memory cpp`, which counts the bytes mimalloc hands out
+(`mi_usable_size`) and frees, one run each. The counts don't depend on
+the machine's load. bbtree's string rows have the compact string that
+suits the keys (see above): `compact_string_24` (`bbtree-unsync-compact-24`,
+24 bytes, up to 20 in place) for `str-16`, whose keys it mostly holds in
+place, and the default `compact_string` (`bbtree-unsync-compact`, 16 bytes,
+a 4-byte size, up to 12 in place) for JSON keys. The other maps have
+`std::string` keys.
+
+| cell | bbtree | absl btree | std::map | std::unordered_map | bbtree ÷ std::map |
+|---|--:|--:|--:|--:|--:|
+| u64_u64_random_insert_1k | 27.7 | **20.8** | 48.0 | 42.3 | 0.58 |
+| u64_u64_sequential_insert_1k | 24.6 | **18.1** | 48.0 | 42.3 | 0.51 |
+| u64_u64_bulk_build_1k | 19.5 | **18.1** | 48.0 | 42.3 | 0.41 |
+| u64_u64_random_insert_1M | 26.9 | **21.4** | 48.0 | 44.6 | 0.56 |
+| u64_u64_sequential_insert_1M | 23.6 | **17.6** | 48.0 | 44.6 | 0.49 |
+| u64_u64_bulk_build_1M | 18.5 | **17.6** | 48.0 | 44.6 | 0.38 |
+| u64_u64_random_insert_10M | 26.9 | **21.4** | 48.0 | 42.1 | 0.56 |
+| str-16_u64_random_insert_1k | **67.2** | 74.0 | 98.0 | 92.2 | 0.69 |
+| str-16_u64_sequential_insert_1k | 68.3 | **62.6** | 98.0 | 92.2 | 0.70 |
+| str-16_u64_bulk_build_1k | **48.8** | 62.6 | 98.0 | 92.2 | 0.50 |
+| str-json_u64_random_insert_1M | **51.0** | 58.7 | 82.7 | 79.3 | 0.62 |
+
+- **std::map** pays 48 bytes for a `u64` → `u64` entry in every order: a
+  node is 32 bytes of links and colour beside the entry's 16, mimalloc's
+  48-byte size class. With `std::string` keys a node is 72 bytes, in the
+  80-byte class, plus a heap buffer for each key past 15 bytes.
+- **bbtree's** `u64` entry is its 16 bytes and a 2-byte inline key: 18.5
+  bytes in the full leaves of a bulk build, 23.6 after ascending inserts,
+  26.9 after random ones, which leave leaves about 70% full. abseil's
+  nodes keep no inline keys and are 1-6 bytes an entry smaller.
+- **String keys:** a string → `u64` leaf entry is 33 bytes with
+  `compact_string`, 41 with `compact_string_24` and 49 with `std::string`.
+  On `str-16` the 24-byte form saves the heap buffers of the keys it holds
+  in place: 67.2 against the 16-byte form's 71.6 after random inserts and
+  48.8 against 55.2 in a bulk build, but 68.3 against 65.5 after
+  sequential inserts. On JSON keys it takes 61.5 against 51.0. The
+  2-byte-size variant is 1-2.4 bytes smaller than `compact_string` on
+  every cell. With `std::string` keys bbtree takes
+  76.9 bytes an entry on 1M JSON keys (0.93× std::map) and 72-106 on
+  `str-16` at 1k.
+- **The Rust crate** takes the same bytes on every `u64` cell; with its
+  24-byte `String` keys it takes 68.4 on 1M JSON keys.
+
 ## Against abseil's B-tree
 
 - **bbtree is faster:**
