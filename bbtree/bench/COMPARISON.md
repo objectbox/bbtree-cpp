@@ -1,22 +1,15 @@
-# bbtree++ against the Rust original
+# bbtree++ vs. bbtree (Rust) vs. standard maps
 
-The port's bench (`bbtree/bench`) against the Rust bench it ports, cell
-for cell, on one machine, after the port's first optimization round.
+This C++ port of bbtree (bbtree++) was measured against the Rust original and standard maps.
+Both ran the same benchmark cells with the same inputs on one machine; see Setup for details.
 
-- **Machine:** AMD Ryzen 9 5950X (Zen 3, AVX2, no AVX-512), Linux 6.8,
-  quiet (load under 0.3 at the start of each run).
-- **Rust:** the original at `3ab503d`, rustc 1.99.0, its bench as shipped
-  (mimalloc crate 0.1, which builds mimalloc 3).
-- **C++:** Clang 15, `--preset bench` (`-O3 -march=native`, LTO), mimalloc
-  3.3.2 (PORTING.md, [the bench's allocator](../../PORTING.md#p17-the-benchs-allocator-mimalloc-332-behind-operator-new)).
-- **Inputs:** the same keys, values, orders and probes: `bbtree-bench
-  self-check` pins the port's generators to the Rust bench's (PORTING.md,
-  [bench inputs](../../PORTING.md#p19-bench-inputs-the-rust-benchs-key-for-key)).
-- **Runs:** one per cell, each in a fresh process (AGENTS.md: no repeats to
-  average noise away). Cells whose Rust runs varied by more than 10% across
-  this session are marked.
-- **Reproduce:** `bbtree-bench ci --out A` in each bench, then
-  `bbtree-bench compare --head A/cpp.csv --base A/rust.csv`.
+## Summary
+
+- **Integer keys:** the port is typically 1.0-1.3× as fast, up to 1.6×.
+- **String keys:** with compact strings the port is typically 1.05-1.3× as
+  fast, up to 1.8×, and slower only building many 4-entry maps.
+- **The shared map:** faster on one thread, about 5% slower with 8 threads.
+- **bbtree-store:** inserts and gets are even or faster; scans are 13% slower.
 
 ## Integer keys
 
@@ -149,6 +142,23 @@ Bold marks the smaller figure of each row.
 The store keeps a head's record in place (the race TSan found; PORTING.md, [heads' records](../../PORTING.md#p24-a-leafs-head-keys-record-stays-put)), which
 costs up to 8 more bytes a record and the stubs churn leaves: the bytes
 and churn rows.
+
+## Setup
+
+- **Machine:** AMD Ryzen 9 5950X (Zen 3, AVX2, no AVX-512), Linux 6.8,
+  quiet (load under 0.3 at the start of each run).
+- **Rust:** the original at `3ab503d`, rustc 1.99.0, its bench as shipped
+  (mimalloc crate 0.1, which builds mimalloc 3).
+- **C++:** Clang 15, `--preset bench` (`-O3 -march=native`, LTO), mimalloc
+  3.3.2 (PORTING.md, [the bench's allocator](../../PORTING.md#p17-the-benchs-allocator-mimalloc-332-behind-operator-new)).
+- **Inputs:** the same keys, values, orders and probes: `bbtree-bench
+  self-check` pins the port's generators to the Rust bench's (PORTING.md,
+  [bench inputs](../../PORTING.md#p19-bench-inputs-the-rust-benchs-key-for-key)).
+- **Runs:** one per cell, each in a fresh process (AGENTS.md: no repeats to
+  average noise away). Cells whose Rust runs varied by more than 10% across
+  this session are marked.
+- **Reproduce:** `bbtree-bench ci --out A` in each bench, then
+  `bbtree-bench compare --head A/cpp.csv --base A/rust.csv`.
 
 ## What the first optimization round changed
 
