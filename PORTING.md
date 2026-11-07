@@ -12,9 +12,14 @@ D1–D60) still hold unless an entry here says otherwise.
   the READMEs and the design docs.
 - **Adapted:** Miri becomes AddressSanitizer + UBSan (`--preset asan`);
   Shuttle's interleaving tests become stress tests under ThreadSanitizer
-  (`--preset tsan`); the racing-reads checker reads Clang's assembly instead
-  of rustc's.
-- **Left out:** the Verus proofs (`bbtree/src/proof`, the WAL's lemmas).
+  (`--preset tsan`); the GitHub workflows become one (`.github/workflows/
+  ci.yml`: format, Clang and GCC tests, both sanitizers, a minute of each
+  fuzz target, the bench's self-check). The Nix flake, which pins the Rust
+  toolchain, is not carried over: the workflow pins Ubuntu 24.04's Clang 15,
+  GCC 13 and CMake 3.28, the versions the port is built with.
+- **Left out:** the racing-reads checker (P15), and the release workflows
+  (crates.io publishing has no counterpart). The Verus proofs
+  (`bbtree/src/proof`, the WAL's lemmas).
   There is no Verus for C++; the executable parts of their specs become
   debug assertions and tests. The Dioxus web visualizer (`bbtree/vis`, 14.5k
   lines of a Rust-to-wasm UI) is a separate product, not part of the
