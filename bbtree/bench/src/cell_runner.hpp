@@ -79,7 +79,10 @@ class cell_run {
   template <class K, class V, class Prepared>
   cell_measurement with_map_type(Prepared& prepared) const;
 
-  // The maps of keys of a std type: all but `bbtree-unsync-compact`.
+  template <class C, class V, class Keys>
+  cell_measurement with_compact_keys(const Keys& keys, value_maker<V> values) const;
+
+  // The maps of keys of a std type: all but the compact-string maps.
   template <class K, class V, class Prepared>
   cell_measurement with_std_key_map_type(Prepared& prepared) const;
 

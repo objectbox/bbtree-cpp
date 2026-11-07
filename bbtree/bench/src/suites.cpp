@@ -18,7 +18,7 @@ constexpr std::array inserts_hits_and_misses{operation::random_insert, operation
 
 std::span<const map_kind> enum_traits<suite>::maps(suite s) noexcept {
   static constexpr std::array ordered_baseline{map_kind::unsync, map_kind::std_btree};
-  // Every map but `bbtree-unsync-compact`, which the Rust bench has no
+  // Every map but the compact-string maps, which the Rust bench has no
   // counterpart of.
   static constexpr std::array rust_counterparts{
       map_kind::bbtree,     map_kind::unsync,    map_kind::unsync_inline, map_kind::std_btree,

@@ -128,9 +128,11 @@ struct key_traits<std::string> {
   static std::uint64_t fingerprint(const std::string& key) noexcept { return key.size(); }
 };
 
-template <>
-struct key_traits<bbtree::compact_string> {
-  static std::uint64_t fingerprint(const bbtree::compact_string& key) noexcept { return key.size(); }
+template <class Size, std::size_t ShortCapacity>
+struct key_traits<bbtree::basic_compact_string<Size, ShortCapacity>> {
+  static std::uint64_t fingerprint(const bbtree::basic_compact_string<Size, ShortCapacity>& key) noexcept {
+    return key.size();
+  }
 };
 
 // How the candidates of one string key kind look: JSON object keys,

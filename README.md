@@ -90,8 +90,11 @@ can move as its bytes, for the fastest shifts (PORTING.md, [moves](PORTING.md#p6
 
 For string keys, `bbtree::compact_string` (`bbtree/compact_string.hpp`) is
 16 bytes against libstdc++'s 32, holds up to 12 bytes in place, and moves as
-bytes. It takes `std::string`, `std::string_view` and C strings wherever a
-key goes in, and with `std::less<>` looks them up without converting; keys
+bytes; `bbtree::compact_string_24` holds up to 20, for lookups of longer
+keys, and `bbtree::basic_compact_string<Size, ShortCapacity>` takes a 2-byte
+size for 2 more bytes in place, with strings capped at 65,535 bytes. It
+takes `std::string`, `std::string_view` and C strings wherever a key goes
+in, and with `std::less<>` looks them up without converting; keys
 come out as `const compact_string&`, a `std::string_view` by conversion
 (PORTING.md, [compact_string](PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place)):
 

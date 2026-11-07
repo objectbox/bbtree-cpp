@@ -114,15 +114,13 @@ every map, so code that binds `const std::string&` to a key, or passes
 `it->first` where a `std::string&` is wanted, stops compiling: a deviation
 from std::map that the opt-in key type avoids.
 
-## `compact_string` with 14 bytes in place
+## `compact_string` with 14 bytes in place and no length cap
 
-Between the two measured layouts: a 2-byte size in bytes 14..16, with
-0xFFFF meaning that the size is on the heap before the bytes, keeps
-`size()` one load for every string the 2 bytes can count and holds 14 bytes
-in place (90.3% of the bench's JSON keys against 83.9%). It costs a branch
-in `size()` for strings past 65,534 bytes, and helps neither `str-16`
-(median 16 bytes) nor the branch in `data()`, the other half of a tie's
-cost.
+`basic_compact_string<std::uint16_t, 14>` holds 14 bytes in place (90.3% of
+the bench's JSON keys against 83.9%) and was measured: misses in 1M maps
+9% faster, the rest even, but strings capped at 65,535 bytes. Lifting the
+cap would take 0xFFFF as "the size is on the heap before the bytes": a
+branch in `size()` for long strings only, and a second layout to test.
 
 ## From abseil's B-tree
 

@@ -636,6 +636,16 @@ an owning byte string for keys that does neither.
   bench, and 100k maps of 32 8.6 → 5.4. Writes and lookups stayed within
   10% (CPP_MAPS.md); misses in 1M maps went 165 → 176 ns, as more keys'
   ties read past the node.
+- **A template, `basic_compact_string<Size, ShortCapacity>`,** of a 2- or
+  4-byte size and 16 or 24 bytes in all, named in its two main forms:
+  `compact_string` (4-byte size, 12 in place) and `compact_string_24`
+  (4-byte size, 20 in place). Measured on every string cell, one run each
+  (CPP_MAPS.md): a 2-byte size with 14 in place ties `compact_string` but
+  for misses in 1M JSON-key maps (164 ns against 181, fewer keys' ties read
+  past the node), and caps strings at 65,535 bytes, so it is not the
+  default. 24 bytes with 20 in place holds most `str-16` keys in place:
+  hits 12% faster (32.9 ns against 37.5 at 1k; 219 against 243 at 1M), at
+  8-11% on inserts and 7-20% on walks, its entries being larger.
 - **Alternative: Umbra's "German" string**, 16 bytes too: a 4-byte size, a
   4-byte prefix, and 8 more bytes in place or a pointer, so 12 bytes in
   place, as here. Its prefix lets a database compare strings without

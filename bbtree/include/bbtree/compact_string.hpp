@@ -1,5 +1,7 @@
-// `bbtree::compact_string`: an owning byte string of 16 bytes, for string
-// keys of bbtree's maps (PORTING.md, P29).
+// `bbtree::compact_string` and `bbtree::compact_string_24`: owning byte
+// strings of 16 and 24 bytes, for string keys of bbtree's maps (PORTING.md,
+// P29). Both are `basic_compact_string<Size, ShortCapacity>`: a size of type
+// `Size` and up to `ShortCapacity` bytes in place.
 //
 //   bbtree::unsync::bbtree_map<bbtree::compact_string, int, std::less<>> map;
 //   map["short key"] = 1;                 // up to 12 bytes: no allocation
@@ -9,16 +11,18 @@
 //
 // Why not `std::string`: libstdc++'s is 32 bytes and points into itself while
 // short, so a leaf holds fewer of them and shifts them one move at a time.
-// This one is 16 bytes, holds up to 12 bytes in itself with no pointer to
-// them, and moves as bytes (`is_trivially_relocatable`), so a leaf shifts its
-// keys with one memmove.
+// These hold their short strings in themselves with no pointer to them, and
+// move as bytes (`is_trivially_relocatable`), so a leaf shifts its keys with
+// one memmove.
 //
-// Layout, 16 bytes; bytes 12..16 are the size in either form, so reading it
-// is one load (P29):
-// - short (size <= 12): bytes 0..12 are the string, zero after it;
+// Layout, `ShortCapacity + sizeof(Size)` bytes, 16 or 24; the size follows
+// the bytes held in place, in either form, so reading it is one load (P29):
+// - short (size <= ShortCapacity): bytes 0..ShortCapacity are the string,
+//   zero after it;
 // - long: bytes 0..8 point to `size + 1` heap bytes (the string and a zero).
-// `data()` is not zero-terminated for a 12-byte string, so there is no
-// `c_str()`.
+// `data()` is not zero-terminated for a string of exactly `ShortCapacity`
+// bytes, so there is no `c_str()`. A 2-byte size holds strings up to 65,535
+// bytes; longer ones throw `std::length_error`.
 //
 // No prefix of the bytes is kept beside the pointer, as Umbra's "German"
 // strings keep 4: bbtree's nodes keep their own 8-byte inline key of every
@@ -29,13 +33,13 @@
 #include <bbtree/inline_key.hpp>
 #include <bbtree/relocation.hpp>
 
-#include <algorithm>
 #include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -44,48 +48,54 @@
 
 namespace bbtree {
 
-class compact_string {
+template <class Size, std::size_t ShortCapacity>
+class basic_compact_string {
+  static_assert(std::is_same_v<Size, std::uint16_t> || std::is_same_v<Size, std::uint32_t>,
+                "the size is a std::uint16_t or a std::uint32_t");
+  static_assert(ShortCapacity + sizeof(Size) == 16 || ShortCapacity + sizeof(Size) == 24,
+                "a compact string is 16 or 24 bytes");
+
  public:
   // The longest string held in place.
-  static constexpr std::size_t short_capacity = 12;
-  // The longest string at all: the size has 4 bytes.
-  static constexpr std::size_t max_size = 0xffff'ffff;
+  static constexpr std::size_t short_capacity = ShortCapacity;
+  // The longest string at all.
+  static constexpr std::size_t max_size = std::numeric_limits<Size>::max();
 
-  compact_string() noexcept { set_short_size(0); }
+  basic_compact_string() noexcept { set_short_size(0); }
 
   // From anything a string_view is made from: `std::string`, `string_view`,
   // `const char*`. Implicit, so that inserts and `operator[]` take them.
   template <class S>
-    requires(std::convertible_to<const S&, std::string_view> && !std::same_as<S, compact_string>)
-  compact_string(const S& text)
-      : compact_string(std::string_view(text)) {}  // NOLINT(google-explicit-constructor)
+    requires(std::convertible_to<const S&, std::string_view> && !std::same_as<S, basic_compact_string>)
+  basic_compact_string(const S& text)
+      : basic_compact_string(std::string_view(text)) {}  // NOLINT(google-explicit-constructor)
 
-  explicit compact_string(std::string_view text) { assign_bytes(text.data(), text.size()); }
+  explicit basic_compact_string(std::string_view text) { assign_bytes(text.data(), text.size()); }
 
-  compact_string(const compact_string& other) { assign_bytes(other.data(), other.size()); }
+  basic_compact_string(const basic_compact_string& other) { assign_bytes(other.data(), other.size()); }
 
-  compact_string(compact_string&& other) noexcept {
+  basic_compact_string(basic_compact_string&& other) noexcept {
     std::memcpy(bytes_, other.bytes_, sizeof bytes_);
     other.set_short_size(0);
   }
 
-  compact_string& operator=(const compact_string& other) {
+  basic_compact_string& operator=(const basic_compact_string& other) {
     if (this != &other) {
-      compact_string copy(other);
+      basic_compact_string copy(other);
       swap(copy);
     }
     return *this;
   }
 
-  compact_string& operator=(compact_string&& other) noexcept {
-    compact_string moved(std::move(other));
+  basic_compact_string& operator=(basic_compact_string&& other) noexcept {
+    basic_compact_string moved(std::move(other));
     swap(moved);
     return *this;
   }
 
-  ~compact_string() { release(); }
+  ~basic_compact_string() { release(); }
 
-  void swap(compact_string& other) noexcept {
+  void swap(basic_compact_string& other) noexcept {
     unsigned char held[sizeof bytes_];
     std::memcpy(held, bytes_, sizeof bytes_);
     std::memcpy(bytes_, other.bytes_, sizeof bytes_);
@@ -95,8 +105,8 @@ class compact_string {
   // One load for either form: the walk over a map's entries reads it for
   // every key (P29).
   std::size_t size() const noexcept {
-    std::uint32_t size = 0;
-    std::memcpy(&size, bytes_ + size_offset, sizeof size);
+    Size size = 0;
+    std::memcpy(&size, bytes_ + short_capacity, sizeof size);
     return size;
   }
   bool empty() const noexcept { return size() == 0; }
@@ -112,26 +122,25 @@ class compact_string {
   // which match a `std::string` or a C string exactly: a `string_view`
   // overload alone would leave `a == b` of two compact strings ambiguous
   // between its normal and its reversed form.
-  friend bool operator==(const compact_string& a, const compact_string& b) noexcept {
+  friend bool operator==(const basic_compact_string& a, const basic_compact_string& b) noexcept {
     return a.view() == b.view();
   }
-  friend std::strong_ordering operator<=>(const compact_string& a, const compact_string& b) noexcept {
+  friend std::strong_ordering operator<=>(const basic_compact_string& a,
+                                          const basic_compact_string& b) noexcept {
     return a.view() <=> b.view();
   }
   template <class S>
-    requires(std::convertible_to<const S&, std::string_view> && !std::same_as<S, compact_string>)
-  friend bool operator==(const compact_string& a, const S& b) noexcept {
+    requires(std::convertible_to<const S&, std::string_view> && !std::same_as<S, basic_compact_string>)
+  friend bool operator==(const basic_compact_string& a, const S& b) noexcept {
     return a.view() == std::string_view(b);
   }
   template <class S>
-    requires(std::convertible_to<const S&, std::string_view> && !std::same_as<S, compact_string>)
-  friend std::strong_ordering operator<=>(const compact_string& a, const S& b) noexcept {
+    requires(std::convertible_to<const S&, std::string_view> && !std::same_as<S, basic_compact_string>)
+  friend std::strong_ordering operator<=>(const basic_compact_string& a, const S& b) noexcept {
     return a.view() <=> std::string_view(b);
   }
 
  private:
-  static constexpr std::size_t size_offset = 12;
-
   bool is_long() const noexcept { return size() > short_capacity; }
 
   void set_short_size(std::size_t size) noexcept {
@@ -140,8 +149,8 @@ class compact_string {
   }
 
   void store_size(std::size_t size) noexcept {
-    const auto stored = static_cast<std::uint32_t>(size);
-    std::memcpy(bytes_ + size_offset, &stored, sizeof stored);
+    const auto stored = static_cast<Size>(size);
+    std::memcpy(bytes_ + short_capacity, &stored, sizeof stored);
   }
 
   const char* heap_bytes() const noexcept {
@@ -160,7 +169,7 @@ class compact_string {
       return;
     }
     if (count > max_size) {
-      throw std::length_error("bbtree::compact_string: too long");
+      throw std::length_error("bbtree::basic_compact_string: too long for its size type");
     }
     char* heap = new char[count + 1];
     std::memcpy(heap, text, count);
@@ -176,29 +185,36 @@ class compact_string {
     }
   }
 
-  alignas(8) unsigned char bytes_[16];
+  alignas(8) unsigned char bytes_[ShortCapacity + sizeof(Size)];
 };
 
+// 16 bytes, 12 in place, strings of any length up to 4 GiB.
+using compact_string = basic_compact_string<std::uint32_t, 12>;
+// 24 bytes, 20 in place: for keys mostly past 12 bytes, as crate names
+// with versions are.
+using compact_string_24 = basic_compact_string<std::uint32_t, 20>;
+
 static_assert(sizeof(compact_string) == 16);
+static_assert(sizeof(compact_string_24) == 24);
 
 // Its inline keys are windows of its bytes, as std::string's are.
-template <>
-struct byte_string<compact_string> {
+template <class Size, std::size_t ShortCapacity>
+struct byte_string<basic_compact_string<Size, ShortCapacity>> {
   static constexpr bool holds_its_bytes = false;
-  static std::span<const std::uint8_t> bytes(const compact_string& s) noexcept {
+  static std::span<const std::uint8_t> bytes(const basic_compact_string<Size, ShortCapacity>& s) noexcept {
     return {reinterpret_cast<const std::uint8_t*>(s.data()), s.size()};
   }
 };
 
 // No pointer into itself: it moves as bytes.
-template <>
-struct is_trivially_relocatable<compact_string> : std::true_type {};
+template <class Size, std::size_t ShortCapacity>
+struct is_trivially_relocatable<basic_compact_string<Size, ShortCapacity>> : std::true_type {};
 
 }  // namespace bbtree
 
-template <>
-struct std::hash<bbtree::compact_string> {
-  std::size_t operator()(const bbtree::compact_string& s) const noexcept {
+template <class Size, std::size_t ShortCapacity>
+struct std::hash<bbtree::basic_compact_string<Size, ShortCapacity>> {
+  std::size_t operator()(const bbtree::basic_compact_string<Size, ShortCapacity>& s) const noexcept {
     return std::hash<std::string_view>{}(s.view());
   }
 };

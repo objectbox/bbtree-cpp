@@ -132,6 +132,45 @@ this run stalled alike.
   ties it on lookups in 32-entry maps (68.3 against 68.0), and trails it on
   `range64` and the 4-entry maps.
 
+## Compact strings' variants
+
+`basic_compact_string<Size, ShortCapacity>` in three forms against
+`std::string`, the same string cells, one run each, started at load 0.3,
+with no compaction stall in the kernel during the run (the 4-entry build
+cell is clean here, see above).
+
+| cell | `std::string` | `compact_string` (16 B, 4-byte size, 12 in place) | 16 B, 2-byte size, 14 in place | `compact_string_24` (24 B, 20 in place) |
+|---|--:|--:|--:|--:|
+| str-16_u64_random_insert_1k | 66.4 | 37.9 | 38.7 | 40.8 |
+| str-16_u64_sequential_insert_1k | 31.5 | 15.8 | 17.3 | 17.6 |
+| str-16_u64_get_hit_1k | 37.1 | 37.5 | 38.0 | 32.9 |
+| str-16_u64_get_miss_1k | 23.0 | 24.4 | 25.9 | 23.7 |
+| str-16_u64_iterate_1k | 0.443 | 0.428 | 0.405 | 0.456 |
+| str-16_u64_range64_1k | 251 | 187 | 179 | 209 |
+| str-16_u64_random_remove_1k | 111 | 65.6 | 66.4 | 67.3 |
+| str-16_u64_entry_upsert_1k | 71.1 | 43.0 | 42.5 | 45.5 |
+| str-16_u64_pop_first_1k | 71.0 | 15.9 | 15.7 | 18.3 |
+| str-16_u64_bulk_build_1k | 19.9 | 11.4 | 13.2 | 12.0 |
+| str-json_struct32_build_many_1Mx4 | 77.3 | 66.1 | 66.9 | 65.5 |
+| str-json_struct32_get_many_1Mx4 | 73.6 | 78.3 | 75.0 | 74.7 |
+| str-json_struct32_iterate_1Mx4 | 7.18 | 6.14 | 6.16 | 6.96 |
+| str-json_struct32_build_many_100kx32 | 99.8 | 60.0 | 59.8 | 65.7 |
+| str-json_struct32_get_many_100kx32 | 71.8 | 63.4 | 63.5 | 68.6 |
+| str-json_struct32_iterate_100kx32 | 7.27 | 5.26 | 5.73 | 6.29 |
+| str-json_u64_random_insert_1M | 251 | 159 | 156 | 175 |
+| str-json_u64_get_hit_1M | 263 | 243 | 244 | 219 |
+| str-json_u64_get_miss_1M | 179 | 181 | 164 | 181 |
+
+- **A 2-byte size** buys 2 bytes in place: 90% of JSON keys against 84%.
+  Misses in 1M maps are 9% faster, fewer ties reading past the node; the
+  rest is within run-to-run noise. Strings are capped at 65,535 bytes.
+- **24 bytes** hold most `str-16` keys (median 16) in place: hits 12%
+  faster at 1k and 10% at 1M JSON keys. A string → `u64` leaf entry is 41
+  bytes, as the Rust crate's `String`, against 33: inserts 8-11% slower,
+  walks 7-20%, `pop_first` 15%.
+- `compact_string` stays the 16-byte default: no cap, and nothing the
+  2-byte size wins is outside noise but one cell.
+
 ## Against abseil's B-tree
 
 - **bbtree is faster:**

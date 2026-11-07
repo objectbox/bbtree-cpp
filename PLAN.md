@@ -84,5 +84,5 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [x] bbtree-store's bench example; CI workflow
 ## After the port
 - [x] against C++ maps: abseil's B-tree, std::map, hash maps; the bench's `cpp` suite (bbtree/bench/CPP_MAPS.md)
-- [x] `compact_string`, a 16-byte string key that moves as bytes (P29)
+- [x] `compact_string`, a 16-byte string key that moves as bytes, and its 24-byte and 2-byte-size forms (P29)
 - [x] `fold` on the unsync map and set, the bench's checksum folding as the Rust bench's does (P16)

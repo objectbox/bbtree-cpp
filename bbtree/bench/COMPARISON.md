@@ -90,7 +90,7 @@ after its fold, in one window with a Rust run that took 5.12 and 8.97.
 | str-json_u64_random_insert_1M | 182 | 258 | 161 | 0.88 |
 | str-json_u64_get_hit_1M | 278 | 273 | 249 | 0.90 |
 | str-json_u64_get_miss_1M | 210 | 161 | 176 | 0.84 |
-| str-json_struct32_build_many_1Mx4 ‡ | 61.0 | 80.3 | 139 | — |
+| str-json_struct32_build_many_1Mx4 ‡ | 61.0 | 80.3 | 66.1 | **1.08** |
 | str-json_struct32_get_many_1Mx4 | 82.2 | 74.2 | 79.5 | 0.97 |
 | str-json_struct32_iterate_1Mx4 † | 4.52 | 8.27 | 6.30 | **1.39** |
 | str-json_struct32_build_many_100kx32 | 60.7 | 103 | 61.0 | 1.00 |
@@ -98,10 +98,9 @@ after its fold, in one window with a Rust run that took 5.12 and 8.97.
 | str-json_struct32_iterate_100kx32 | 8.82 | 7.31 | 5.17 | 0.59 |
 
 † Rust's runs of this cell ranged from 4.5 to 6.9 ns this session.
-‡ Not measured cleanly: by the time of this run the machine's memory was
-mostly page cache, and the cell's 1.1 GB of fresh pages stalled the kernel
-in compaction for huge pages; `std::string` keys took 236 ns in the same
-conditions, against the 80.3 above (CPP_MAPS.md).
+‡ From a later run with no compaction stall in the kernel: in this one the
+cell's 1.1 GB of fresh pages stalled it for huge pages (139 ns, and
+`std::string` keys 236 in the same conditions; CPP_MAPS.md).
 
 With compact keys the port's string inserts and builds of 32-entry maps
 catch up with the Rust crate's or pass it, lookups stay where

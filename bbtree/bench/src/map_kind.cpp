@@ -16,6 +16,8 @@ bool enum_traits<map_kind>::supports(map_kind map, operation op) noexcept {
       case map_kind::unsync:
       case map_kind::unsync_inline:
       case map_kind::unsync_compact:
+      case map_kind::unsync_compact_u16:
+      case map_kind::unsync_compact_24:
         return unsync_bbtree<key, value>::unsupported();
       case map_kind::std_btree:
         return std_btree<key, value>::unsupported();
