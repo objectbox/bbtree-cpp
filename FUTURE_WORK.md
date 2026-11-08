@@ -44,8 +44,14 @@ an optimistic leaf read.
 `get_copied` copies a value without latching its leaf only for keys
 ordered by their own bytes (integers, byte arrays). The Rust crate also
 settles a byte-string key that ends within its leaf's 8-byte inline key by
-its hash tag, an exact length below 255, reading no heap byte. String maps
-take the shared latch instead.
+its hash tag, an exact length below 255, reading no heap byte; it latches
+the leaf it read at that version instead of descending again, and settles
+misses unlatched. String maps take the shared latch instead. stx_btree has
+the tag-as-length copy too. On a probe of 1M short string keys (2-7 bytes)
+the latched `get_copied` takes 264 ns single-threaded and 77 ns wall at 8
+threads, misses (settled unlatched) 193 and 31; integer keys 96 and 58.
+The unlatched copy would save the latch's two read-modify-writes and its
+line's bouncing between readers.
 
 ## Iterators whose steps stay in registers
 
@@ -200,3 +206,22 @@ chunks already are. The free list would then have to drop the chunk's
 pages, which a list per chunk does at the cost of choosing a chunk on each
 allocation. Worth it for long-lived maps whose size swings by orders of
 magnitude; not measured.
+
+## `pop_first`: the leaf's shift, not the steal
+
+abseil's B-tree pops the first entry 2× faster (CPP_MAPS.md). A pop takes
+out a leaf's slot 0, which shifts the rest of the leaf, about 700 bytes of a
+`u64` → `u64` leaf, by `memmove` on every pop: most of the time a 1M pop
+takes past its descent. A leaf at its minimum also takes one entry from its
+right sibling each pop, but moving several at once (as abseil rebalances
+by half the difference) would leave the shift. A leaf whose live slots
+start at an offset, so that taking slot 0 moves the offset, would remove
+it, at the cost of an offset in every slot access.
+
+## The shared scan's path, kept in place
+
+A shared map's scan, moving to the next leaf, builds a fresh path (928
+bytes for the deepest tree) and copies it over the old one: about 1.9 KB
+of stores a leaf of 55 entries. stx_btree truncates its path in place and
+writes only the levels below the node it turns at. Not measured; the
+shared map's scans are not in the bench's suites.
