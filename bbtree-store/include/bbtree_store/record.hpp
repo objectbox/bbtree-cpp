@@ -386,8 +386,10 @@ class query_key {
   bytes key() const noexcept { return key_; }
 
  private:
-  // `record_fields::query_marker`, where a record's key length is.
-  std::uint32_t marker_ = record_fields::query_marker;
+  // `record_fields::query_marker`, where a record's key length is. Read
+  // only through the store key's pointer (`store_key::key`), which newer
+  // Clang doesn't see.
+  [[maybe_unused]] std::uint32_t marker_ = record_fields::query_marker;
   bytes key_;
 };
 
