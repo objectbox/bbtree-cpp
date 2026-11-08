@@ -15,7 +15,9 @@
 // `std::vector` keeps its capacity.
 //
 // Threads: the pool takes a mutex for each page, so maps on different
-// threads may share one, and so may the shared map's threads.
+// threads may share one, and so may the shared map's threads; with 8 of
+// them inserting it was faster than the global allocator on glibc, and
+// slower on mimalloc (P32).
 #pragma once
 
 #include <bbtree/allocator.hpp>
@@ -204,6 +206,13 @@ class page_pool {
     }
     void* base = reinterpret_cast<void*>(aligned);
     ::madvise(base, bytes, MADV_HUGEPAGE);
+    // Written once now, so that the chunk faults in as one huge page: the
+    // shared map's first touch of a page is a read, which would map the
+    // kernel's huge zero page, and the write after it would then split it
+    // into 4 KiB pages. One fault here, under the pool's mutex, instead of
+    // 512 under the map's latches; the byte written is a zero, so the chunk
+    // stays zeroed.
+    *static_cast<volatile std::byte*>(base) = std::byte{0};
     owned = chunk{base, bytes, bytes, true};
     return true;
 #else

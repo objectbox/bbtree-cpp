@@ -818,6 +818,28 @@ an owning byte string for keys that does neither.
   rows of 1M-entry maps read low there; resident memory grew by 33.7 bytes
   an entry for 1M `u64` entries against 25.3, the last chunks' unused
   pages and huge-page rounding.
+- **The shared map on 8 threads:** P37's probe (1M random `u64` inserts,
+  then gets, updates and removals), each operation's share of the run's
+  time. On glibc, which P37's figures were taken on, the pool made inserts
+  faster: 49-53 ns against 74-77 for the first map in a process, and 52-53
+  against 56-57 for a second, which the global allocator builds in the
+  first one's freed pages. On mimalloc it made them slower, 49-54 ns against
+  40-42, for a first map and for a second on the same pool. Gets, updates
+  and removals came within a few ns on either allocator; on one thread, on
+  mimalloc, the pool matched the global allocator. The mutex took under
+  0.1% of an 8-thread profile (taken before the fix below).
+- **Found** by that probe: the shared map's pages had missed their huge
+  pages. Its first touch of a fresh page is a read, which on Linux (6.8
+  here, `use_zero_page` on) maps the huge zero page; the write after it
+  then splits that into 4 KiB pages. In the probe's `smaps` every 2 MiB
+  chunk showed no huge page while mimalloc's arena was backed whole, and a
+  bare chunk, mapped and advised as the pool does, got its huge page when
+  written first and none when read first. The pool now writes each 2 MiB
+  chunk once when it maps it. Before, the 8-thread probe took 6.5M dTLB misses
+  and 22k page faults on mimalloc, now 16k and 290, and the pool lost
+  inserts on both allocators (73-79 ns on glibc, 73-77 on mimalloc). The
+  unsync map writes a page before reading it: its cells took the same dTLB
+  misses before and after, and the figures above are unchanged by the fix.
 
 ## P33. AArch64 and macOS: built and checked, not measured
 
