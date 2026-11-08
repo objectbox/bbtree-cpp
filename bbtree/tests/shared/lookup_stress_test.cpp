@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <map>
 #include <random>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -135,6 +136,45 @@ TEST_CASE("short string keys copied unlatched match std::map, misses included", 
     REQUIRE(map.get_copied(std::string_view(longer)).has_value() == expected.contains(longer));
     REQUIRE(map.contains(std::string_view(longer)) == expected.contains(longer));
   }
+}
+
+TEST_CASE("string keys at the hash tag's cap read latched, not by their length", "[shared]") {
+  // A tag is a key's length up to the cap, so keys of the cap's length and
+  // longer share one tag: a query of the cap's length must not be settled by
+  // it. The keys share all but their last few bytes, which a leaf's window
+  // then covers, and their lengths run across the cap; their windows are
+  // distinct, and a query one zero byte shorter or longer ties with a key's.
+  const std::vector<std::uint8_t> beyond_any_cap(300);
+  const std::size_t cap = bbtree::inline_key<std::span<const std::uint8_t>>::hash_tag(beyond_any_cap);
+  const std::string shared(cap - sizeof(bbtree::inline_word), 'x');
+  const auto key_of = [&](std::uint64_t i) {
+    return shared + "p" + std::to_string(i) + std::string(i % 8, '\0');
+  };
+  bbtree::bbtree_map<std::string, std::uint64_t, std::less<>> map;
+  std::map<std::string, std::uint64_t> expected;
+  for (std::uint64_t i = 0; i < 4'000; i += 2) {
+    map.insert(key_of(i), i);
+    expected.insert_or_assign(key_of(i), i);
+  }
+  std::size_t at_cap = 0;
+  for (std::uint64_t i = 0; i < 4'000; ++i) {
+    const std::string key = key_of(i);
+    std::vector<std::string> queries{key, key + std::string(1, '\0')};
+    if (key.back() == '\0') {
+      queries.push_back(key.substr(0, key.size() - 1));
+    }
+    for (const std::string& query : queries) {
+      at_cap += query.size() == cap ? 1U : 0U;
+      const auto found = expected.find(query);
+      const auto copied = map.get_copied(std::string_view(query));
+      REQUIRE(copied.has_value() == (found != expected.end()));
+      REQUIRE(map.contains(std::string_view(query)) == (found != expected.end()));
+      if (copied) {
+        REQUIRE(*copied == found->second);
+      }
+    }
+  }
+  CHECK(at_cap > 100);
 }
 
 TEST_CASE("short string keys copied unlatched while writers change their leaves", "[shared]") {

@@ -1064,8 +1064,10 @@ an owning byte string for keys that does neither.
   (P42) build on, after which the same probe with `contains` ran 10.74 →
   9.52 G cycles.
 - **Tested** against `std::map` with keys that tie in their windows and
-  differ in length (`"p12"`, `"p1\0"`), misses one zero byte longer, and
-  readers racing writers that insert, remove and update (also under TSan).
+  differ in length (`"p12"`, `"p1\0"`), misses one zero byte longer, keys
+  whose lengths run across the tag's cap of 255 (which a bound mutated from
+  `>=` to `>` fails), and readers racing writers that insert, remove and
+  update (also under TSan).
 
 ## P40. A shared scan writes its path in place
 
