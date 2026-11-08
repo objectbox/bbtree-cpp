@@ -297,7 +297,9 @@ nearly line for line; where stx_btree leads:
   13.3 against 12.9 ns for hits and 12.8 against 13.0 for misses, 16 more
   instructions a hit in bbtree++; the bench's 1k cells show 15-25% across
   runs, the bench's build of the lookup (not its algorithm) the likelier
-  cause. A vectorized count of the leaf's last slots (55 two-byte slots
+  cause. The adapter treats both alike: neither lookup is inlined into the
+  bench's loop; each is a call to a function that holds half the cell's
+  samples. A vectorized count of the leaf's last slots (55 two-byte slots
   leave 7 for a scalar tail) cut the count's instructions by a third and
   changed nothing: lookups wait on their loads, not on the count.
 - **`range64` at 1M (1.1×):** within the cell's run-to-run range;

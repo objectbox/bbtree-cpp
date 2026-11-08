@@ -169,6 +169,9 @@ and churn rows.
   loops (`range64` and 1k random inserts, counted with `perf stat`; `u64`
   walks moved as much in time). A difference of that size between builds,
   not between runs of one build, can be that, not the change between them.
+  Aligning every function to 64 bytes (`-falign-functions=64`) doesn't
+  remove it: `range64` at 1k ran 109-116 ns on one build and 129-131 on
+  another so aligned, where it ran 109-112 and 125-127 without.
 - **Reproduce:** `bbtree-bench ci --out A` in each bench, then
   `bbtree-bench compare --head A/cpp.csv --base A/rust.csv`.
 
