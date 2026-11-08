@@ -178,6 +178,20 @@ class node_latch {
 
   void unlock_shared() noexcept { word_.fetch_sub(shared_unit, std::memory_order_release); }
 
+  // Takes the node shared if it is still at `version`, which a reader read it
+  // at; fails at once if it changed or a writer holds it. Other readers
+  // coming and going don't fail it.
+  bool try_lock_shared_at(latch_version version) noexcept {
+    std::uint64_t word = word_.load(std::memory_order_relaxed);
+    while ((word & ~shared_mask) == version.word()) {
+      if (word_.compare_exchange_weak(word, word + shared_unit, std::memory_order_acquire,
+                                      std::memory_order_relaxed)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
  private:
   bool try_add_shared_holder(std::uint64_t word) noexcept {
     return word_.compare_exchange_weak(word, word + shared_unit, std::memory_order_acquire,

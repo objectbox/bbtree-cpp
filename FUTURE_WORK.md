@@ -39,16 +39,13 @@ single-key operations and scans only. The unsync map's
 level-by-level lanes ([batches](PORTING.md#p10-batches-descend-level-by-level-not-in-async-lanes)) would carry over, each lane ending in
 an optimistic leaf read.
 
-## Lookups that latch the leaf they read
+## Reads that latch the leaf they read
 
-The shared map's lookups that the leaf can't settle unlatched (a string
-key longer than its window, a closure's `read`) descend again with
-latches; `contains` and `get_copied` settle the rest unlatched (PORTING.md,
-[`contains`](PORTING.md#p41-contains-settles-unlatched-where-get_copied-does)). The Rust crate instead latches the leaf it read, at the
-version it read, and settles misses unlatched in `read` too
-(`find_optimistic`, `latch_unchanged`). Short string keys are copied out
-unlatched since PORTING.md, [short strings unlatched](PORTING.md#p39-short-string-keys-copied-out-unlatched-by-their-length); the rest would save a
-descent each, from cache, as the first one warmed the path.
+`read`, which runs a closure on the entry, latches its leaf on the way
+down (`descend<leaf_mode::shared>`), so a miss latches too. The Rust crate
+reads the leaf optimistically first, settles misses unlatched and latches
+the leaf it read only for a hit (`find_optimistic`), as `get_copied` and
+`contains` do here (PORTING.md, [latching the leaf read](PORTING.md#p42-a-lookup-the-leaf-cant-settle-latches-that-leaf-not-the-root-down)).
 
 ## bbtree-store: a refused insert without an exception
 

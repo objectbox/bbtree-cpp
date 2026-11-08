@@ -1069,3 +1069,20 @@ an owning byte string for keys that does neither.
   everything else: a hit, and a miss whose 2-byte window tied with a key.
 - **Measured** (a probe of 1M `u64` keys): hits 145 → 100 ns and misses
   157 → 90 single-threaded; at 8 threads 20 → 13 ns wall for both.
+
+## P42. A lookup the leaf can't settle latches that leaf, not the root down
+
+- **Chosen:** where `get_copied` and `contains` read a leaf unlatched and
+  it doesn't settle the key (several candidates, a string longer than its
+  window, a separator's head for string keys), they latch that leaf shared
+  at the version their descent read it at (`node_latch::try_lock_shared_at`,
+  which fails at once if the leaf changed or a writer holds it) and search
+  it there; at a separator, the head must still be the key. Only a leaf
+  that changed sends them down from the root again, latched. They had
+  always descended again, so a string key longer than its window paid two
+  descents once P39's unlatched attempt came first. The Rust crate's
+  `latch_unchanged` does the same.
+- **Measured** (probes of 1M string keys, inserts and three lookup passes;
+  instructions and cycles of the whole run, the timings' noise at 10%):
+  short keys 10.74 → 9.98 → 9.52 G cycles before P39, with P39 and P41,
+  and with this; longer keys (11-13 bytes) 12.65 → 11.77 → 11.38.
