@@ -718,6 +718,16 @@ an owning byte string for keys that does neither.
   entry of a bulk build checks it, so keys sharing 1 to 7 bytes, as dense
   ids do, built at 13.7 ns an entry (52 cycles) against Rust's 7.1 (26);
   now at 6.0 (20).
+- **An append checks the prefix out of line:** inlined into the insert
+  path, the windows' loop took registers from it, and an append past the
+  last key spilled the leaf's length and loaded it straight back: 1k
+  sequential `u64` inserts 6.9 → 8.2 ns, 1M 10.1 → 11.4, though no key of
+  those cells shares a byte, so the loop never ran (found by bisecting the
+  bench docs' remeasurement). `is_shared_by_once` answers an empty
+  prefix inline and calls for the windows: 7.3 and 10.2 ns.
+  Rejected: comparing bytes again (the `memcpy` stall back for dense ids);
+  the whole check out of line for every caller (a bulk build calls it
+  every entry: dense ids 6.0 → 7.6 ns an entry).
 - **Measured** on one-shot probes of each language's build in a fresh
   process, as the bench cell runs it (one build, cold pages), counted as
   the difference to the same process without the build, built with

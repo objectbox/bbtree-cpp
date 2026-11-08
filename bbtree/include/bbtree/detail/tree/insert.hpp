@@ -31,7 +31,7 @@ bool tree<T>::appends_to_rightmost(const K& key) noexcept {
   if (search_key<T, K>(key).cmp_full(leaf.key(len - 1)) <= 0) {
     return false;
   }
-  return shared_.template is_shared_by<T>(key);
+  return shared_.template is_shared_by_once<T>(key);
 }
 
 template <class T>

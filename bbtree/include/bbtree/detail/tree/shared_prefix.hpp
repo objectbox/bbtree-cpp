@@ -75,6 +75,18 @@ class shared_prefix {
     return len_shared_with<T>(key) == len_;
   }
 
+  // `is_shared_by` for a path that checks once an operation, not once an
+  // entry: an empty prefix answers inline and the windows are compared out
+  // of line. Inlined, their loop takes registers from the caller's hot path:
+  // an append past the last key spilled the leaf's length and loaded it
+  // straight back (1k sequential `u64` inserts 6.9 -> 8.2 ns), though no
+  // key there shares a byte. A bulk build keeps `is_shared_by`, which it
+  // calls every entry (dense ids 6.0 -> 7.6 ns an entry out of line).
+  template <class T>
+  bool is_shared_by_once(const typename T::key_type& key) const noexcept {
+    return len_ == 0 || shares_all_of<T>(key);
+  }
+
   void shrink_to(std::size_t len) noexcept {
     if (len < len_) {
       len_ = static_cast<std::uint8_t>(len);
@@ -121,6 +133,11 @@ class shared_prefix {
     const inline_word word = big_endian::load(bytes_.data() + start) << (8 * (offset - start));
     const std::size_t kept = len_ - offset;
     return kept >= sizeof(inline_word) ? word : word & ~(~inline_word{0} >> (8 * kept));
+  }
+
+  template <class T>
+  [[gnu::noinline]] bool shares_all_of(const typename T::key_type& key) const noexcept {
+    return len_shared_with<T>(key) == len_;
   }
 
   std::uint8_t len_ = 0;
