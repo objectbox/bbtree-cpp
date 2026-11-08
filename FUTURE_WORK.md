@@ -46,6 +46,11 @@ down (`descend<leaf_mode::shared>`), so a miss latches too. The Rust crate
 reads the leaf optimistically first, settles misses unlatched and latches
 the leaf it read only for a hit (`find_optimistic`), as `get_copied` and
 `contains` do here (PORTING.md, [latching the leaf read](PORTING.md#p42-a-lookup-the-leaf-cant-settle-latches-that-leaf-not-the-root-down)).
+Tried: `read` descending optimistically, settling a miss its inline keys
+rule out, and latching the leaf it read otherwise. On a probe of 1M `u64`
+keys it was slower, hits 77-97 → 110-128 ns and misses 76-99 → 115-146
+single-threaded: with 2-byte windows few misses are ruled out, and the
+latched descent already latches the leaf once, at its end. Not kept.
 
 ## bbtree-store: a refused insert without an exception
 
