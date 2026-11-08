@@ -6,7 +6,8 @@ Both ran the same benchmark cells with the same inputs on one machine; see Setup
 ## Summary
 
 - **Integer keys:** bbtree++ is typically 1.0-1.35× as fast, up to 1.6×,
-  and within 3% where it is slower.
+  and within 3.5% where it is slower, but for one walk whose reruns read
+  even (†).
 - **String keys:** with compact strings bbtree++ is typically 1.15-1.45×
   as fast, up to 1.7×, and even on building many 4-entry maps.
 - **The shared map:** faster on one thread, even with 8 threads.
@@ -159,7 +160,10 @@ and churn rows.
   `small tiny cpp --key u64,str-16,str-json` on every map,
   `cpp --key str-16,str-json --size 1k,1M,1Mx4,100kx32` on bbtree++'s
   string key types (the bbtree++ string columns) and the shared map's
-  `small` cells; the 8-thread probe and the store bench once each.
+  `small` cells; the 8-thread probe and the store bench once each. Those
+  two predate the unsync map's appends checking the shared prefix out of
+  line ([loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals));
+  they run the shared map, which that change left as it was.
 - **Builds:** between two builds of the bench, a cell can move by up to
   13% in cycles for the same instructions, from where the linker places its
   loops (`range64` and 1k random inserts, counted with `perf stat`; `u64`
