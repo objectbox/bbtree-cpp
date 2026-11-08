@@ -994,7 +994,7 @@ an owning byte string for keys that does neither.
   under its default scheduler one thread ran alone for 82 minutes while the
   others slept and no test finished.
 
-## P38. A forward step is inlined whole, so the position stays in registers
+## P38. A step is inlined whole, so the position stays in registers
 
 - **Chosen:** `cursor::next`, its crossing to the next leaf (the climb to
   the separator, the descent) and the attaching of a node stack are
@@ -1006,13 +1006,16 @@ an owning byte string for keys that does neither.
   inside the cursor by reference: the cursor escaped, and every step loaded
   and stored its position, a chain from step to step (1.9 instructions a
   cycle on `range64` over 16-byte strings, against stx_btree's 3.0 with the
-  same cache misses). Backward steps stay outlined.
+  same cache misses). Backward steps, `cursor::prev` and its crossing, are
+  inlined the same way.
 - **Measured** (`range64`, `bbtree-unsync`, two A/B runs each): `u64` at 1k
   123-128 → 94-98 ns; 16-byte strings at 1k 257-265 → 144-153; `u64` at 1M
   298-309 → 232-284. Range-for over a whole map (a probe): 1k `u64` entries
   1.34 → 0.70 ns an entry with Clang, 1.16 → 0.76 with GCC; 1M 4.15 → 3.26
-  and 3.71 → 3.16. The other cells unchanged. A loop that steps carries the
-  crossing's code: the probe's text grew by 5 KB with Clang, none with GCC.
+  and 3.71 → 3.16; backward (`--it` from `end()`), 1k 1.37 → 1.00 and 1M
+  5.4 → 4.3-4.9 with Clang. The other cells unchanged. A loop that steps
+  carries the crossing's code: the forward probe's text grew by 5 KB with
+  Clang, none with GCC.
 - **Alternatives tried, not kept:**
   - **No node stack in the cursor**, each crossing searching from the root:
     16-byte strings 260 → 415 ns, `u64` at 1M 290 → 395; and the merged

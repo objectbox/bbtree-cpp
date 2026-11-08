@@ -39,28 +39,15 @@ single-key operations and scans only. The unsync map's
 level-by-level lanes ([batches](PORTING.md#p10-batches-descend-level-by-level-not-in-async-lanes)) would carry over, each lane ending in
 an optimistic leaf read.
 
-## Unlatched copies of byte-string values
+## Lookups that latch the leaf they read
 
-`get_copied` copies a value without latching its leaf only for keys
-ordered by their own bytes (integers, byte arrays). The Rust crate also
-settles a byte-string key that ends within its leaf's 8-byte inline key by
-its hash tag, an exact length below 255, reading no heap byte; it latches
-the leaf it read at that version instead of descending again, and settles
-misses unlatched. String maps take the shared latch instead. stx_btree has
-the tag-as-length copy too. On a probe of 1M short string keys (2-7 bytes)
-the latched `get_copied` takes 264 ns single-threaded and 77 ns wall at 8
-threads, misses (settled unlatched) 193 and 31; integer keys 96 and 58.
-The unlatched copy would save the latch's two read-modify-writes and its
-line's bouncing between readers.
-
-## Backward steps in registers
-
-Forward steps keep the cursor's position in registers since their crossing
-is inlined whole (PORTING.md, [forward steps](PORTING.md#p38-a-forward-step-is-inlined-whole-so-the-position-stays-in-registers)). Backward steps (`--it`,
-reverse ranges) still call an outlined crossing that takes the node stack
-by address, so a reverse loop loads and stores its position each step. The
-same inlining would carry over, at the code size of a second crossing in
-every loop that steps back.
+The shared map's lookups that the leaf can't settle unlatched (a string
+key longer than its window, a closure's `read`, a `contains` hit) descend
+again with latches. The Rust crate instead latches the leaf it read, at the
+version it read, and settles misses unlatched in `read` too
+(`find_optimistic`, `latch_unchanged`). Short string keys are copied out
+unlatched since PORTING.md, [short strings unlatched](PORTING.md#p39-short-string-keys-copied-out-unlatched-by-their-length); the rest would save a
+descent each, from cache, as the first one warmed the path.
 
 ## bbtree-store: a refused insert without an exception
 
@@ -150,7 +137,7 @@ ones. Three of abseil's choices explain them:
   would be the unsync map's and set's only.
 - **Parent pointers.** abseil's iterator is a node and an index, stepping
   through parent pointers; bbtree++'s keeps a node stack, which its
-  forward steps keep beside a position in registers ([forward steps](PORTING.md#p38-a-forward-step-is-inlined-whole-so-the-position-stays-in-registers)),
+  forward steps keep beside a position in registers ([forward steps](PORTING.md#p38-a-step-is-inlined-whole-so-the-position-stays-in-registers)),
   and which `pop_first`'s descent builds. Parent pointers cost 8 bytes a node and a
   write to every child an internal split or merge moves, and the shared
   map's nodes would need them kept under its latches.

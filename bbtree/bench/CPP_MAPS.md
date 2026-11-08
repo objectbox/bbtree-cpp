@@ -303,7 +303,7 @@ nearly line for line; where stx_btree leads:
   nothing: lookups wait on their loads, not on the count.
 - **`range64`:** stx_btree's scan loop has no call and keeps its position
   in registers; bbtree++'s kept it in memory. Since its forward step is
-  inlined whole (PORTING.md, [forward steps](../../PORTING.md#p38-a-forward-step-is-inlined-whole-so-the-position-stays-in-registers)), it runs `range64` in
+  inlined whole (PORTING.md, [forward steps](../../PORTING.md#p38-a-step-is-inlined-whole-so-the-position-stays-in-registers)), it runs `range64` in
   94-98 ns on `u64` at 1k and 144-153 on 16-byte strings: even with
   stx_btree's.
 - **Sequential inserts (1.25-1.3×):** 16 more instructions an append, spread over the

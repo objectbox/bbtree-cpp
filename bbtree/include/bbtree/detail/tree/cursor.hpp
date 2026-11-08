@@ -15,8 +15,8 @@
 // no ancestors (D32, D37), gets it on its first crossing, by searching its
 // key.
 //
-// A forward step, its crossing included, is inlined into the loop that
-// steps, and nothing it calls takes the cursor's address: the search that
+// A step, its crossing included, is inlined into the loop that steps, and
+// nothing it calls takes the cursor's address: the search that
 // gives a lookup's cursor its node stack returns the stack by value. So the
 // position stays in registers, where an outlined crossing that took the node
 // stack by address kept it in memory, a load and a store a step (PORTING.md
@@ -111,8 +111,9 @@ class cursor {
     at_ = cross_forward(tree_, stack_, at_);
   }
 
-  // Steps to the previous entry; from past the last, to the last.
-  void prev() noexcept {
+  // Steps to the previous entry; from past the last, to the last. Inlined
+  // with its crossing, as `next` (above).
+  [[gnu::always_inline]] void prev() noexcept {
     if (at_.key_end != nullptr && at_.key != key_begin(at_)) {
       at_.key = advance(at_.key, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
       at_.value = advance(at_.value, -static_cast<std::ptrdiff_t>(T::leaf.value_stride));
@@ -205,8 +206,8 @@ class cursor {
     return position_of_stack(stack);
   }
 
-  [[gnu::noinline]] static position cross_backward(const tree<T>* owner, node_stack<T>& stack,
-                                                   position at) noexcept {
+  [[gnu::always_inline]] static position cross_backward(const tree<T>* owner, node_stack<T>& stack,
+                                                        position at) noexcept {
     if (at.key == nullptr) {
       // From past the last entry: the last.
       if (owner->has_root()) {
