@@ -154,6 +154,11 @@ and churn rows.
   `cpp --key str-16,str-json --size 1k,1M,1Mx4,100kx32` on bbtree++'s
   string key types (the bbtree++ string columns) and the shared map's
   `small` cells; the 8-thread probe and the store bench once each.
+- **Builds:** between two builds of the bench, a cell can move by up to
+  13% in cycles for the same instructions, from where the linker places its
+  loops (`range64` and 1k random inserts, counted with `perf stat`; `u64`
+  walks moved as much in time). A difference of that size between builds,
+  not between runs of one build, can be that, not the change between them.
 - **Reproduce:** `bbtree-bench ci --out A` in each bench, then
   `bbtree-bench compare --head A/cpp.csv --base A/rust.csv`.
 
