@@ -195,6 +195,18 @@ pages, which a list per chunk does at the cost of choosing a chunk on each
 allocation. Worth it for long-lived maps whose size swings by orders of
 magnitude; not measured.
 
+## The pooled allocator against mimalloc's on the shared map
+
+With 8 threads inserting into one shared map, the pool's inserts took
+49-54 ns where mimalloc's took 40-42 (PORTING.md, [pooled pages](PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in)), with
+both on huge pages (mimalloc's arena backed whole, the pool's chunks since
+they are written at mapping) and about as many dTLB misses and page
+faults; on one thread they matched. The pool takes one mutex for every
+page, which a profile put under 0.1%, so the gap is elsewhere, perhaps in
+where the pages land: mimalloc gives each thread pages of its own, the pool
+one sequence for all. Not looked into further; worth it only for shared
+maps that insert from many threads on the pool.
+
 ## `pop_first`: the leaf's shift, not the steal
 
 abseil's B-tree pops the first entry 2× faster (CPP_MAPS.md). A pop takes
