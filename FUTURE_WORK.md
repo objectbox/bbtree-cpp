@@ -156,7 +156,18 @@ bulk build from 24.5 to 16.4 cycles an entry. The set algebra
 (`file.hpp`) still call `push` per entry, which reads the builder's
 members back after each store into the page. Feeding them through
 `extend` needs an iterator, or a callback form of it, over their merged
-or decoded entries. Not measured.
+or decoded entries.
+
+Tried with a source form of `extend` (an object with `has_next()` and
+`take()`, which the iterator form wraps; an `std::optional`-returning
+callback cost 16-byte string bulk builds 8%, a move more an entry), fed by
+the map's `append` merge and the set algebra's merged and filtered builds.
+A probe of two 1M `u64` sets: union 11.1-11.6 → 9.8 ns an entry,
+intersection 4.9-5.1 → 5.5 (mostly skipping, which the source's state
+made dearer), symmetric difference 9.2 either way; `append` of two 1M
+maps 29.7 → 29.4-30.4, its time in the cursors' steps, the moves and the
+old trees' teardown, not in the build. Not kept: no gain where the entry
+expected one.
 
 ## The shared prefix of lookups
 
