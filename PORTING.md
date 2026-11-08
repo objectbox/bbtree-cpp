@@ -1023,3 +1023,23 @@ an owning byte string for keys that does neither.
     three): 16-byte strings 254 → 228 ns, `u64` at 1k 121 → 131.
 - **Found** by comparing with stx_btree, another C++ form of bbtree, whose
   scan loop makes no call.
+
+## P39. Short string keys copied out unlatched, by their length
+
+- **Chosen:** the shared map's `get_copied` reads a byte-string key's value
+  without latching its leaf where the leaf settles the key, as the Rust
+  crate does (D36, D57): the leaf's inline keys are 8-byte windows and it
+  has hash tags, each key's length below 255; one key's window equals the
+  query's, the query ends within that window, and that key's tag, its
+  length, equals the query's: then the two are the same bytes, and no byte
+  of the stored key is read. A different tag settles a miss. The value is
+  copied without a latch, and all of it holds only if the leaf's version is
+  unchanged after; otherwise, at a separator, for a longer query or with
+  several candidates, the lookup takes the latched read as before. The port
+  had read unlatched only keys ordered by their own bytes.
+- **Measured** on a probe of 1M string keys of 2-8 bytes: hits 288-295 →
+  268-274 ns single-threaded, misses 211-218 → 195-205; at 8 threads within
+  noise (76-77 ns), the lookups there waiting on memory, not on the latch.
+- **Tested** against `std::map` with keys that tie in their windows and
+  differ in length (`"p12"`, `"p1\0"`), misses one zero byte longer, and
+  readers racing writers that insert, remove and update (also under TSan).

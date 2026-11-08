@@ -218,6 +218,10 @@ class latched_tree {
       if (auto settled = find_unlatched(key)) {
         return *settled;
       }
+    } else if constexpr (settles_by_length<Q>) {
+      if (auto settled = find_unlatched_by_length(key)) {
+        return *settled;
+      }
     }
     return read(query, [](const K&, const V& value) { return value; });
   }
@@ -414,6 +418,48 @@ class latched_tree {
       return std::nullopt;
     }
     if (key.cmp_full(std::bit_cast<K>(key_bytes)) != 0) {
+      return std::optional<V>();
+    }
+    return std::optional<V>(std::bit_cast<V>(value_bytes));
+  }
+
+  // Whether a byte string query is settled in its leaf by its length: the
+  // leaf's inline keys are 8-byte windows and it has hash tags, each a
+  // key's length below 255 (D36, D57).
+  template <class Q>
+  static constexpr bool settles_by_length =
+      search_key<T, Q>::compares_by_bytes && T::leaf_plan.width &&
+      *T::leaf_plan.width == inline_width::eight && T::leaf.hash_tags_offset.has_value();
+
+  // `find_unlatched` for byte strings: the one key whose window equals the
+  // query's, if the query ends within it, is the query's key exactly when
+  // its tag, its length, is the query's, so no byte of it is read. Unsettled
+  // (null) at a separator, for a longer query, or if the leaf changed.
+  template <class Q>
+  std::optional<std::optional<V>> find_unlatched_by_length(const search_key<T, Q>& key) const noexcept {
+    auto found = descend<leaf_mode::optimistic>(key);
+    if (!found) {
+      return std::optional<V>();
+    }
+    if (found->at_separator) {
+      return std::nullopt;
+    }
+    const leaf_node<T> leaf = found->leaf.leaf();
+    const leaf_candidate candidate = reads::candidate(leaf, key);
+    if (candidate.found == leaf_candidate::kind::absent) {
+      return found->leaf.is_unchanged() ? std::optional<std::optional<V>>(std::optional<V>()) : std::nullopt;
+    }
+    const std::size_t len = key.bytes().size();
+    if (candidate.found == leaf_candidate::kind::unknown || len >= 255 ||
+        len > candidate.prefix_len + sizeof(inline_word)) {
+      return std::nullopt;
+    }
+    const std::uint8_t stored_len = reads::tag(leaf, candidate.index);
+    const auto value_bytes = reads::copy_bytes(leaf.value_address(candidate.index));
+    if (!found->leaf.is_unchanged()) {
+      return std::nullopt;
+    }
+    if (stored_len != len) {
       return std::optional<V>();
     }
     return std::optional<V>(std::bit_cast<V>(value_bytes));

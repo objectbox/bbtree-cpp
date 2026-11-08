@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <random>
 #include <string>
 #include <thread>
@@ -102,4 +103,83 @@ TEST_CASE("string keys read latched where the leaf can't settle them", "[shared]
   }
   CHECK(mismatches.load() == 0);
   map.check_invariants(20'000);
+}
+
+namespace {
+
+// Distinct short keys whose 8-byte windows tie: a number and 0 to 3 zero
+// bytes, so "12" and "1\0" share a window and differ in length; under a
+// shared prefix, most end within a leaf's window and some don't.
+std::string short_key(std::uint64_t i) { return "p" + std::to_string(i) + std::string(i % 4, '\0'); }
+
+}  // namespace
+
+TEST_CASE("short string keys copied unlatched match std::map, misses included", "[shared]") {
+  bbtree::bbtree_map<std::string, std::uint64_t, std::less<>> map;
+  std::map<std::string, std::uint64_t> expected;
+  for (std::uint64_t i = 0; i < 6'000; i += 2) {
+    map.insert(short_key(i), i);
+    expected.insert_or_assign(short_key(i), i);
+  }
+  for (std::uint64_t i = 0; i < 6'000; ++i) {
+    const std::string key = short_key(i);
+    const auto found = expected.find(key);
+    const auto copied = map.get_copied(std::string_view(key));
+    REQUIRE(copied.has_value() == (found != expected.end()));
+    if (copied) {
+      REQUIRE(*copied == found->second);
+    }
+    // A key one zero byte longer ties in its window and differs in length.
+    const std::string longer = key + std::string(1, '\0');
+    REQUIRE(map.get_copied(std::string_view(longer)).has_value() == expected.contains(longer));
+  }
+}
+
+TEST_CASE("short string keys copied unlatched while writers change their leaves", "[shared]") {
+  bbtree::bbtree_map<std::string, std::uint64_t, std::less<>> map;
+  constexpr std::uint64_t keys = 4'000;
+  for (std::uint64_t i = 0; i < keys; ++i) {
+    map.insert(short_key(i), value_of(i, 0));
+  }
+  std::atomic<bool> done{false};
+  std::atomic<int> wrong{0};
+  std::vector<std::thread> threads;
+  // Writers: odd keys come and go, which splits and merges leaves; even keys
+  // get new versions in place.
+  for (int t = 0; t < 2; ++t) {
+    threads.emplace_back([&, t] {
+      std::mt19937_64 rng(static_cast<std::uint64_t>(t) + 100);
+      for (std::uint64_t round = 1; round < 40'000; ++round) {
+        const std::uint64_t i = rng() % keys;
+        if (i % 2 == 1) {
+          if (rng() % 2 == 0) {
+            map.remove(short_key(i));
+          } else {
+            map.insert(short_key(i), value_of(i, round));
+          }
+        } else {
+          map.update(short_key(i),
+                     [&](const std::string&, std::uint64_t& value) { value = value_of(i, round); });
+        }
+      }
+      done.store(true);
+    });
+  }
+  for (int t = 0; t < 3; ++t) {
+    threads.emplace_back([&, t] {
+      std::mt19937_64 rng(static_cast<std::uint64_t>(t));
+      while (!done.load()) {
+        const std::uint64_t i = rng() % keys;
+        const auto value = map.get_copied(std::string_view(short_key(i)));
+        // Even keys are always there; any value read is its own key's.
+        if ((i % 2 == 0 && !value) || (value && (*value & 0xffffffffu) != i)) {
+          wrong.fetch_add(1);
+        }
+      }
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  CHECK(wrong.load() == 0);
 }

@@ -151,6 +151,16 @@ class racing_node_reads {
     return bytes;
   }
 
+  // Hash tag `index` of `leaf`, read once without a latch; the leaf has
+  // hash tags.
+  static std::uint8_t tag(leaf_node<T> leaf, std::size_t index) noexcept {
+    static_assert(T::leaf.hash_tags_offset.has_value());
+    const racing_reads reads;
+    const auto* tags =
+        reinterpret_cast<const volatile std::uint8_t*>(leaf.node().page() + *T::leaf.hash_tags_offset);
+    return tags[index < leaf_node<T>::capacity ? index : 0];
+  }
+
   // Whether the leaf has a head, read once.
   static bool has_head(leaf_node<T> leaf) noexcept {
     const racing_reads reads;
