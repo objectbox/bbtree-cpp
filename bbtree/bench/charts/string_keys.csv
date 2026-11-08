@@ -1,13 +1,13 @@
 cell,compact string,bbtree++,bbtree (Rust),std::map
-str-16_u64_random_insert_1k,compact_string,39.2,49.0,106
-str-16_u64_get_hit_1k,compact_string_24,34.5,44.1,84.8
-str-16_u64_get_miss_1k,compact_string_24,24.7,29.8,81.7
-str-json_u64_random_insert_1M,compact_string<2>,168,196,530
-str-json_u64_get_hit_1M,compact_string_24,238,289,758
-str-json_u64_get_miss_1M,compact_string<2>,178,225,713
-str-json_struct32_build_many_1Mx4,compact_string_24,68.3,59.7,51.3
-str-json_struct32_get_many_1Mx4,compact_string<2>,78.8,83.7,99.0
-str-json_struct32_iterate_1Mx4,compact_string,3.21,5.04,5.12
-str-json_struct32_build_many_100kx32,compact_string,60.7,60.6,90.5
-str-json_struct32_get_many_100kx32,compact_string,64.9,68.3,86.8
-str-json_struct32_iterate_100kx32,compact_string<2>,5.32,9.49,26.1
+str-16_u64_random_insert_1k,compact_string<2>,38.4,49.1,105
+str-16_u64_get_hit_1k,compact_string_24,33.4,42.3,84.0
+str-16_u64_get_miss_1k,compact_string_24,24.1,28.4,81.2
+str-json_u64_random_insert_1M,compact_string,147,175,462
+str-json_u64_get_hit_1M,compact_string_24,198,269,632
+str-json_u64_get_miss_1M,compact_string,149,208,643
+str-json_struct32_build_many_1Mx4,compact_string,63.4,61.1,48.1
+str-json_struct32_get_many_1Mx4,compact_string_24,75.9,80.3,99.3
+str-json_struct32_iterate_1Mx4,compact_string,3.18,5.28,4.43
+str-json_struct32_build_many_100kx32,compact_string,54.0,60.7,81.4
+str-json_struct32_get_many_100kx32,compact_string<2>,53.1,66.1,86.3
+str-json_struct32_iterate_100kx32,compact_string<2>,5.19,8.84,25.2
