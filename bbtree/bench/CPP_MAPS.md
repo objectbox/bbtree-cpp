@@ -274,8 +274,8 @@ nearly line for line; where stx_btree leads:
 - **Sequential inserts (1.25-1.3×):** 16 more instructions an append, spread over the
   append and the split's second search. Part of it is the check of the
   prefix every key shares by 8-byte windows (COMPARISON.md, where
-  bbtree++ trails): comparing bytes again gave 7.0-7.3 ns at 1k in a trial,
-  against stx_btree's 6.5.
+  bbtree++ trails): the check out of line on the append path gave 7.3 ns
+  at 1k in a trial, against stx_btree's 6.5.
 - **Random inserts and removes (1.1×):** not looked into.
 
 What bbtree++ took from the comparison (PORTING.md): [packed pages](../../PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in)

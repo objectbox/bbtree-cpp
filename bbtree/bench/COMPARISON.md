@@ -188,10 +188,14 @@ and churn rows.
   instructions: the bench binary's code placement, not its code.
 - **Sequential inserts (1.04-1.15×):** each append checks the key against
   the prefix every key shares, and the check by 8-byte windows that came
-  with the bulk builds' (PORTING.md, [loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)) costs an
-  append 1.2 ns at 1k: 6.9 → 8.2 ns, where the Rust crate takes 7.95.
-  Comparing bytes again, with the windows kept for the build, gave 7.0-7.3
-  ns and kept the build's gain in a trial; not taken yet.
+  with the bulk builds' (PORTING.md, [loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)),
+  inlined into the insert path, takes registers from it: an append spills
+  the leaf's length and loads it straight back, though no key of these
+  cells shares a byte, so the loop never runs. 1k appends 6.9 → 8.2 ns,
+  where the Rust crate takes 7.95. The check out of line on the append
+  path alone gave 7.3 ns and kept the build's gain; comparing bytes again
+  would bring back the stall that made dense ids build at 13.7 ns an entry
+  against 6.0 with the windows (PORTING.md, the same entry).
 - **Bulk builds (1.3×), closed:** the build loop read its state back
   from members after every store into a page, which C++ can't rule out
   aliasing and Rust's `&mut self` does (PORTING.md,
