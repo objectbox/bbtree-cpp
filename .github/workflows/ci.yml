@@ -6,9 +6,10 @@
 # clang-format 15, GCC 13, CMake 3.28.
 name: test
 
+# Every pushed branch runs, so that work in progress is checked before it
+# reaches main; pull requests run too.
 on:
   push:
-    branches: [main]
   pull_request:
 
 concurrency:
