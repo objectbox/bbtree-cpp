@@ -236,16 +236,24 @@ String figures are bbtree++'s with its best compact string.
   - string writes (inserts, upserts, removes, bulk builds, `pop_first`):
     1.7-2.8×;
   - sequential inserts: 2-3×;
-  - iterating: about 3× at 1k, 2.3× at 1M, 3.2× for 100k maps of 32;
-  - u64 upserts and bulk builds: 1.2-1.5×.
+  - iterating 1k-entry maps: about 3×;
+  - `range64` on strings: 1.25× (125 ns against 158, since the inlined
+    step, COMPARISON.md, the second round).
 - **abseil is faster:**
   - random u64 inserts at 1k: 1.7×;
-  - `range64`: 1.3-1.4× on u64, 1.25× on strings;
-  - `pop_first` on u64: 1.9-2.1×;
-  - building many 4-entry maps: 1.4×.
-- **About even:** u64 removes, random u64 inserts at 1M and 10M (bbtree++
-  8% faster at 1M, abseil 7% at 10M), lookups in 4-entry maps, and
-  iterating them (3.18 ns per entry against 3.44).
+  - `range64` on u64: 1.15× at 1k and 1.15-1.3× at 1M, since the inlined
+    step (it was 1.5×);
+  - `pop_first` on u64: 1.9×;
+  - building many 4-entry maps: 1.3×.
+- **About even:** u64 removes and bulk builds, lookups in many small maps,
+  and iterating many 4-entry maps since the four-a-round root leaves (3.2
+  ns per entry against 3.46).
+- **At 1M and 10M:** bbtree++ misses 1.75-1.85× faster on u64, hits 1.4×
+  faster at 10M, inserts sequential u64 3.4× faster and iterates 2.2×
+  faster; on JSON strings it inserts and misses 2.5× and hits 2× faster.
+  abseil pops the first entry 2.1× faster and scans `range64` 1.15-1.3×
+  faster; random u64 inserts, removes, upserts and bulk builds are within
+  11%.
 
 The Rust original has the 1k insert gap too: COMPARISON.md has
 bbtree (Rust) at 35.8 ns on 1k random u64 inserts against `BTreeMap`'s

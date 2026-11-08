@@ -174,6 +174,32 @@ and churn rows.
 | a root leaf walked with no call, four entries a round ([iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)) | 1M maps of 4: 7.2-9.0 → 5.4 ns per entry with `std::string` keys |
 | the store scan's visit inlined ([store scans](../../PORTING.md#p31-a-store-scans-visit-inlines-into-the-maps-loop)) | 28.5 → 23.0 ns per entry |
 
+## What the second round changed
+
+The changes after the comparison with stx_btree (CPP_MAPS.md, against
+stx_btree), in one window with the Rust bench (`ci small`, one run each,
+load under 0.3): short byte strings' windows from two overlapping loads
+(PORTING.md, [short windows](../../PORTING.md#p35-a-short-byte-strings-window-overlapping-loads-not-a-copy)), and an iterator step inlined whole, so that the position
+stays in registers ([steps](../../PORTING.md#p38-a-step-is-inlined-whole-so-the-position-stays-in-registers)). Nanoseconds per operation; smaller is
+better; bold marks the faster. The best compact string is the fastest of
+the three variants on the cell (CPP_MAPS.md, string key types).
+
+| cell | bbtree++ | bbtree++, best compact string | bbtree (Rust) |
+|---|--:|--:|--:|
+| u64_u64_range64_1k | **99.2** | | 121 |
+| u64_u64_range64_1M | 287 | | **286** |
+| str-16_u64_range64_1k | 153 | **125** | 176 |
+| str-json_u64_random_insert_1M | 231 | **144** | 188 |
+| str-json_u64_get_hit_1M | 232 | **202** | 274 |
+| str-json_u64_get_miss_1M | 158 | **147** | 210 |
+
+`range64` at 1M ranged 232-309 ns across this session's runs of bbtree++.
+Range-for over a whole map, a probe: 1k `u64` entries 1.34 → 0.70 ns an
+entry, backward 1.37 → 1.00. The shared map's `contains`, on a probe of 1M
+`u64` keys, settles unlatched where `get_copied` does ([`contains`](../../PORTING.md#p41-contains-settles-unlatched-where-get_copied-does)):
+hits 145 → 100 ns and misses 157 → 90 single-threaded, 20 → 13 ns wall at
+8 threads.
+
 ## Where bbtree++ trails, and why
 
 - **`std::string` inserts (1.2-1.3×), small string maps' builds
