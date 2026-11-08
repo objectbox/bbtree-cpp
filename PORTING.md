@@ -1046,3 +1046,15 @@ an owning byte string for keys that does neither.
 - **Tested** against `std::map` with keys that tie in their windows and
   differ in length (`"p12"`, `"p1\0"`), misses one zero byte longer, and
   readers racing writers that insert, remove and update (also under TSan).
+
+## P40. A shared scan writes its path in place
+
+- **Chosen:** a shared scan, moving to the neighbor leaf, truncates its
+  path at the node it turns at and records the walk down into it, setting
+  aside only the levels below the turn, which it checks afterwards (P36). It
+  had built a second path, copied the levels above the turn into it, and
+  copied the whole path back, 928 bytes, every leaf. stx_btree truncates its
+  path in place too. A failed walk leaves the path half written, which the
+  search again (`repath`) starts over from the root.
+- **Measured** (a probe: 20 scans of a 1M `u64` map): 4.7 instructions an
+  entry fewer, 3% fewer cycles; the time within the probe's noise.

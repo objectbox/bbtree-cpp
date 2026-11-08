@@ -38,6 +38,11 @@ class tree_path {
   tree_path() noexcept {}  // NOLINT: levels stay unwritten until recorded
 
   void clear() noexcept { depth_ = 0; }
+  // Keeps the levels above `depth`, for a walk that turns there.
+  void truncate(std::size_t depth) noexcept {
+    assert(depth <= depth_);
+    depth_ = depth;
+  }
   void record(internal_node<T> node, latch_version version, routed route) noexcept {
     levels_[depth_++] = {node, version, route};
   }

@@ -190,11 +190,3 @@ right sibling each pop, but moving several at once (as abseil rebalances
 by half the difference) would leave the shift. A leaf whose live slots
 start at an offset, so that taking slot 0 moves the offset, would remove
 it, at the cost of an offset in every slot access.
-
-## The shared scan's path, kept in place
-
-A shared map's scan, moving to the next leaf, builds a fresh path (928
-bytes for the deepest tree) and copies it over the old one: about 1.9 KB
-of stores a leaf of 55 entries. stx_btree truncates its path in place and
-writes only the levels below the node it turns at. Not measured; the
-shared map's scans are not in the bench's suites.

@@ -220,19 +220,32 @@ class latched_scan {
     }
   }
 
-  // Whether the nodes the path keeps below level `level`, down to the held
-  // leaf, are as read: they still end at the held leaf, which can't split
-  // while held, so the leaf found from above is its neighbor (the Rust
-  // crate's `next_leaf`; design/09-concurrency.md).
-  static bool ends_unchanged(const tree_path<T>& path, std::size_t level) noexcept {
-    for (std::size_t below = level; below < path.depth(); ++below) {
-      const path_level<T> kept = path.level(below);
-      if (!node_latch(kept.node.node().page()).is_unchanged(kept.version)) {
-        return false;
+  // The nodes a path keeps below level `level`, down to the held leaf, and
+  // the versions they were read at: still unchanged after the walk to the
+  // neighbor, they still end at the held leaf, which can't split while held,
+  // so the leaf found from above is its neighbor (the Rust crate's
+  // `next_leaf`; design/09-concurrency.md).
+  class kept_levels {
+   public:
+    kept_levels(const tree_path<T>& path, std::size_t level) noexcept : count_(path.depth() - level) {
+      for (std::size_t below = 0; below < count_; ++below) {
+        nodes_[below] = path.level(level + below);
       }
     }
-    return true;
-  }
+
+    bool unchanged() const noexcept {
+      for (std::size_t below = 0; below < count_; ++below) {
+        if (!node_latch(nodes_[below].node.node().page()).is_unchanged(nodes_[below].version)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+   private:
+    std::size_t count_;
+    unwritten_array<path_level<T>, max_depth> nodes_;
+  };
 
   // Latches the held leaf's right neighbor, then lets go of the held one;
   // false past the last leaf.
@@ -246,17 +259,15 @@ class latched_scan {
         return false;
       }
       const path_level<T> at = path.level(level - 1);
-      tree_path<T> next_path;
-      for (std::size_t above = 0; above + 1 < level; ++above) {
-        next_path.record(path.level(above).node, path.level(above).version, path.level(above).route);
-      }
+      // The levels below the turn, which still end at the held leaf, are set
+      // aside to check; the path is written over in place from the turn on.
+      const kept_levels kept(path, level);
+      path.truncate(level - 1);
       const std::size_t edge = at.route.edge + 1;
-      next_path.record(at.node, at.version, routed{edge, false, at.route.len});
+      path.record(at.node, at.version, routed{edge, false, at.route.len});
       held_leaf<T, leaf_mode::shared> next;
-      if (descend_from<node_end::first>(at.node, at.version, edge, next_path, next) &&
-          ends_unchanged(path, level)) {
+      if (descend_from<node_end::first>(at.node, at.version, edge, path, next) && kept.unchanged()) {
         held = std::move(next);
-        path = next_path;
         return true;
       }
       // The path changed: search again for the last key visited, holding it.
@@ -279,17 +290,15 @@ class latched_scan {
         return false;
       }
       const path_level<T> at = path.level(level - 1);
-      tree_path<T> next_path;
-      for (std::size_t above = 0; above + 1 < level; ++above) {
-        next_path.record(path.level(above).node, path.level(above).version, path.level(above).route);
-      }
+      // The levels below the turn, which still end at the held leaf, are set
+      // aside to check; the path is written over in place from the turn on.
+      const kept_levels kept(path, level);
+      path.truncate(level - 1);
       const std::size_t edge = at.route.edge - 1;
-      next_path.record(at.node, at.version, routed{edge, false, at.route.len});
+      path.record(at.node, at.version, routed{edge, false, at.route.len});
       held_leaf<T, leaf_mode::shared> next;
-      if (descend_from<node_end::last>(at.node, at.version, edge, next_path, next) &&
-          ends_unchanged(path, level)) {
+      if (descend_from<node_end::last>(at.node, at.version, edge, path, next) && kept.unchanged()) {
         held = std::move(next);
-        path = next_path;
         return true;
       }
       // The path changed: search again for the first key visited last,
