@@ -209,6 +209,12 @@ cell_measurement cell_run::with_std_key_map_type(Prepared& prepared) const {
       }
     case map_kind::unsync_pooled:
       return measure<pooled_unsync_bbtree<K, V>>(prepared);
+    case map_kind::stx_unsync:
+#if defined(BBTREE_BENCH_STX)
+      return measure<stx_unsync_map<K, V>>(prepared);
+#else
+      throw bench_error("stx-unsync needs a bench configured with BBTREE_BENCH_STX_DIR");
+#endif
     case map_kind::unsync_compact:
     case map_kind::unsync_compact_u16:
     case map_kind::unsync_compact_24:

@@ -20,6 +20,12 @@ bool enum_traits<map_kind>::supports(map_kind map, operation op) noexcept {
       case map_kind::unsync_compact_24:
       case map_kind::unsync_pooled:
         return unsync_bbtree<key, value>::unsupported();
+      case map_kind::stx_unsync:
+#if defined(BBTREE_BENCH_STX)
+        return stx_unsync_map<key, value>::unsupported();
+#else
+        return std::span<const operation>(enum_traits<operation>::all);
+#endif
       case map_kind::std_btree:
         return std_btree<key, value>::unsupported();
       case map_kind::absl_btree:

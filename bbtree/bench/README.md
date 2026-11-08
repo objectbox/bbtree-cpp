@@ -48,6 +48,11 @@ Suites: `ci`, `small`, `tiny`, `realkeys`, or `all`. Filters (`--map`,
 `--list` work as in the Rust bench. A full suite at full size takes minutes
 to tens of minutes: run filtered, quick subsets unless you mean it.
 
+`bbtree-unsync-pooled` (bbtree++ on `pooled_allocator`) and `stx-unsync`
+(stx_btree's unsync map, another C++ form of bbtree; the bench must be
+configured with `-DBBTREE_BENCH_STX_DIR=<an stx_btree checkout>`) run only
+when `--map` names them (CPP_MAPS.md).
+
 `cpp` is the C++ bench's own suite, with no Rust counterpart: `ci`'s
 workloads at 1M and 10M on every map, abseil's B-tree and the hash maps
 too, in under two minutes (CPP_MAPS.md). `all` runs the Rust bench's

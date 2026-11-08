@@ -241,6 +241,63 @@ leaf to its entries (FUTURE_WORK.md).
 lookups, random inserts and upserts, as expected of a hash map; not on sequential inserts, which bbtree++ appends
 to its last leaf, or on 1M random removes.
 
+## Against stx_btree
+
+[stx_btree](https://github.com/malkuth-software/stx_btree) is another C++20
+form of bbtree, of its tree core and both maps (no file maps, store, sets,
+entry API or bulk builds). Its unsync map ran in this bench's cells through
+the bench's opt-in `stx-unsync` map (configure the bench with
+`-DBBTREE_BENCH_STX_DIR=<an stx_btree checkout>`; `bbtree-bench cpp --key
+u64,str-json,str-16 --map bbtree-unsync,stx-unsync`), one run each, load
+under 0.3, mimalloc. Nanoseconds per operation (iterate and many maps: per entry);
+smaller is better; bold marks the faster. Taken before bbtree++'s short
+windows by overlapping loads (PORTING.md, [short windows](../../PORTING.md#p35-a-short-byte-strings-window-overlapping-loads-not-a-copy)),
+which cut its 1M JSON-key misses by 12%.
+
+| cell | bbtree++ | stx_btree |
+|---|--:|--:|
+| u64_u64_random_insert_1k | 28.0 | **25.5** |
+| u64_u64_sequential_insert_1k | 8.02 | **6.79** |
+| u64_u64_get_hit_1k | 15.9 | **12.8** |
+| u64_u64_get_miss_1k | 14.4 | **12.3** |
+| u64_u64_iterate_1k | **0.217** | 1.02 |
+| u64_u64_range64_1k | 122 | **99.7** |
+| u64_u64_entry_upsert_1k | **28.9** | 33.6 |
+| str-16_u64_get_miss_1k | **22.8** | 25.4 |
+| str-16_u64_range64_1k | 262 | **144** |
+| str-json_struct32_build_many_1Mx4 | **76.1** | 137 |
+| str-json_struct32_iterate_1Mx4 | **5.39** | 13.3 |
+| str-json_struct32_get_many_100kx32 | 71.6 | **56.3** |
+| u64_u64_random_insert_1M | 90.7 | **82.3** |
+| u64_u64_get_hit_1M | 92.7 | **82.9** |
+| u64_u64_get_miss_1M | 74.0 | **59.1** |
+| u64_u64_iterate_1M | **0.688** | 1.48 |
+| u64_u64_pop_first_1M | **17.0** | 20.3 |
+| u64_u64_get_miss_10M | 176 | **164** |
+| str-json_u64_get_hit_1M | 248 | **225** |
+
+The rest of the 39 cells are within 10%. The two ports' algorithms match
+nearly line for line; where stx_btree leads:
+
+- **Lookups at 1k:** a standalone probe of both maps' `u64` lookups gives
+  13.3 against 12.9 ns for hits and 12.8 against 13.0 for misses, 16 more
+  instructions a hit in bbtree++; the bench's 1k cells show 20%, the
+  bench's build of the lookup (not its algorithm) the likelier cause. A
+  vectorized count of the leaf's last slots (55 two-byte slots leave 7 for
+  a scalar tail) cut the count's instructions by a third and changed
+  nothing: lookups wait on their loads, not on the count.
+- **`range64`:** stx_btree's scan loop has no call and keeps its position
+  in registers; bbtree++'s keeps it in memory (FUTURE_WORK.md, iterators
+  in registers, which records a crossing tried here).
+- **Sequential inserts:** 16 more instructions an append, spread over the
+  append and the split's second search; no single cause.
+
+What bbtree++ took from the comparison (PORTING.md): [packed pages](../../PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in)
+(`pooled_allocator`), [install rules](../../PORTING.md#p34-installing-find_packagebbtree-with-the-targets-own-names) checked by a moved install,
+[short windows](../../PORTING.md#p35-a-short-byte-strings-window-overlapping-loads-not-a-copy) by overlapping loads, the shared scan's
+[check of the levels it keeps](../../PORTING.md#p36-a-shared-scan-checks-the-levels-it-keeps-before-taking-the-next-leaf), and [unwritten scratch arrays](../../PORTING.md#p37-the-shared-maps-scratch-arrays-stay-unwritten-until-used)
+in the shared map.
+
 ## Setup
 
 - **Machine and build:** as in COMPARISON.md (Ryzen 9 5950X, Clang 15,

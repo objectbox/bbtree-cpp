@@ -72,6 +72,13 @@ add_library(bbtree_bench_core STATIC
 target_link_libraries(bbtree_bench_core
   PUBLIC bbtree::bbtree absl::btree unordered_dense::unordered_dense mimalloc-static Threads::Threads
   PRIVATE bbtree_warnings)
+# stx_btree, another C++ form of bbtree, as the opt-in map `stx-unsync`:
+# a path to a checkout of it (CPP_MAPS.md, against stx_btree).
+set(BBTREE_BENCH_STX_DIR "" CACHE PATH "A checkout of stx_btree, for the bench's stx-unsync map")
+if(BBTREE_BENCH_STX_DIR)
+  target_include_directories(bbtree_bench_core SYSTEM PUBLIC ${BBTREE_BENCH_STX_DIR}/include)
+  target_compile_definitions(bbtree_bench_core PUBLIC BBTREE_BENCH_STX=1)
+endif()
 target_compile_definitions(bbtree_bench_core PRIVATE
   BBTREE_BENCH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   BBTREE_REPOSITORY_DIR="${PROJECT_SOURCE_DIR}")

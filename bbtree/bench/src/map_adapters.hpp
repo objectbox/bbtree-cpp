@@ -17,6 +17,9 @@
 #include <bbtree/map.hpp>
 #include <bbtree/pooled_allocator.hpp>
 #include <bbtree/unsync/map.hpp>
+#if defined(BBTREE_BENCH_STX)
+#include <stx_btree/unsync_map.hpp>
+#endif
 
 #include <array>
 #include <cstddef>
@@ -168,6 +171,72 @@ class std_interface_map {
 
   Map map_;
 };
+
+#if defined(BBTREE_BENCH_STX)
+// stx_btree's unsync map (CPP_MAPS.md, against stx_btree), another C++
+// form of bbtree, through its own interface: `find` returns a pointer,
+// `insert` replaces, `remove` and `pop_first` return the entry. It has no
+// bulk build. Built only when the bench is configured with
+// `BBTREE_BENCH_STX_DIR`, a checkout of it.
+template <class K, class V>
+class stx_unsync_map {
+  using Map = stx_btree::unsync::BBTreeMap<K, V>;
+  using checksum = entry_checksum<K, V>;
+
+ public:
+  static constexpr std::span<const operation> unsupported() noexcept { return lacks; }
+  static constexpr bool lends_references = true;
+  std::size_t entry_count() const noexcept { return map_.size(); }
+  void insert(K key, V value) { map_.insert(std::move(key), std::move(value)); }
+  const V* get(const K& key) const noexcept { return map_.find(key); }
+  std::optional<std::uint64_t> lookup_fingerprint(const K& key) const noexcept {
+    const V* value = get(key);
+    return value ? std::optional(value_traits<V>::fingerprint(*value)) : std::nullopt;
+  }
+  std::uint64_t checksum_all() const noexcept {
+    std::uint64_t sum = 0;
+    for (auto it = map_.begin(), end = map_.end(); it != end; ++it) {
+      const auto entry = *it;
+      sum += checksum::of(entry.key, entry.value);
+    }
+    return sum;
+  }
+  std::uint64_t checksum_range(const K& start, std::size_t count) const {
+    std::uint64_t sum = 0;
+    auto at = map_.lower_bound(start);
+    const auto end = map_.end();
+    for (std::size_t visited = 0; visited < count && at != end; ++visited, ++at) {
+      const auto entry = *at;
+      sum += checksum::of(entry.key, entry.value);
+    }
+    return sum;
+  }
+  bool remove(const K& key) noexcept { return map_.remove(key).has_value(); }
+  void bump_count(K key) {
+    if (V* value = map_.find(key)) {
+      value_traits<V>::bump(*value);
+      return;
+    }
+    V value{};
+    value_traits<V>::bump(value);
+    map_.insert(std::move(key), std::move(value));
+  }
+  std::optional<std::pair<K, V>> pop_first() {
+    auto entry = map_.pop_first();
+    if (!entry) {
+      return std::nullopt;
+    }
+    return std::pair<K, V>(std::move(entry->key), std::move(entry->value));
+  }
+  static stx_unsync_map from_sorted_entries(entry_list<K, V>) {
+    unsupported_operation::reached(operation::bulk_build);
+  }
+
+ private:
+  static constexpr std::array lacks{operation::bulk_build};
+  Map map_;
+};
+#endif
 
 template <class K, class V>
 using unsync_bbtree = std_interface_map<bbtree::unsync::bbtree_map<K, V>, true>;
