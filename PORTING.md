@@ -958,3 +958,10 @@ an owning byte string for keys that does neither.
   finding came from): the same instructions saved, but every
   `node_ptr<T> p;` in the code would then start indeterminate where it now
   starts null; the arrays are the only place the zeros cost.
+- **Checked under Valgrind:** the sanitizers this port runs (ASan with
+  UBSan, TSan) don't flag a read of storage never written, so the shared
+  map's tests (`[shared]`, release build) ran under memcheck with
+  `--track-origins=yes`: no errors, all 14 tests in one run of 18 s. That
+  run needs `--fair-sched=yes`: Valgrind runs one thread at a time, and
+  under its default scheduler one thread ran alone for 82 minutes while the
+  others slept and no test finished.
