@@ -15,6 +15,7 @@
 #pragma once
 
 #include <bbtree/detail/latched/latch.hpp>
+#include <bbtree/detail/latched/unwritten_array.hpp>
 #include <bbtree/detail/node/page.hpp>
 
 #include <atomic>
@@ -200,11 +201,11 @@ class node_pages {
 
   free_lists<T>& free_;
   const page_source<A>& source_;
-  mutable reserved reserved_[max_pages] = {};
+  mutable unwritten_array<reserved, max_pages> reserved_;
   mutable std::size_t reserved_count_ = 0;
-  mutable allocated allocated_[max_pages] = {};
+  mutable unwritten_array<allocated, max_pages> allocated_;
   mutable std::size_t allocated_count_ = 0;
-  mutable reserved freed_[max_pages] = {};
+  mutable unwritten_array<reserved, max_pages> freed_;
   mutable std::size_t freed_count_ = 0;
 };
 

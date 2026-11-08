@@ -14,6 +14,7 @@
 #pragma once
 
 #include <bbtree/detail/latched/optimistic.hpp>
+#include <bbtree/detail/latched/unwritten_array.hpp>
 #include <bbtree/detail/tree/node_stack.hpp>
 
 #include <cassert>
@@ -90,7 +91,7 @@ class tree_path {
   }
 
  private:
-  path_level<T> levels_[max_depth];
+  unwritten_array<path_level<T>, max_depth> levels_;
   std::size_t depth_ = 0;
 };
 
@@ -117,7 +118,7 @@ class held_nodes {
   }
 
   bool take_internal_at(internal_node<T> node, latch_version version) noexcept {
-    if (holds(internals_, internal_count_, node.node())) {
+    if (holds(internals_.data(), internal_count_, node.node())) {
       return true;
     }
     if (!node_latch(node.node().page()).try_lock_at(version)) {
@@ -129,7 +130,7 @@ class held_nodes {
   }
 
   bool take_internal(internal_node<T> node) noexcept {
-    if (holds(internals_, internal_count_, node.node())) {
+    if (holds(internals_.data(), internal_count_, node.node())) {
       return true;
     }
     latch_version version;
@@ -137,7 +138,7 @@ class held_nodes {
   }
 
   bool take_leaf(leaf_node<T> leaf) noexcept {
-    if (holds(leaves_, leaf_count_, leaf.node())) {
+    if (holds(leaves_.data(), leaf_count_, leaf.node())) {
       return true;
     }
     latch_version version;
@@ -179,9 +180,9 @@ class held_nodes {
     return false;
   }
 
-  held internals_[max_internals];
+  unwritten_array<held, max_internals> internals_;
   std::size_t internal_count_ = 0;
-  held leaves_[max_leaves];
+  unwritten_array<held, max_leaves> leaves_;
   std::size_t leaf_count_ = 0;
 };
 

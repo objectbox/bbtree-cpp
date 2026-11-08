@@ -924,3 +924,23 @@ an owning byte string for keys that does neither.
   is the design's invariant and costs a load a level.
 - **Found** by comparing the scan with stx_btree's, another C++ form of
   bbtree, which checks the kept levels too.
+
+## P37. The shared map's scratch arrays stay unwritten until used
+
+- **Chosen:** a change of the shared map records its path (`tree_path`),
+  the nodes it holds (`held_nodes`) and the pages it reserves, takes and
+  frees (`node_pages`) in arrays sized for the deepest tree, of which it
+  uses a few entries. Their element types zero themselves when
+  default-constructed (`latch_version`, `node_ptr`), so every insert that
+  split and every removal that rebalanced first wrote about 2 KiB of zeros:
+  an 825-byte `memset` and some 200 scalar stores in `insert_splitting`
+  alone. `unwritten_array<T, N>` keeps the elements in a union its
+  constructor leaves alone; assigning one begins its life (trivially
+  copyable types only, checked). Single-threaded, the 1M-key probe (insert,
+  get, update, remove) ran 3.6% fewer instructions; at 8 threads inserts
+  went 57-58 → 54-56 ns, within the noise of that probe.
+- **Alternatives considered:** making `latch_version` and `node_ptr`
+  trivially default-constructible, as stx_btree's types are (where the
+  finding came from): the same instructions saved, but every
+  `node_ptr<T> p;` in the code would then start indeterminate where it now
+  starts null; the arrays are the only place the zeros cost.
