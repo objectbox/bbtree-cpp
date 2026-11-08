@@ -301,9 +301,11 @@ nearly line for line; where stx_btree leads:
   vectorized count of the leaf's last slots (55 two-byte slots leave 7 for
   a scalar tail) cut the count's instructions by a third and changed
   nothing: lookups wait on their loads, not on the count.
-- **`range64` (1.1-1.8×):** stx_btree's scan loop has no call and keeps its position
-  in registers; bbtree++'s keeps it in memory (FUTURE_WORK.md, iterators
-  in registers, which records a crossing tried here).
+- **`range64`:** stx_btree's scan loop has no call and keeps its position
+  in registers; bbtree++'s kept it in memory. Since its forward step is
+  inlined whole (PORTING.md, [forward steps](../../PORTING.md#p38-a-forward-step-is-inlined-whole-so-the-position-stays-in-registers)), it runs `range64` in
+  94-98 ns on `u64` at 1k and 144-153 on 16-byte strings: even with
+  stx_btree's.
 - **Sequential inserts (1.25-1.3×):** 16 more instructions an append, spread over the
   append and the split's second search. Part of it is the check of the
   prefix every key shares by 8-byte windows (COMPARISON.md, where

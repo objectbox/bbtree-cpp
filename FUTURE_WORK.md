@@ -53,28 +53,14 @@ threads, misses (settled unlatched) 193 and 31; integer keys 96 and 58.
 The unlatched copy would save the latch's two read-modify-writes and its
 line's bouncing between readers.
 
-## Iterators whose steps stay in registers
+## Backward steps in registers
 
-Range-for steps keep the iterator's position in memory, because the leaf
-crossings take the node stack inside the iterator by address: 1.6 ns an
-entry with Clang against 0.9 for `for_each`. An iterator could keep its node
-stack outside itself (a cursor handle into a stack the range owns), or keep
-none and find the next leaf by a search from the root at each crossing,
-using the internal nodes' separators. Either way, more iterator states
-(attached, detached, at a separator) have to stay in sync with the cursor's
-removal paths.
-
-stx_btree's iterator, compared side by side in this bench, scans `range64`
-in 0.82× ours on `u64` keys and 0.55× on 16-byte strings, with no call in
-its loop. One part of its crossing was tried here: going down to the next
-leaf once, when a step reaches the separator, and parking the cursor at that
-leaf's head, so that the separator's key and value and the next step's leaf
-come from one walk, where ours walks to the head leaf for the key, again
-for the value, and again for the next step. Fewer instructions (1.3%), but
-`range64` on 16-byte strings 254 → 228 ns while `u64` at 1k went 121 → 131
-(the walk's loads moved onto the step's critical path); not kept. The cost
-that remains is the position kept in memory (the iterator test,
-`unsync/iterator_differential_test.cpp`, covers the crossings either way).
+Forward steps keep the cursor's position in registers since their crossing
+is inlined whole (PORTING.md, [forward steps](PORTING.md#p38-a-forward-step-is-inlined-whole-so-the-position-stays-in-registers)). Backward steps (`--it`,
+reverse ranges) still call an outlined crossing that takes the node stack
+by address, so a reverse loop loads and stores its position each step. The
+same inlining would carry over, at the code size of a second crossing in
+every loop that steps back.
 
 ## bbtree-store: a refused insert without an exception
 
@@ -163,9 +149,9 @@ ones. Three of abseil's choices explain them:
   that "the root page stays the root", which the shared map's racing reads rely on, so it
   would be the unsync map's and set's only.
 - **Parent pointers.** abseil's iterator is a node and an index, stepping
-  through parent pointers, so it stays in registers; bbtree++'s keeps a node
-  stack and its position in memory ([iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)), which a 64-entry range scan and
-  `pop_first`'s descent pay. Parent pointers cost 8 bytes a node and a
+  through parent pointers; bbtree++'s keeps a node stack, which its
+  forward steps keep beside a position in registers ([forward steps](PORTING.md#p38-a-forward-step-is-inlined-whole-so-the-position-stays-in-registers)),
+  and which `pop_first`'s descent builds. Parent pointers cost 8 bytes a node and a
   write to every child an internal split or merge moves, and the shared
   map's nodes would need them kept under its latches.
 - **256-byte nodes.** abseil sizes nodes to about 256 bytes, so a u64 →

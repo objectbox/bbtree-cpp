@@ -15,10 +15,13 @@
 // no ancestors (D32, D37), gets it on its first crossing, by searching its
 // key.
 //
-// A step keeps the cursor's position in memory, since the outlined crossings
-// take its node stack by address: range-for over 1M u64 entries takes 1.6 ns
-// an entry with Clang, 1.3 with GCC. The maps' `for_each` walks with no
-// cursor (`walk.hpp`), as Rust's folds do: 0.56 ns (PORTING.md P16).
+// A forward step, its crossing included, is inlined into the loop that
+// steps, and nothing it calls takes the cursor's address: the search that
+// gives a lookup's cursor its node stack returns the stack by value. So the
+// position stays in registers, where an outlined crossing that took the node
+// stack by address kept it in memory, a load and a store a step (PORTING.md
+// P38). The maps' `for_each` walks with no cursor (`walk.hpp`), as Rust's
+// folds do (PORTING.md P16).
 #pragma once
 
 #include <bbtree/detail/tree/tree.hpp>
@@ -94,8 +97,9 @@ class cursor {
   const tree<T>* owner() const noexcept { return tree_; }
   friend bool operator==(const cursor& a, const cursor& b) noexcept { return a.at_.key == b.at_.key; }
 
-  // Steps to the next entry, or past the last.
-  void next() noexcept {
+  // Steps to the next entry, or past the last; inlined with its crossing,
+  // so that the position stays in registers (above).
+  [[gnu::always_inline]] void next() noexcept {
     assert(!is_end() && "stepping past the end");
     if (at_.key_end != nullptr) {
       at_.key = advance(at_.key, T::leaf.keys.key_stride);
@@ -161,7 +165,8 @@ class cursor {
 
   // Attaches the node stack at the entry by searching its key, if it has
   // none, or brings its leaf index to where the in-leaf steps went.
-  static void attach(const tree<T>* owner, node_stack<T>& stack, const position& at) noexcept {
+  [[gnu::always_inline]] static void attach(const tree<T>* owner, node_stack<T>& stack,
+                                            const position& at) noexcept {
     if (stack.is_attached()) {
       if (at.key_end != nullptr) {
         const auto from_end = static_cast<std::size_t>(reinterpret_cast<std::byte*>(at.key_end) -
@@ -171,13 +176,21 @@ class cursor {
       }
       return;
     }
-    stack.attach(owner->root());
-    [[maybe_unused]] const bool found = stack.search(search_key<T, K>(*at.key), owner->shared());
-    assert(found && "a cursor's key is found at its entry");
+    // Returned by value, not filled in through the cursor's address, so that
+    // the cursor's position can stay in registers.
+    stack = searched_stack(owner, at.key);
   }
 
-  [[gnu::noinline]] static position cross_forward(const tree<T>* owner, node_stack<T>& stack,
-                                                  position at) noexcept {
+  [[gnu::noinline]] static node_stack<T> searched_stack(const tree<T>* owner, const K* key) noexcept {
+    node_stack<T> stack;
+    stack.attach(owner->root());
+    [[maybe_unused]] const bool found = stack.search(search_key<T, K>(*key), owner->shared());
+    assert(found && "a cursor's key is found at its entry");
+    return stack;
+  }
+
+  [[gnu::always_inline]] static position cross_forward(const tree<T>* owner, node_stack<T>& stack,
+                                                       position at) noexcept {
     if (at.key_end != nullptr) {
       // Past the leaf's last entry: the leaf edge after it.
       at.key = advance(at.key, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
@@ -228,7 +241,7 @@ class cursor {
 
   // From a node stack at a leaf's last edge: up to the nearest separator
   // right of it, or past the last entry.
-  static position climb_to_separator_after(node_stack<T>& stack) noexcept {
+  [[gnu::always_inline]] static position climb_to_separator_after(node_stack<T>& stack) noexcept {
     for (std::size_t level = stack.depth(); level-- > 0;) {
       if (stack.index_at(level) < stack.internal_at(level).len()) {
         while (stack.depth() > level) {

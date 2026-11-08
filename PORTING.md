@@ -993,3 +993,33 @@ an owning byte string for keys that does neither.
   run needs `--fair-sched=yes`: Valgrind runs one thread at a time, and
   under its default scheduler one thread ran alone for 82 minutes while the
   others slept and no test finished.
+
+## P38. A forward step is inlined whole, so the position stays in registers
+
+- **Chosen:** `cursor::next`, its crossing to the next leaf (the climb to
+  the separator, the descent) and the attaching of a node stack are
+  `always_inline`; the search that gives a lookup's cursor its node stack
+  stays out of line and returns the stack by value, assigned into the
+  cursor. No call made by a step then takes the cursor's address, so the
+  compiler keeps the position (the key and value addresses, the leaf's end)
+  in registers. The crossing had been outlined and took the node stack
+  inside the cursor by reference: the cursor escaped, and every step loaded
+  and stored its position, a chain from step to step (1.9 instructions a
+  cycle on `range64` over 16-byte strings, against stx_btree's 3.0 with the
+  same cache misses). Backward steps stay outlined.
+- **Measured** (`range64`, `bbtree-unsync`, two A/B runs each): `u64` at 1k
+  123-128 → 94-98 ns; 16-byte strings at 1k 257-265 → 144-153; `u64` at 1M
+  298-309 → 232-284. Range-for over a whole map (a probe): 1k `u64` entries
+  1.34 → 0.70 ns an entry with Clang, 1.16 → 0.76 with GCC; 1M 4.15 → 3.26
+  and 3.71 → 3.16. The other cells unchanged. A loop that steps carries the
+  crossing's code: the probe's text grew by 5 KB with Clang, none with GCC.
+- **Alternatives tried, not kept:**
+  - **No node stack in the cursor**, each crossing searching from the root:
+    16-byte strings 260 → 415 ns, `u64` at 1M 290 → 395; and the merged
+    builds that move keys out while they step (`append`) lose their key.
+  - **The crossing inlined but `next` not:** Clang then outlined `next`
+    itself, a call a step: `u64` at 1k 122 → 170.
+  - **Parking a crossing at the next leaf's head** (one walk down instead of
+    three): 16-byte strings 254 → 228 ns, `u64` at 1k 121 → 131.
+- **Found** by comparing with stx_btree, another C++ form of bbtree, whose
+  scan loop makes no call.
