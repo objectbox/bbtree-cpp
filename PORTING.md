@@ -727,7 +727,13 @@ an owning byte string for keys that does neither.
   prefix inline and calls for the windows: 7.3 and 10.2 ns.
   Rejected: comparing bytes again (the `memcpy` stall back for dense ids);
   the whole check out of line for every caller (a bulk build calls it
-  every entry: dense ids 6.0 → 7.6 ns an entry).
+  every entry: dense ids 6.0 → 7.6 ns an entry). The shared map's append
+  keeps the inline check: with `is_shared_by_once` there, 1k sequential
+  `u64` inserts went 8.8 → 10.7-11.1 ns and 1M 12.0-12.4 → 14.3-14.5 (two
+  interleaved runs each), at 1M 42 instructions an insert more; 16-byte
+  strings at 1k were unchanged. A profile never reached the out-of-line
+  windows, the prefix being empty, so the instructions are in how the
+  append compiled around the call; not looked into further.
 - **Measured** on one-shot probes of each language's build in a fresh
   process, as the bench cell runs it (one build, cold pages), counted as
   the difference to the same process without the build, built with
