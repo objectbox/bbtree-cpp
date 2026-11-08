@@ -909,3 +909,18 @@ an owning byte string for keys that does neither.
   boundary only for heap strings longer than the small buffer, and a span
   from a user's `string_view` can end anywhere, so an over-read is not safe
   in general.
+
+## P36. A shared scan checks the levels it keeps before taking the next leaf
+
+- **Chosen:** when a shared map's scan moves to the next (or previous)
+  leaf, it walks down from the nearest node with an edge left, and then, as
+  the Rust crate's `next_leaf` and design/09-concurrency.md do, checks that
+  every node the path keeps below that one is still at the version read:
+  they still end at the held leaf, which can't split while held, so the leaf
+  found is its neighbor; if one changed, the scan searches again for the
+  last key it visited. The port had checked only the node it turned at.
+  No interleaving that skips entries without the check was found (the held
+  leaf can't split, and rebalancing stays under one parent), but the check
+  is the design's invariant and costs a load a level.
+- **Found** by comparing the scan with stx_btree's, another C++ form of
+  bbtree, which checks the kept levels too.

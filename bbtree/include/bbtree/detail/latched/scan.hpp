@@ -220,6 +220,20 @@ class latched_scan {
     }
   }
 
+  // Whether the nodes the path keeps below level `level`, down to the held
+  // leaf, are as read: they still end at the held leaf, which can't split
+  // while held, so the leaf found from above is its neighbor (the Rust
+  // crate's `next_leaf`; design/09-concurrency.md).
+  static bool ends_unchanged(const tree_path<T>& path, std::size_t level) noexcept {
+    for (std::size_t below = level; below < path.depth(); ++below) {
+      const path_level<T> kept = path.level(below);
+      if (!node_latch(kept.node.node().page()).is_unchanged(kept.version)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // Latches the held leaf's right neighbor, then lets go of the held one;
   // false past the last leaf.
   bool next_leaf(tree_path<T>& path, held_leaf<T, leaf_mode::shared>& held) {
@@ -239,7 +253,8 @@ class latched_scan {
       const std::size_t edge = at.route.edge + 1;
       next_path.record(at.node, at.version, routed{edge, false, at.route.len});
       held_leaf<T, leaf_mode::shared> next;
-      if (descend_from<node_end::first>(at.node, at.version, edge, next_path, next)) {
+      if (descend_from<node_end::first>(at.node, at.version, edge, next_path, next) &&
+          ends_unchanged(path, level)) {
         held = std::move(next);
         path = next_path;
         return true;
@@ -271,7 +286,8 @@ class latched_scan {
       const std::size_t edge = at.route.edge - 1;
       next_path.record(at.node, at.version, routed{edge, false, at.route.len});
       held_leaf<T, leaf_mode::shared> next;
-      if (descend_from<node_end::last>(at.node, at.version, edge, next_path, next)) {
+      if (descend_from<node_end::last>(at.node, at.version, edge, next_path, next) &&
+          ends_unchanged(path, level)) {
         held = std::move(next);
         path = next_path;
         return true;
