@@ -1040,9 +1040,13 @@ an owning byte string for keys that does neither.
   unchanged after; otherwise, at a separator, for a longer query or with
   several candidates, the lookup takes the latched read as before. The port
   had read unlatched only keys ordered by their own bytes.
-- **Measured** on a probe of 1M string keys of 2-8 bytes: hits 288-295 →
-  268-274 ns single-threaded, misses 211-218 → 195-205; at 8 threads within
-  noise (76-77 ns), the lookups there waiting on memory, not on the latch.
+- **Measured** on a probe of 1M string keys of 2-8 bytes (inserts, hits
+  and misses), alone: no change outside the timings' noise of about 10%
+  single-threaded and at 8 threads (76-77 ns), 2.8% more instructions and
+  cycles within the runs' spread; the lookups wait on memory, not on the
+  latch. It is what `contains` (P41) and the latching of the leaf read
+  (P42) build on, after which the same probe with `contains` ran 10.74 →
+  9.52 G cycles.
 - **Tested** against `std::map` with keys that tie in their windows and
   differ in length (`"p12"`, `"p1\0"`), misses one zero byte longer, and
   readers racing writers that insert, remove and update (also under TSan).
@@ -1067,7 +1071,8 @@ an owning byte string for keys that does neither.
   need not be trivially copyable for it. It had settled only misses whose
   inline keys ruled them out, and descended again with latches for
   everything else: a hit, and a miss whose 2-byte window tied with a key.
-- **Measured** (a probe of 1M `u64` keys): hits 145 → 100 ns and misses
+- **Measured** (a probe of 1M `u64` keys, one run each, the effect well
+  outside the probe's noise of about 10%): hits 145 → 100 ns and misses
   157 → 90 single-threaded; at 8 threads 20 → 13 ns wall for both.
 
 ## P42. A lookup the leaf can't settle latches that leaf, not the root down
