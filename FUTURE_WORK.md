@@ -173,11 +173,12 @@ expected one.
 
 A lookup checks its key against what every key of the tree shares
 (`shared_prefix::place_outside`, `cmp_shared_prefix(bytes())`), from a
-span: a prefix shorter than 8 bytes may take the copy and stalled load
-that `word_at` took out of the bulk build. Maps of dense ids share such a
-prefix; the bench's random keys share none, so no cell shows it. Not
-measured.
-
+span. A prefix shorter than 8 bytes, as maps of dense ids share, took a
+`memcpy` call into a buffer and a stalled load back; since short windows
+come from two overlapping loads (PORTING.md, [short windows](PORTING.md#p35-a-short-byte-strings-window-overlapping-loads-not-a-copy)), it
+takes no call. What is left is reading the prefix through a span where
+`shared_prefix::word_at` has it as one load; the bench's random keys share
+no prefix, so no cell shows it.
 
 ## A pooled allocator that gives back free chunks
 
