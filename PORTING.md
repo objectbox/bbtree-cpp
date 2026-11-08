@@ -1109,3 +1109,17 @@ an owning byte string for keys that does neither.
   instructions and cycles of the whole run, the timings' noise at 10%):
   short keys 10.74 → 9.98 → 9.52 G cycles before P39, with P39 and P41,
   and with this; longer keys (11-13 bytes) 12.65 → 11.77 → 11.38.
+
+## P43. What the second round costs in code and build time
+
+- **Measured:** the second round (P38-P42: steps inlined whole, short keys
+  and `contains` settled unlatched, lookups that latch their leaf) against
+  the tree before it, Clang 15. The bench binary's code (`bench` preset,
+  with LTO) grew 0.4% (`.text` 3.68 → 3.70 MB), and the tests' (`release`
+  preset) 2.6% (3.16 → 3.24 MB). Building the tests' own sources, in a
+  fresh build directory with Catch2 built beforehand and ccache off, on 32
+  threads at load under 0.3, took 103 → 106 s of CPU (user and system) and
+  16.5-16.7 s on the clock either way.
+- **Before it,** the comparison with stx_btree (P32-P37) grew the bench's
+  code 17% (3.15 → 3.68 MB), 0.47 MB of it in the bench's two new maps
+  (the pooled one and stx_btree's), and the tests' build 94 → 103 s of CPU.
