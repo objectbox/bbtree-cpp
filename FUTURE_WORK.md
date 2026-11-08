@@ -42,8 +42,9 @@ an optimistic leaf read.
 ## Lookups that latch the leaf they read
 
 The shared map's lookups that the leaf can't settle unlatched (a string
-key longer than its window, a closure's `read`, a `contains` hit) descend
-again with latches. The Rust crate instead latches the leaf it read, at the
+key longer than its window, a closure's `read`) descend again with
+latches; `contains` and `get_copied` settle the rest unlatched (PORTING.md,
+[`contains`](PORTING.md#p41-contains-settles-unlatched-where-get_copied-does)). The Rust crate instead latches the leaf it read, at the
 version it read, and settles misses unlatched in `read` too
 (`find_optimistic`, `latch_unchanged`). Short string keys are copied out
 unlatched since PORTING.md, [short strings unlatched](PORTING.md#p39-short-string-keys-copied-out-unlatched-by-their-length); the rest would save a

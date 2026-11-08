@@ -1058,3 +1058,14 @@ an owning byte string for keys that does neither.
   search again (`repath`) starts over from the root.
 - **Measured** (a probe: 20 scans of a 1M `u64` map): 4.7 instructions an
   entry fewer, 3% fewer cycles; the time within the probe's noise.
+
+## P41. `contains` settles unlatched where `get_copied` does
+
+- **Chosen:** the shared map's `contains` takes the unlatched lookups of
+  `get_copied` (keys ordered by their own bytes, compared as a copy; short
+  byte strings, by their length, P39), without copying the value, which
+  need not be trivially copyable for it. It had settled only misses whose
+  inline keys ruled them out, and descended again with latches for
+  everything else: a hit, and a miss whose 2-byte window tied with a key.
+- **Measured** (a probe of 1M `u64` keys): hits 145 → 100 ns and misses
+  157 → 90 single-threaded; at 8 threads 20 → 13 ns wall for both.

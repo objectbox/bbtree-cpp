@@ -126,12 +126,14 @@ TEST_CASE("short string keys copied unlatched match std::map, misses included", 
     const auto found = expected.find(key);
     const auto copied = map.get_copied(std::string_view(key));
     REQUIRE(copied.has_value() == (found != expected.end()));
+    REQUIRE(map.contains(std::string_view(key)) == (found != expected.end()));
     if (copied) {
       REQUIRE(*copied == found->second);
     }
     // A key one zero byte longer ties in its window and differs in length.
     const std::string longer = key + std::string(1, '\0');
     REQUIRE(map.get_copied(std::string_view(longer)).has_value() == expected.contains(longer));
+    REQUIRE(map.contains(std::string_view(longer)) == expected.contains(longer));
   }
 }
 
@@ -172,7 +174,8 @@ TEST_CASE("short string keys copied unlatched while writers change their leaves"
         const std::uint64_t i = rng() % keys;
         const auto value = map.get_copied(std::string_view(short_key(i)));
         // Even keys are always there; any value read is its own key's.
-        if ((i % 2 == 0 && !value) || (value && (*value & 0xffffffffu) != i)) {
+        if ((i % 2 == 0 && (!value || !map.contains(std::string_view(short_key(i))))) ||
+            (value && (*value & 0xffffffffu) != i)) {
           wrong.fetch_add(1);
         }
       }

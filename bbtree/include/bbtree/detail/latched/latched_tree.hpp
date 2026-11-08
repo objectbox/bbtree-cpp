@@ -26,6 +26,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace bbtree::detail {
 
@@ -215,11 +216,11 @@ class latched_tree {
     }
     const search_key<T, Q> key(query);
     if constexpr (reads::orders_by_own_bytes && search_key<T, Q>::compares_inline) {
-      if (auto settled = find_unlatched(key)) {
+      if (auto settled = find_unlatched<true>(key)) {
         return *settled;
       }
     } else if constexpr (settles_by_length<Q>) {
-      if (auto settled = find_unlatched_by_length(key)) {
+      if (auto settled = find_unlatched_by_length<true>(key)) {
         return *settled;
       }
     }
@@ -232,14 +233,25 @@ class latched_tree {
       return false;
     }
     const search_key<T, Q> key(query);
-    auto found = descend<leaf_mode::optimistic>(key);
-    if (!found) {
-      return false;
-    }
-    if (!found->at_separator) {
-      const leaf_candidate candidate = reads::candidate(found->leaf.leaf(), key);
-      if (candidate.found == leaf_candidate::kind::absent && found->leaf.is_unchanged()) {
+    // Settled unlatched where `get_copied` would be, hits included.
+    if constexpr (reads::orders_by_own_bytes && search_key<T, Q>::compares_inline) {
+      if (auto settled = find_unlatched<false>(key)) {
+        return settled->has_value();
+      }
+    } else if constexpr (settles_by_length<Q>) {
+      if (auto settled = find_unlatched_by_length<false>(key)) {
+        return settled->has_value();
+      }
+    } else {
+      auto found = descend<leaf_mode::optimistic>(key);
+      if (!found) {
         return false;
+      }
+      if (!found->at_separator) {
+        const leaf_candidate candidate = reads::candidate(found->leaf.leaf(), key);
+        if (candidate.found == leaf_candidate::kind::absent && found->leaf.is_unchanged()) {
+          return false;
+        }
       }
     }
     return read(query, [](const K&, const V&) {});
@@ -387,40 +399,68 @@ class latched_tree {
     return leaf.has_head() && key.cmp_full(leaf.head_key()) == 0;
   }
 
-  // The value at `key`, read and compared as a copy at the leaf's version,
-  // where keys order by their own bytes; none where that doesn't settle it.
-  template <class Q>
-  std::optional<std::optional<V>> find_unlatched(const search_key<T, Q>& key) const noexcept {
+  // What an unlatched lookup settles: a copy of the value if `Copies`
+  // (`get_copied`), only that the key is there if not (`contains`).
+  template <bool Copies>
+  using settled_value = std::conditional_t<Copies, V, std::monostate>;
+
+  template <bool Copies>
+  static settled_value<Copies> value_from(const std::array<std::byte, sizeof(V)>& bytes) noexcept {
+    if constexpr (Copies) {
+      return std::bit_cast<V>(bytes);
+    } else {
+      (void)bytes;
+      return {};
+    }
+  }
+
+  template <bool Copies, class U>
+  static auto copy_value(const U* slot) noexcept {
+    if constexpr (Copies) {
+      return reads::copy_bytes(slot);
+    } else {
+      (void)slot;
+      return std::array<std::byte, sizeof(V)>{};
+    }
+  }
+
+  // The entry at `key`, read and compared as a copy at the leaf's version,
+  // where keys order by their own bytes: its value, if `Copies`; none where
+  // that doesn't settle it.
+  template <bool Copies, class Q>
+  std::optional<std::optional<settled_value<Copies>>> find_unlatched(
+      const search_key<T, Q>& key) const noexcept {
+    using settled = std::optional<settled_value<Copies>>;
     auto found = descend<leaf_mode::optimistic>(key);
     if (!found) {
-      return std::optional<V>();
+      return settled();
     }
     const leaf_node<T> leaf = found->leaf.leaf();
     if (found->at_separator) {
       const bool held = reads::has_head(leaf);
       const auto key_bytes = reads::copy_bytes(leaf.head_key_slot().slot(0));
-      const auto value_bytes = reads::copy_bytes(leaf.head_value_address());
+      const auto value_bytes = copy_value<Copies>(leaf.head_value_address());
       if (!found->leaf.is_unchanged() || !held || key.cmp_full(std::bit_cast<K>(key_bytes)) != 0) {
         return std::nullopt;
       }
-      return std::optional<V>(std::bit_cast<V>(value_bytes));
+      return settled(value_from<Copies>(value_bytes));
     }
     const leaf_candidate candidate = reads::candidate(leaf, key);
     if (candidate.found == leaf_candidate::kind::absent) {
-      return found->leaf.is_unchanged() ? std::optional<std::optional<V>>(std::optional<V>()) : std::nullopt;
+      return found->leaf.is_unchanged() ? std::optional<settled>(settled()) : std::nullopt;
     }
     if (candidate.found == leaf_candidate::kind::unknown) {
       return std::nullopt;
     }
     const auto key_bytes = reads::copy_bytes(leaf.key_address(candidate.index));
-    const auto value_bytes = reads::copy_bytes(leaf.value_address(candidate.index));
+    const auto value_bytes = copy_value<Copies>(leaf.value_address(candidate.index));
     if (!found->leaf.is_unchanged()) {
       return std::nullopt;
     }
     if (key.cmp_full(std::bit_cast<K>(key_bytes)) != 0) {
-      return std::optional<V>();
+      return settled();
     }
-    return std::optional<V>(std::bit_cast<V>(value_bytes));
+    return settled(value_from<Copies>(value_bytes));
   }
 
   // Whether a byte string query is settled in its leaf by its length: the
@@ -435,11 +475,13 @@ class latched_tree {
   // query's, if the query ends within it, is the query's key exactly when
   // its tag, its length, is the query's, so no byte of it is read. Unsettled
   // (null) at a separator, for a longer query, or if the leaf changed.
-  template <class Q>
-  std::optional<std::optional<V>> find_unlatched_by_length(const search_key<T, Q>& key) const noexcept {
+  template <bool Copies, class Q>
+  std::optional<std::optional<settled_value<Copies>>> find_unlatched_by_length(
+      const search_key<T, Q>& key) const noexcept {
+    using settled = std::optional<settled_value<Copies>>;
     auto found = descend<leaf_mode::optimistic>(key);
     if (!found) {
-      return std::optional<V>();
+      return settled();
     }
     if (found->at_separator) {
       return std::nullopt;
@@ -447,7 +489,7 @@ class latched_tree {
     const leaf_node<T> leaf = found->leaf.leaf();
     const leaf_candidate candidate = reads::candidate(leaf, key);
     if (candidate.found == leaf_candidate::kind::absent) {
-      return found->leaf.is_unchanged() ? std::optional<std::optional<V>>(std::optional<V>()) : std::nullopt;
+      return found->leaf.is_unchanged() ? std::optional<settled>(settled()) : std::nullopt;
     }
     const std::size_t len = key.bytes().size();
     if (candidate.found == leaf_candidate::kind::unknown || len >= 255 ||
@@ -455,14 +497,14 @@ class latched_tree {
       return std::nullopt;
     }
     const std::uint8_t stored_len = reads::tag(leaf, candidate.index);
-    const auto value_bytes = reads::copy_bytes(leaf.value_address(candidate.index));
+    const auto value_bytes = copy_value<Copies>(leaf.value_address(candidate.index));
     if (!found->leaf.is_unchanged()) {
       return std::nullopt;
     }
     if (stored_len != len) {
-      return std::optional<V>();
+      return settled();
     }
-    return std::optional<V>(std::bit_cast<V>(value_bytes));
+    return settled(value_from<Copies>(value_bytes));
   }
 
   friend class latched_changes<T>;
