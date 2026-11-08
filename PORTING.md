@@ -924,6 +924,20 @@ an owning byte string for keys that does neither.
   is the design's invariant and costs a load a level.
 - **Found** by comparing the scan with stx_btree's, another C++ form of
   bbtree, which checks the kept levels too.
+- **Untested by failure:** with the check removed (it answering "as read"
+  always), the scan stress tests (`[scan]`: forward and reverse scans of
+  20,000 `u64` entries, three levels, against writers that split and merge
+  leaves) passed 6,000 runs in a release build. Counted, a run checks kept
+  levels about 500 times (the crossings that turn at the root), and in no
+  run had one of them changed by then, even with the forward scan's visitor
+  slowed to widen the window: the tests don't reach the case the check
+  guards. A test that does would need a hook that pauses a scan between
+  leaves while a writer splits or merges a leaf beside the held one, under
+  the same parent. That changes a kept level without moving the held leaf's
+  neighbor, so the check would search again needlessly; whatever does move
+  the neighbor across the turn rewrites a separator in the node turned at,
+  whose version the scan checks already. So the check is expected never to
+  be what catches an error; it stays as the design's invariant.
 
 ## P37. The shared map's scratch arrays stay unwritten until used
 
