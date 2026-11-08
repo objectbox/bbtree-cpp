@@ -32,29 +32,29 @@ smaller is better. Bold marks the fastest ordered map of each row.
 
 | cell | bbtree++ | absl btree | std::map | std::unordered_map |
 |---|--:|--:|--:|--:|
-| u64_u64_random_insert_1k | 29.8 | **17.5** | 21.9 | 11.1 |
-| u64_u64_sequential_insert_1k | **8.29** | 16.1 | 27.4 | 9.62 |
-| u64_u64_get_hit_1k | **16.0** | 22.9 | 23.2 | 7.26 |
-| u64_u64_get_miss_1k | **14.9** | 22.0 | 22.2 | 10.2 |
-| u64_u64_iterate_1k | **0.251** | 0.868 | 3.00 | 0.874 |
-| u64_u64_range64_1k | 125 | **88.9** | 253 | — |
-| u64_u64_random_remove_1k | 39.1 | **38.6** | 50.6 | 11.7 |
-| u64_u64_entry_upsert_1k | **29.1** | 34.1 | 37.3 | 15.1 |
-| u64_u64_pop_first_1k | 14.2 | **7.53** | 9.07 | — |
-| u64_u64_bulk_build_1k | **3.04** | 4.63 | 32.2 | 10.5 |
-| u64_u64_random_insert_1M | **90.2** | 97.7 | 201 | 56.4 |
-| u64_u64_sequential_insert_1M | **11.6** | 33.5 | 79.3 | 57.2 |
-| u64_u64_get_hit_1M | **81.3** | 97.7 | 205 | 26.0 |
-| u64_u64_get_miss_1M | **65.6** | 111 | 191 | 27.0 |
-| u64_u64_iterate_1M | **0.777** | 1.78 | 57.0 | 17.5 |
-| u64_u64_range64_1M | 277 | **216** | 3182 | — |
-| u64_u64_random_remove_1M | **89.4** | 90.8 | 278 | 88.7 |
-| u64_u64_entry_upsert_1M | **68.8** | 81.7 | 199 | 46.3 |
-| u64_u64_pop_first_1M | 16.7 | **8.06** | 40.5 | — |
-| u64_u64_bulk_build_1M | **5.30** | 6.62 | 91.0 | 57.5 |
-| u64_u64_random_insert_10M | 264 | **246** | 667 | 193 |
-| u64_u64_get_hit_10M | **237** | 310 | 461 | 38.7 |
-| u64_u64_get_miss_10M | **173** | 316 | 490 | 43.6 |
+| u64_u64_random_insert_1k | 28.8 | **20.5** | 22.5 | 11.4 |
+| u64_u64_sequential_insert_1k | **7.11** | 19.2 | 27.8 | 9.74 |
+| u64_u64_get_hit_1k | **16.0** | 23.2 | 23.6 | 7.68 |
+| u64_u64_get_miss_1k | **14.9** | 22.1 | 23.3 | 10.3 |
+| u64_u64_iterate_1k | **0.211** | 0.877 | 3.02 | 0.869 |
+| u64_u64_range64_1k | 99.1 | **88.1** | 252 | — |
+| u64_u64_random_remove_1k | **38.1** | 38.4 | 52.0 | 11.8 |
+| u64_u64_entry_upsert_1k | **28.8** | 33.6 | 38.3 | 15.7 |
+| u64_u64_pop_first_1k | 14.2 | **7.91** | 8.83 | — |
+| u64_u64_bulk_build_1k | **2.82** | 4.72 | 31.7 | 10.1 |
+| u64_u64_random_insert_1M | **86.5** | 93.3 | 199 | 58.0 |
+| u64_u64_sequential_insert_1M | **10.5** | 36.5 | 79.5 | 56.0 |
+| u64_u64_get_hit_1M | **90.8** | 101 | 207 | 25.9 |
+| u64_u64_get_miss_1M | **63.5** | 104 | 190 | 27.3 |
+| u64_u64_iterate_1M | **0.785** | 1.68 | 52.2 | 17.2 |
+| u64_u64_range64_1M | 234 | **222** | 3152 | — |
+| u64_u64_random_remove_1M | 92.4 | **92.2** | 276 | 82.7 |
+| u64_u64_entry_upsert_1M | **71.5** | 86.4 | 198 | 45.9 |
+| u64_u64_pop_first_1M | 16.8 | **8.26** | 43.0 | — |
+| u64_u64_bulk_build_1M | **5.19** | 7.18 | 87.4 | 58.1 |
+| u64_u64_random_insert_10M | 248 | **237** | 687 | 199 |
+| u64_u64_get_hit_10M | **245** | 318 | 468 | 37.1 |
+| u64_u64_get_miss_10M | **172** | 310 | 471 | 42.7 |
 
 ## String keys
 
@@ -72,25 +72,25 @@ ordered map of each row.
 
 | cell | bbtree++ | compact string | absl btree | std::map | std::unordered_map |
 |---|--:|---|--:|--:|--:|
-| str-16_u64_random_insert_1k | **38.4** | `compact_string<2>` | 109 | 105 | 21.4 |
-| str-16_u64_sequential_insert_1k | **14.7** | `compact_string` | 48.9 | 116 | 26.4 |
-| str-16_u64_get_hit_1k | **33.4** | `compact_string_24` | 72.7 | 84.0 | 21.0 |
-| str-16_u64_get_miss_1k | **24.1** | `compact_string_24` | 77.2 | 81.2 | 21.7 |
-| str-16_u64_iterate_1k | **0.430** | `compact_string<2>` | 1.22 | 3.67 | 2.25 |
-| str-16_u64_range64_1k | 192 | `compact_string<2>` | **152** | 321 | — |
-| str-16_u64_random_remove_1k | **63.3** | `compact_string<2>` | 107 | 112 | 25.5 |
-| str-16_u64_entry_upsert_1k | **42.8** | `compact_string` | 114 | 103 | 33.4 |
-| str-16_u64_pop_first_1k | **15.1** | `compact_string` | 29.0 | 15.8 | — |
-| str-16_u64_bulk_build_1k | **9.39** | `compact_string` | 19.3 | 123 | 23.1 |
-| str-json_struct32_build_many_1Mx4 | 63.4 | `compact_string` | **44.9** | 48.1 | 42.5 |
-| str-json_struct32_get_many_1Mx4 | 75.9 | `compact_string_24` | **73.7** | 99.3 | 56.7 |
-| str-json_struct32_iterate_1Mx4 | **3.18** | `compact_string` | 3.44 | 4.43 | 4.29 |
-| str-json_struct32_build_many_100kx32 | **54.0** | `compact_string` | 98.7 | 81.4 | 51.1 |
-| str-json_struct32_get_many_100kx32 | **53.1** | `compact_string<2>` | 66.5 | 86.3 | 48.1 |
-| str-json_struct32_iterate_100kx32 | **5.19** | `compact_string<2>` | 16.5 | 25.2 | 20.7 |
-| str-json_u64_random_insert_1M | **147** | `compact_string` | 355 | 462 | 142 |
-| str-json_u64_get_hit_1M | **198** | `compact_string_24` | 403 | 632 | 138 |
-| str-json_u64_get_miss_1M | **149** | `compact_string` | 413 | 643 | 112 |
+| str-16_u64_random_insert_1k | **38.9** | `compact_string<2>` | 107 | 108 | 22.3 |
+| str-16_u64_sequential_insert_1k | **14.9** | `compact_string` | 50.0 | 121 | 26.4 |
+| str-16_u64_get_hit_1k | **32.5** | `compact_string_24` | 72.5 | 82.9 | 20.4 |
+| str-16_u64_get_miss_1k | **23.0** | `compact_string_24` | 77.5 | 76.4 | 21.5 |
+| str-16_u64_iterate_1k | **0.418** | `compact_string` | 1.22 | 3.58 | 2.16 |
+| str-16_u64_range64_1k | **120** | `compact_string` | 159 | 325 | — |
+| str-16_u64_random_remove_1k | **62.7** | `compact_string` | 109 | 110 | 24.8 |
+| str-16_u64_entry_upsert_1k | **41.9** | `compact_string` | 115 | 105 | 32.0 |
+| str-16_u64_pop_first_1k | **14.5** | `compact_string` | 29.4 | 15.5 | — |
+| str-16_u64_bulk_build_1k | **8.99** | `compact_string` | 18.5 | 129 | 22.9 |
+| str-json_struct32_build_many_1Mx4 | 61.9 | `compact_string<2>` | **46.3** | 51.5 | 42.9 |
+| str-json_struct32_get_many_1Mx4 | 75.9 | `compact_string_24` | **73.8** | 100 | 55.9 |
+| str-json_struct32_iterate_1Mx4 | **3.31** | `compact_string<2>` | 3.46 | 4.51 | 4.40 |
+| str-json_struct32_build_many_100kx32 | **53.0** | `compact_string<2>` | 101 | 86.9 | 52.0 |
+| str-json_struct32_get_many_100kx32 | **53.8** | `compact_string<2>` | 66.6 | 85.6 | 48.2 |
+| str-json_struct32_iterate_100kx32 | **5.20** | `compact_string<2>` | 16.6 | 25.4 | 20.9 |
+| str-json_u64_random_insert_1M | **133** | `compact_string<2>` | 352 | 457 | 161 |
+| str-json_u64_get_hit_1M | **194** | `compact_string_24` | 394 | 638 | 142 |
+| str-json_u64_get_miss_1M | **142** | `compact_string<2>` | 422 | 618 | 109 |
 
 The `1Mx4` and `100kx32` rows are the `tiny` suite's: a million maps of 4
 entries and 100k maps of 32, keys and 32-byte values.
@@ -106,35 +106,35 @@ row.
 
 | cell | `std::string` | `compact_string` (16 B, 4-byte size, 12 in place) | `compact_string<2>` (16 B, 2-byte size, 14 in place) | `compact_string_24` (24 B, 20 in place) |
 |---|--:|--:|--:|--:|
-| str-16_u64_random_insert_1k | 60.1 | 38.7 | **38.4** | 40.9 |
-| str-16_u64_sequential_insert_1k | 30.6 | **14.7** | 17.3 | 17.3 |
-| str-16_u64_get_hit_1k | 37.5 | 38.4 | 38.0 | **33.4** |
-| str-16_u64_get_miss_1k | **22.2** | 25.5 | 25.5 | 24.1 |
-| str-16_u64_iterate_1k | 0.442 | 0.431 | **0.430** | 0.475 |
-| str-16_u64_range64_1k | 263 | 206 | **192** | 227 |
-| str-16_u64_random_remove_1k | 106 | 65.5 | **63.3** | 65.3 |
-| str-16_u64_entry_upsert_1k | 71.5 | **42.8** | 43.9 | 43.5 |
-| str-16_u64_pop_first_1k | 72.1 | **15.1** | 15.2 | 18.1 |
-| str-16_u64_bulk_build_1k | 20.3 | **9.39** | 11.3 | 11.4 |
-| str-json_struct32_build_many_1Mx4 | 74.6 | **63.4** | 64.1 | 64.0 |
-| str-json_struct32_get_many_1Mx4 | **75.4** | 78.5 | 77.6 | 75.9 |
-| str-json_struct32_iterate_1Mx4 | 5.42 | **3.18** | 3.38 | 5.32 |
-| str-json_struct32_build_many_100kx32 | 93.4 | **54.0** | 55.8 | 60.9 |
-| str-json_struct32_get_many_100kx32 | 63.2 | 55.6 | **53.1** | 61.8 |
-| str-json_struct32_iterate_100kx32 | 7.29 | 5.32 | **5.19** | 6.26 |
-| str-json_u64_random_insert_1M | 229 | **147** | 171 | 173 |
-| str-json_u64_get_hit_1M | 240 | 223 | 227 | **198** |
-| str-json_u64_get_miss_1M | 154 | **149** | 166 | 156 |
+| str-16_u64_random_insert_1k | 58.8 | 39.7 | **38.9** | 41.7 |
+| str-16_u64_sequential_insert_1k | 29.8 | **14.9** | 16.2 | 17.2 |
+| str-16_u64_get_hit_1k | 37.8 | 38.2 | 38.1 | **32.5** |
+| str-16_u64_get_miss_1k | 23.4 | 24.6 | 26.3 | **23.0** |
+| str-16_u64_iterate_1k | 0.432 | **0.418** | 0.442 | 0.485 |
+| str-16_u64_range64_1k | 150 | **120** | 126 | 127 |
+| str-16_u64_random_remove_1k | 112 | **62.7** | 64.5 | 64.5 |
+| str-16_u64_entry_upsert_1k | 71.5 | **41.9** | 43.8 | 42.5 |
+| str-16_u64_pop_first_1k | 73.6 | **14.5** | 15.6 | 17.8 |
+| str-16_u64_bulk_build_1k | 19.2 | **8.99** | 10.7 | 10.7 |
+| str-json_struct32_build_many_1Mx4 | 73.3 | 64.3 | **61.9** | 64.5 |
+| str-json_struct32_get_many_1Mx4 | **74.4** | 77.0 | 76.2 | 75.9 |
+| str-json_struct32_iterate_1Mx4 | 5.40 | 3.63 | **3.31** | 5.33 |
+| str-json_struct32_build_many_100kx32 | 94.6 | 54.7 | **53.0** | 58.8 |
+| str-json_struct32_get_many_100kx32 | 62.3 | 55.3 | **53.8** | 60.7 |
+| str-json_struct32_iterate_100kx32 | 7.23 | 5.45 | **5.20** | 6.25 |
+| str-json_u64_random_insert_1M | 226 | 138 | **133** | 172 |
+| str-json_u64_get_hit_1M | 228 | 213 | 211 | **194** |
+| str-json_u64_get_miss_1M | 159 | 144 | **142** | 154 |
 
 - **Writes:** a string → `u64` leaf entry shrinks from 49 bytes to 33 and
-  shifts by one `memmove`: 1M JSON-key inserts 229 → 147 ns; removes,
+  shifts by one `memmove`: 1M JSON-key inserts 226 → 138 ns; removes,
   upserts, bulk builds and builds of 32-entry maps 0.45-0.6×; `pop_first`
-  0.21×.
-- **Iteration:** 0.59× `std::string`'s for maps of 4, 0.73× for maps of
+  0.2×.
+- **Iteration:** 0.67× `std::string`'s for maps of 4, 0.75× for maps of
   32. A first layout with 15 bytes in place decoded the size in eight
   instructions and walked 1.2-1.4× slower; PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place),
   has the measurement.
-- **Lookups** with `compact_string` are within 15% of `std::string`'s or
+- **Lookups** with `compact_string` are within 5% of `std::string`'s or
   faster: with 12 bytes in place, 16% of JSON keys and most `str-16` keys
   live on the heap, so a tie reads a line past the node, and `data()`
   branches on the form. Not profiled further.
@@ -142,10 +142,10 @@ row.
   Misses in 1M maps came out from 9% faster to 11% slower across runs,
   and the rest within run-to-run noise: no gain outside noise. Strings are capped at
   65,535 bytes.
-- **24 bytes** hold most `str-16` keys (median 16) in place: hits 13%
-  faster at 1k and 11% at 1M JSON keys. A string → `u64` leaf entry is 41
-  bytes, as the Rust crate's `String`, against 33: inserts 6-18% slower,
-  walks of many maps 18-67%, `pop_first` 20%.
+- **24 bytes** hold most `str-16` keys (median 16) in place: hits 15%
+  faster at 1k and 9% at 1M JSON keys. A string → `u64` leaf entry is 41
+  bytes, as the Rust crate's `String`, against 33: inserts 5-25% slower,
+  walks of many maps 15-47%, `pop_first` 23%.
 - `compact_string` stays the 16-byte default: no cap, and nothing the
   2-byte size wins is outside noise.
 
@@ -231,32 +231,25 @@ range of the two:
 String figures are bbtree++'s with its best compact string.
 
 - **bbtree++ is faster:**
-  - lookups: 1.2-1.8× on u64, 2-3× on 16-byte strings, 2-2.8× on 1M JSON
+  - lookups: 1.1-1.8× on u64, 2-3.4× on 16-byte strings, 2-3× on 1M JSON
     strings;
   - string writes (inserts, upserts, removes, bulk builds, `pop_first`):
-    1.7-2.8×;
-  - sequential inserts: 2-3×;
-  - iterating 1k-entry maps: about 3×;
-  - `range64` on strings: 1.25× (125 ns against 158, since the inlined
-    step, COMPARISON.md, the second round).
+    1.7-2.75×;
+  - sequential inserts: 2.7-3.5×;
+  - iterating: 3-4× at 1k, 2.1× at 1M, 3.2× for 100k maps of 32;
+  - u64 upserts and bulk builds: 1.2-1.7×;
+  - `range64` on strings: 1.3×.
 - **abseil is faster:**
-  - random u64 inserts at 1k: 1.7×;
-  - `range64` on u64: 1.15× at 1k and 1.15-1.3× at 1M, since the inlined
-    step (it was 1.5×);
-  - `pop_first` on u64: 1.9×;
+  - random u64 inserts at 1k: 1.4×;
+  - `range64` on u64: 1.05-1.15×;
+  - `pop_first` on u64: 1.8-2×;
   - building many 4-entry maps: 1.3×.
-- **About even:** u64 removes and bulk builds, lookups in many small maps,
-  and iterating many 4-entry maps since the four-a-round root leaves (3.2
-  ns per entry against 3.46).
-- **At 1M and 10M:** bbtree++ misses 1.75-1.85× faster on u64, hits 1.4×
-  faster at 10M, inserts sequential u64 3.4× faster and iterates 2.2×
-  faster; on JSON strings it inserts and misses 2.5× and hits 2× faster.
-  abseil pops the first entry 2.1× faster and scans `range64` 1.15-1.3×
-  faster; random u64 inserts, removes, upserts and bulk builds are within
-  11%.
+- **About even:** u64 removes, random u64 inserts at 1M and 10M (bbtree++
+  8% faster at 1M, abseil 5% at 10M), lookups in 4-entry maps, and
+  iterating them (3.31 ns per entry against 3.46).
 
 The Rust original has the 1k insert gap too: COMPARISON.md has
-bbtree (Rust) at 35.8 ns on 1k random u64 inserts against `BTreeMap`'s
+bbtree (Rust) at 35.6 ns on 1k random u64 inserts against `BTreeMap`'s
 17.6, so that gap comes from the design, not bbtree++. Building many
 small maps pays a full 1 KiB root page a map, where abseil sizes its root
 leaf to its entries (FUTURE_WORK.md).
@@ -278,48 +271,42 @@ smaller is better; bold marks the faster. Rows differing by more than 10%:
 
 | cell | bbtree++ | stx_btree |
 |---|--:|--:|
-| str-16_u64_entry_upsert_1k | **71.4** | 82.3 |
-| str-16_u64_get_hit_1k | 37.6 | **33.2** |
-| str-16_u64_iterate_1k | **0.439** | 1.11 |
-| str-16_u64_range64_1k | 262 | **144** |
-| str-json_struct32_build_many_1Mx4 | **74.4** | 128 |
-| str-json_struct32_iterate_100kx32 | **7.25** | 9.90 |
-| str-json_struct32_iterate_1Mx4 | **5.42** | 13.8 |
-| u64_u64_entry_upsert_1M | **68.5** | 83.5 |
-| u64_u64_get_hit_1k | 16.0 | **13.0** |
-| u64_u64_get_miss_1k | 14.9 | **12.0** |
-| u64_u64_iterate_1M | **0.693** | 1.40 |
-| u64_u64_iterate_1k | **0.237** | 1.05 |
-| u64_u64_pop_first_1M | **16.5** | 20.2 |
-| u64_u64_random_insert_1M | 89.7 | **80.2** |
-| u64_u64_random_insert_1k | 29.1 | **26.3** |
-| u64_u64_random_remove_1k | 39.3 | **34.8** |
-| u64_u64_range64_1M | 262 | **233** |
-| u64_u64_range64_1k | 125 | **96.0** |
-| u64_u64_sequential_insert_1M | 11.7 | **9.13** |
-| u64_u64_sequential_insert_1k | 8.22 | **6.49** |
+| str-16_u64_entry_upsert_1k | **69.0** | 82.9 |
+| str-16_u64_get_miss_1k | **22.3** | 25.5 |
+| str-16_u64_iterate_1k | **0.418** | 1.17 |
+| str-json_struct32_build_many_1Mx4 | **72.9** | 133 |
+| str-json_struct32_get_many_100kx32 | 61.4 | **54.7** |
+| str-json_struct32_iterate_100kx32 | **7.41** | 10.1 |
+| str-json_struct32_iterate_1Mx4 | **5.31** | 13.3 |
+| u64_u64_entry_upsert_1M | **69.9** | 83.0 |
+| u64_u64_get_hit_1k | 15.3 | **13.1** |
+| u64_u64_get_miss_1M | 66.4 | **57.2** |
+| u64_u64_get_miss_1k | 14.1 | **12.1** |
+| u64_u64_iterate_1M | **0.743** | 1.48 |
+| u64_u64_iterate_1k | **0.218** | 1.07 |
+| u64_u64_pop_first_1M | **16.8** | 20.1 |
+| u64_u64_random_remove_1M | **91.1** | 101 |
+| u64_u64_range64_1M | 257 | **231** |
 
 The rest of the 39 cells are within 10%. The two ports' algorithms match
 nearly line for line; where stx_btree leads:
 
-- **Lookups at 1k (1.2-1.25×):** a standalone probe of both maps' `u64` lookups gives
+- **Lookups (1.15-1.2×), at 1k and 1M misses:** a standalone probe of both maps' `u64` lookups gives
   13.3 against 12.9 ns for hits and 12.8 against 13.0 for misses, 16 more
-  instructions a hit in bbtree++; the bench's 1k cells show 20-25%, the
-  bench's build of the lookup (not its algorithm) the likelier cause. A
-  vectorized count of the leaf's last slots (55 two-byte slots leave 7 for
-  a scalar tail) cut the count's instructions by a third and changed
-  nothing: lookups wait on their loads, not on the count.
-- **`range64`:** stx_btree's scan loop has no call and keeps its position
-  in registers; bbtree++'s kept it in memory. Since its forward step is
-  inlined whole (PORTING.md, [forward steps](../../PORTING.md#p38-a-step-is-inlined-whole-so-the-position-stays-in-registers)), it runs `range64` in
-  94-98 ns on `u64` at 1k and 144-153 on 16-byte strings: even with
-  stx_btree's.
-- **Sequential inserts (1.25-1.3×):** 16 more instructions an append, spread over the
-  append and the split's second search. Part of it is the check of the
-  prefix every key shares by 8-byte windows (COMPARISON.md, where
-  bbtree++ trails): the check out of line on the append path gave 7.3 ns
-  at 1k in a trial, against stx_btree's 6.5.
-- **Random inserts and removes (1.1×):** not looked into.
+  instructions a hit in bbtree++; the bench's 1k cells show 15-25% across
+  runs, the bench's build of the lookup (not its algorithm) the likelier
+  cause. A vectorized count of the leaf's last slots (55 two-byte slots
+  leave 7 for a scalar tail) cut the count's instructions by a third and
+  changed nothing: lookups wait on their loads, not on the count.
+- **`range64` at 1M (1.1×):** within the cell's run-to-run range;
+  bbtree++'s runs of it took 232-309 ns.
+
+Sequential inserts were 1.25-1.3× slower until appends checked the shared
+prefix out of line (PORTING.md, [loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)); now
+1.06-1.09×.
+`range64` was 1.25-1.8× slower before bbtree++'s steps were inlined whole
+(PORTING.md, [forward steps](../../PORTING.md#p38-a-step-is-inlined-whole-so-the-position-stays-in-registers)): stx_btree's scan loop keeps its position in
+registers, bbtree++'s kept it in memory. Now they are even at 1k.
 
 What bbtree++ took from the comparison (PORTING.md): [packed pages](../../PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in)
 (`pooled_allocator`), [install rules](../../PORTING.md#p34-installing-find_packagebbtree-with-the-targets-own-names) checked by a moved install,
@@ -341,4 +328,4 @@ in the shared map.
 - **String key types:** `bbtree-bench cpp --key str-16,str-json --size
   1k,1M,1Mx4,100kx32` on bbtree++'s maps, one run each, 23 s.
 - **Memory:** `bbtree-bench-memory cpp`, as its section says; the
-  counts were the same byte for byte on a rerun.
+  counts were the same byte for byte on a rerun after the second round.
