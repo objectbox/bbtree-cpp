@@ -782,9 +782,14 @@ an owning byte string for keys that does neither.
   | 10M get miss | 166 | 216 | 184 |
 
   On glibc, abseil's B-tree, whose 256-byte nodes `malloc` packs, lost
-  1.15-2.2×, so bbtree++'s lead over it mostly went. On mimalloc the pool is
-  within run-to-run noise but for bulk builds (4.9 → 5.9 ns), which fault in
-  its fresh mappings where mimalloc reuses memory the cell's setup freed.
+  1.15-2.2×, so bbtree++'s lead over it mostly went. On mimalloc the pool
+  runs the same instructions, and in four windows of runs its cells fell on
+  either side of the global allocator's: JSON-key lookups 7% slower in one
+  and even in the next, `u64` lookups 18% faster in a third. One binary's
+  cells moved by up to 13% between two runs, and a walk by 2× (0.74 and
+  1.60 ns an entry). Only bulk builds were slower in every pair, eight of
+  them, by 7-17%, the extra time outside user code, where the pool's fresh
+  chunks are faulted in (CPP_MAPS.md, "On glibc's allocator").
 - **Why not the default:** a pool per map costs small maps. A pool is about
   200 bytes of its own, and the doubling chunks leave pages unused: 1M maps
   of 4 entries took 331 bytes an entry against 275, 100k maps of 32 took 237
@@ -813,11 +818,12 @@ an owning byte string for keys that does neither.
     search on every free, for maps that shrink a lot; left to FUTURE_WORK.md.
 - **Measured** with `bbtree-bench-system` and `bbtree-bench`, `cpp` suite,
   `bbtree-unsync` against `bbtree-unsync-pooled` (opt-in), one run each at
-  load under 0.3; memory with `bbtree-bench-memory`. The memory binary
-  counts `operator new`, not the pool's `mmap`ed chunks, so the pooled
-  rows of 1M-entry maps read low there; resident memory grew by 33.7 bytes
-  an entry for 1M `u64` entries against 25.3, the last chunks' unused
-  pages and huge-page rounding.
+  load under 0.3; the get hit row lies within the 78-122 ns that cell moves
+  between runs (CPP_MAPS.md, "On glibc's allocator"). Memory with
+  `bbtree-bench-memory`. The memory binary counts `operator new`, not the
+  pool's `mmap`ed chunks, so the pooled rows of 1M-entry maps read low
+  there; resident memory grew by 33.7 bytes an entry for 1M `u64` entries
+  against 25.3, the last chunks' unused pages and huge-page rounding.
 - **The shared map on 8 threads:** P37's probe (1M random `u64` inserts,
   then gets, updates and removals), each operation's share of the run's
   time. On glibc, which P37's figures were taken on, the pool made inserts

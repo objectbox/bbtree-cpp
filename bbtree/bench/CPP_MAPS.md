@@ -19,6 +19,9 @@ key order, so it iterates in no particular order and has no `range64` or
   1.5-3× as fast as `std::map` and abseil's B-tree, and slower mainly on
   building many 4-entry maps.
 - **Memory:** bbtree++ takes 0.4-0.7× `std::map`'s bytes per entry.
+- **On glibc's allocator:** instead of mimalloc, bbtree++ takes 3-4.5× as
+  long to walk and build large maps; the opt-in pooled allocator takes most
+  of that back.
 - **`std::unordered_map`**, unordered and for reference only, stays faster
   on lookups and random inserts, as expected of a hash map.
 
@@ -192,6 +195,36 @@ a 4-byte size, up to 12 in place) for JSON keys. The other maps have
   `str-16` at 1k.
 - **The Rust crate** takes the same bytes on every `u64` cell; with its
   24-byte `String` keys it takes 68.4 on 1M JSON keys.
+
+## On glibc's allocator
+
+Every other table here runs on mimalloc, as the Rust bench does.
+`bbtree-bench-system` runs the same cells on the system's allocator, glibc
+2.39 here, whose aligned `operator new` places bbtree++'s 1 KiB pages
+with gaps between them and on 4 KiB pages: walks then take about 3× as
+long, and bulk builds over 4×. The opt-in `pooled_allocator`
+([packed pages](../../PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in))
+takes most of that back. Two runs of each binary at load under 0.3, the
+range of the two:
+
+| cell | mimalloc | glibc | glibc, pooled |
+|---|--:|--:|--:|
+| u64_u64_iterate_1M | 0.67-0.72 | 2.18-2.29 | 0.71-0.73 |
+| u64_u64_bulk_build_1M | 5.25-5.72 | 23.8-24.3 | 7.84-8.41 |
+| u64_u64_random_insert_1M | 83.3-87.3 | 136-139 | 92.4-96.5 |
+| str-json_u64_random_insert_1M | 225-228 | 357-359 | 235-238 |
+| str-json_u64_get_hit_1M | 230-232 | 273-275 | 245-258 |
+
+- **On mimalloc** the pool runs the same instructions as the global
+  allocator, and its cells fell on either side of the global allocator's
+  from one window of runs to the next; one of its walks took 1.60 ns an
+  entry, against 0.74 in the run before. Only bulk builds were slower in
+  every pair, by 7-17%, the extra time spent outside user code, where the
+  pool's fresh chunks are faulted in. It stays opt-in for that, and for
+  what it costs small maps.
+- **`u64` lookups** at 1M are left out: `u64_u64_get_hit_1M` moved between
+  78 and 122 ns from run to run on either allocator, with or without the
+  pool.
 
 ## Against abseil's B-tree
 
