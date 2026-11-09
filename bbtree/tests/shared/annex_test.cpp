@@ -26,6 +26,8 @@ struct page_counts {
   std::atomic<long> heap{0};
   // What the annexes counted, summed as the map released them.
   std::atomic<long> released{0};
+  // Whether node pages are refused, as past a budget.
+  std::atomic<bool> refuses_nodes{false};
 };
 
 // Counts the pages it hands out, so a test can check that every one went
@@ -35,6 +37,9 @@ class counting_pages {
   explicit counting_pages(page_counts& counts) noexcept : counts_(&counts) {}
 
   void* allocate_zeroed(bbtree::page_layout layout) const noexcept {
+    if (counts_->refuses_nodes.load()) {
+      return nullptr;
+    }
     ++counts_->nodes;
     return bbtree::global_allocator{}.allocate_zeroed(layout);
   }
@@ -276,6 +281,96 @@ TEST_CASE("a refused insert changes nothing", "[shared][annex]") {
   }
   CHECK(counts.heap.load() == 0);
   CHECK(counts.nodes.load() == 0);
+}
+
+TEST_CASE("closures refuse an insert by an empty result", "[shared][annex]") {
+  page_counts counts;
+  const counting_pages pages(counts);
+  {
+    annexed_map map(pages);
+    std::map<std::uint64_t, std::uint64_t> model;
+    std::mt19937_64 rng(10);
+    const std::uint64_t count = 2'000;
+    const auto insert_unless = [&](bool refuses, std::uint64_t key, std::uint64_t value) {
+      return map.try_update_or_insert_with_leaf(
+          key, value,
+          [&](held_leaf, const std::uint64_t&, std::uint64_t& stored) -> std::optional<bool> {
+            if (refuses) {
+              return std::nullopt;
+            }
+            stored = value;
+            return false;
+          },
+          [&](held_leaf, const std::uint64_t&, const std::uint64_t&) -> std::optional<bool> {
+            if (refuses) {
+              return std::nullopt;
+            }
+            return true;
+          });
+    };
+    for (std::uint64_t step = 0; step < count; ++step) {
+      const std::uint64_t key = rng() % (2 * count);
+      REQUIRE(insert_unless(false, key, step) == !model.contains(key));
+      model[key] = step;
+    }
+    // New keys land in leaves with room, full leaves that would split, and
+    // after the last key; held keys refuse on the update.
+    for (std::uint64_t key = 0; key < 2 * count + 100; key += 3) {
+      REQUIRE(insert_unless(true, key, 0) == std::nullopt);
+    }
+    map.check_invariants(model.size());
+    require_holds(map, model);
+
+    // The allocator's refusal of a node page is an empty result too: of
+    // these new keys, those that find room in their leaf go in, and those
+    // whose leaf must split do not, once the pages that the refused splits
+    // above took and left to the map are used up.
+    counts.refuses_nodes.store(true);
+    std::uint64_t refused = 0;
+    for (std::uint64_t key = 2 * count; key < 3 * count; ++key) {
+      const std::optional<bool> inserted = insert_unless(false, key, key);
+      if (inserted) {
+        REQUIRE(*inserted);
+        model[key] = key;
+      } else {
+        ++refused;
+      }
+    }
+    CHECK(refused > count / 2);
+    map.check_invariants(model.size());
+    require_holds(map, model);
+    counts.refuses_nodes.store(false);
+    REQUIRE(insert_unless(false, 3 * count, 1) == true);
+    model[3 * count] = 1;
+    map.check_invariants(model.size());
+    require_holds(map, model);
+  }
+  CHECK(counts.heap.load() == 0);
+  CHECK(counts.nodes.load() == 0);
+}
+
+TEST_CASE("an empty map whose root page is refused", "[shared][annex]") {
+  page_counts counts;
+  const counting_pages pages(counts);
+  counts.refuses_nodes.store(true);
+  annexed_map map(pages);
+  const auto accept = [](held_leaf, const std::uint64_t&, const std::uint64_t&) -> std::optional<bool> {
+    return true;
+  };
+  const auto replace = [](held_leaf, const std::uint64_t&, std::uint64_t&) -> std::optional<bool> {
+    return false;
+  };
+  // By an empty result where the closures may refuse, by `alloc_error`
+  // elsewhere.
+  CHECK(map.try_update_or_insert_with_leaf(1, 1, replace, accept) == std::nullopt);
+  CHECK_THROWS_AS(insert(map, pages, 1, 1), bbtree::alloc_error);
+  CHECK_THROWS_AS(map.insert(1, 1), bbtree::alloc_error);
+  map.check_invariants(0);
+  counts.refuses_nodes.store(false);
+  CHECK(map.try_update_or_insert_with_leaf(1, 1, replace, accept) == true);
+  CHECK(map.try_update_or_insert_with_leaf(1, 2, replace, accept) == false);
+  map.check_invariants(1);
+  CHECK(map.get_copied(1) == 1);
 }
 
 TEST_CASE("annexes keep their counts while threads insert and remove", "[shared][annex]") {

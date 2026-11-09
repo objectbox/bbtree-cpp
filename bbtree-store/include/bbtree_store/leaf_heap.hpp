@@ -53,6 +53,7 @@
 #include <cstring>
 #include <functional>
 #include <new>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -211,33 +212,39 @@ class record_heap {
     return orphans_.load(std::memory_order_acquire) > 0 || overflowed_.load(std::memory_order_relaxed);
   }
 
-  // Writes the pages of the record of a key of `key_len` and `value` that lie
-  // outside its leaf's heap: its overflow pages, into `pages`, for `write`,
-  // with the value's bytes the record doesn't keep; none if it keeps them
-  // all. Throws `alloc_error` if a page is refused.
-  void write_overflow(std::size_t key_len, bytes value, unlinked_overflow<A, C>& pages) {
+  // Whether the pages of the record of a key of `key_len` and `value` that
+  // lie outside its leaf's heap are written: its overflow pages, into
+  // `pages`, for `write`, with the value's bytes the record doesn't keep;
+  // none if it keeps them all. False if a page is refused.
+  [[nodiscard]] bool write_overflow(std::size_t key_len, bytes value,
+                                    unlinked_overflow<A, C>& pages) noexcept {
     const std::size_t kept = record<C>::kept_len(key_len, value.size());
     if (kept == value.size()) {
-      return;
+      return true;
     }
     const overflow<C> written = overflow<C>::write(value.subspan(kept), allocator_);
     if (!written) {
-      throw bbtree::alloc_error();
+      return false;
     }
     pages.hold(written);
     if (!overflowed_.load(std::memory_order_relaxed)) {
       overflowed_.store(true, std::memory_order_relaxed);
     }
+    return true;
   }
 
   // Writes the record of `key` and `value`, which takes the overflow pages
   // `write_overflow` wrote from `pages`, into `leaf`'s heap, for a key of
-  // `leaf` to point to; throws `alloc_error`, `pages` left as they are, if a
-  // page it needs is refused. The leaf's records may move first, for room,
-  // or to their own leaf (top of the file).
-  record<C> write(store_leaf& leaf, bytes key, bytes value, unlinked_overflow<A, C>& pages) {
+  // `leaf` to point to; none, `pages` left as they are, if a page it needs
+  // is refused. The leaf's records may move first, for room, or to their own
+  // leaf (top of the file).
+  [[nodiscard]] std::optional<record<C>> write(store_leaf& leaf, bytes key, bytes value,
+                                               unlinked_overflow<A, C>& pages) {
     pull_stale(leaf);
     std::byte* at = room_for(leaf, record<C>::size_of(key.size(), value.size()));
+    if (at == nullptr) {
+      return std::nullopt;
+    }
     return record<C>::write(at, key, value, pages.release(), leaf.annex().generation());
   }
 
@@ -245,8 +252,10 @@ class record_heap {
   // of its own: in its record if it keeps its value whole and the new one is
   // no longer, else in a new record (`write`). The leaf's head keeps its
   // record, which becomes, or stays, a stub of the new one (top of the file).
-  void overwrite(store_leaf& leaf, const store_key& stored, bytes key, bytes value,
-                 unlinked_overflow<A, C>& pages) {
+  // False, the key's value as it was, if a page the new record needs is
+  // refused.
+  [[nodiscard]] bool overwrite(store_leaf& leaf, const store_key& stored, bytes key, bytes value,
+                               unlinked_overflow<A, C>& pages) {
     const record<C> old = stored.stored_record<C>();
     const bool pinned = leaf.is_head(stored);
     const record<C> holder = old.is_stub() ? old.target() : old;
@@ -258,25 +267,29 @@ class record_heap {
       if (old.is_stub()) {
         old.retarget(holder);
       }
-      return;
+      return true;
     }
-    const record<C> fresh = write(leaf, key, value, pages);
+    const std::optional<record<C>> fresh = write(leaf, key, value, pages);
+    if (!fresh) {
+      return false;
+    }
     if (!pinned) {
-      kill(leaf, stored.replace(fresh));
-      return;
+      kill(leaf, stored.replace(*fresh));
+      return true;
     }
     // The write may have moved the stub's target: read it again.
     const record<C> current = stored.stored_record<C>();
     if (current.is_stub()) {
       const record<C> replaced = current.target();
-      current.retarget(fresh);
+      current.retarget(*fresh);
       kill(leaf, replaced);
-      return;
+      return true;
     }
     const std::size_t size = current.size();
     current.overflow_pages().free(allocator_);
-    current.become_stub_of(fresh);
+    current.become_stub_of(*fresh);
     (void)kill_in(page::of_record(current.address()), size - current.size());
+    return true;
   }
 
   // `removed`, a key of `leaf`, is about to go. If its record lies in the
@@ -351,8 +364,7 @@ class record_heap {
   // another page with room, which becomes the head; else, once a compaction
   // slid the records together if a quarter of the chain is holes, there;
   // else in a new head page; else, if the allocator has none to give, once a
-  // compaction took back whatever holes there are. Throws `alloc_error`
-  // without room.
+  // compaction took back whatever holes there are. Null without room.
   std::byte* room_for(store_leaf& leaf, std::size_t size) {
     if (std::byte* at = leaf.annex().room(size)) {
       return at;
@@ -370,10 +382,7 @@ class record_heap {
     if (chain.live < chain.used) {
       compact(leaf, nullptr);
     }
-    if (std::byte* at = leaf.annex().room(size)) {
-      return at;
-    }
-    throw bbtree::alloc_error();
+    return leaf.annex().room(size);
   }
 
   // Slides the records of `leaf`'s keys, but `gone`'s, which stays where it

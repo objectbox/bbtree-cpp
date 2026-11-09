@@ -30,6 +30,7 @@
 #include <bbtree/detail/tree/walk.hpp>
 #include <bbtree/node_config.hpp>
 
+#include <concepts>
 #include <cstddef>
 #include <functional>
 #include <iterator>
@@ -241,27 +242,24 @@ class bbtree_map {
   // other thread reads or changes that leaf. Returns what the closure
   // returned; both return the same type, not void.
   //
-  // A closure refuses, for want of a page, by throwing (`alloc_error`):
-  // the map is unchanged, and the exception goes on to the caller, as it does
-  // if the allocator refuses a node page. A node page is taken before `vacant`
-  // runs.
+  // Throws `alloc_error`, the map unchanged, if the allocator refuses a node
+  // page, which is taken before `vacant` runs. A closure that throws leaves
+  // the map unchanged too. Closures that may lack a page of their own refuse
+  // without an exception through `try_update_or_insert_with_leaf`.
   template <class Occupied, class Vacant>
   auto update_or_insert_with_leaf(K key, V value, Occupied&& occupied, Vacant&& vacant) {
-    using result = std::invoke_result_t<Occupied&, annexed_leaf_type, const K&, V&>;
-    static_assert(
-        std::is_same_v<result, std::invoke_result_t<Vacant&, annexed_leaf_type, const K&, const V&>>,
-        "both closures return the same type");
-    static_assert(!std::is_void_v<result>, "the closures return a value");
-    struct with_leaf {
-      Occupied& on_occupied;
-      Vacant& on_vacant;
-      result occupied(leaf held, const K& stored_key, V& stored, V&&) {
-        return on_occupied(annexed_leaf_type(held), stored_key, stored);
-      }
-      result vacant(leaf held, const K& new_key, const V& new_value) {
-        return on_vacant(annexed_leaf_type(held), new_key, new_value);
-      }
-    } policy{occupied, vacant};
+    with_leaf<Occupied, Vacant, std::false_type> policy{occupied, vacant};
+    return changes().insert(std::move(key), std::move(value), policy, pages());
+  }
+
+  // `update_or_insert_with_leaf` with closures that may refuse, for want of
+  // a page: both return a `std::optional`, empty to refuse, having changed
+  // nothing. Returns what the closure returned; empty, the map unchanged, if
+  // it refused, and if the allocator refused a node page. No exception for
+  // want of a page.
+  template <class Occupied, class Vacant>
+  auto try_update_or_insert_with_leaf(K key, V value, Occupied&& occupied, Vacant&& vacant) {
+    with_leaf<Occupied, Vacant, std::true_type> policy{occupied, vacant};
     return changes().insert(std::move(key), std::move(value), policy, pages());
   }
 
@@ -362,6 +360,33 @@ class bbtree_map {
  private:
   pages_type pages() const noexcept { return pages_type(allocator_); }
   detail::latched_changes<types> changes() noexcept { return detail::latched_changes<types>(tree_); }
+
+  // The insert policy of the `*_with_leaf` entry points: the caller's
+  // closures, each run with the handle of the leaf the map holds; `MayRefuse`
+  // says whether they may refuse (`detail::refusing_insert_policy`).
+  template <class Occupied, class Vacant, class MayRefuse>
+  struct with_leaf {
+    using may_refuse = MayRefuse;
+    using result = std::invoke_result_t<Occupied&, annexed_leaf_type, const K&, V&>;
+    static_assert(
+        std::is_same_v<result, std::invoke_result_t<Vacant&, annexed_leaf_type, const K&, const V&>>,
+        "both closures return the same type");
+    static_assert(!std::is_void_v<result>, "the closures return a value");
+    static_assert(
+        !MayRefuse::value || requires {
+          requires std::same_as<result, std::optional<typename result::value_type>>;
+        }, "closures that may refuse return a std::optional, empty to refuse");
+
+    Occupied& on_occupied;
+    Vacant& on_vacant;
+
+    result occupied(leaf held, const K& stored_key, V& stored, V&&) {
+      return on_occupied(annexed_leaf_type(held), stored_key, stored);
+    }
+    result vacant(leaf held, const K& new_key, const V& new_value) {
+      return on_vacant(annexed_leaf_type(held), new_key, new_value);
+    }
+  };
 
   [[no_unique_address]] Allocator allocator_;
   tree_type tree_;

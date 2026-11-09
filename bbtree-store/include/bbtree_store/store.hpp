@@ -139,24 +139,29 @@ class bbtree_store {
     }
     // The value's overflow pages are `pages`' until a record links them.
     detail::unlinked_overflow<A, C> pages(heap_.allocator());
-    try {
-      heap_.write_overflow(key.size(), value, pages);
-      const query_key query(key);
-      return map_.update_or_insert_with_leaf(
-          query.as_store_key(), no_value(),
-          [&](store_leaf leaf, const store_key& stored, no_value&) {
-            heap_.overwrite(leaf, stored, key, value, pages);
-            return insert_result::replaced;
-          },
-          [&](store_leaf leaf, const store_key& fresh, const no_value&) {
-            // The record has the new key's bytes, and the key goes into the
-            // leaf, which the map holds exclusively, next.
-            (void)fresh.replace(heap_.write(leaf, key, value, pages));
-            return insert_result::inserted;
-          });
-    } catch (const bbtree::alloc_error&) {
+    if (!heap_.write_overflow(key.size(), value, pages)) {
       return insert_result::refused;
     }
+    const query_key query(key);
+    const std::optional<insert_result> done = map_.try_update_or_insert_with_leaf(
+        query.as_store_key(), no_value(),
+        [&](store_leaf leaf, const store_key& stored, no_value&) -> std::optional<insert_result> {
+          if (!heap_.overwrite(leaf, stored, key, value, pages)) {
+            return std::nullopt;
+          }
+          return insert_result::replaced;
+        },
+        [&](store_leaf leaf, const store_key& fresh, const no_value&) -> std::optional<insert_result> {
+          const std::optional<detail::record<C>> written = heap_.write(leaf, key, value, pages);
+          if (!written) {
+            return std::nullopt;
+          }
+          // The record has the new key's bytes, and the key goes into the
+          // leaf, which the map holds exclusively, next.
+          (void)fresh.replace(*written);
+          return insert_result::inserted;
+        });
+    return done.value_or(insert_result::refused);
   }
 
   // Removes `key`; returns whether the store held it.

@@ -21,9 +21,13 @@
 //   or takes from; for a separator, the path below it and the right border of
 //   the subtree left of it; and the nodes up to the fences of the topmost
 //   changed node. Then it runs the unsync removal along them.
-// A failed allocation throws `alloc_error` before anything changes. So does a
-// policy that refuses, by throwing from `occupied` or `vacant` (D60's
-// `update_or_insert_with_leaf`): both run before the tree changes.
+// An insert that lacks a page fails before anything changes:
+// - by `alloc_error`, if the allocator refuses a node page;
+// - under a policy that may refuse (`refusing_insert_policy`, D60's
+//   `try_update_or_insert_with_leaf`), by returning the policy's empty
+//   output, both where the policy refuses, in `occupied` or `vacant`, which
+//   run before the tree changes, and where the allocator refuses a node page.
+// A policy that throws leaves the tree unchanged as well.
 #pragma once
 
 #include <bbtree/detail/latched/held.hpp>
@@ -31,9 +35,19 @@
 
 #include <cstddef>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace bbtree::detail {
+
+// An insert policy that may refuse, for want of a page of its own (D60: a
+// store's record needs a heap page): it names `may_refuse` a
+// `std::true_type`, and its `occupied` and `vacant` return a `std::optional`,
+// empty to refuse, having changed nothing. Its inserts return that empty
+// output then, and where the allocator refuses a node page too, instead of
+// throwing. Inserts under any other policy compile without the checks.
+template <class Policy>
+concept refusing_insert_policy = requires { requires Policy::may_refuse::value; };
 
 template <class T>
 class latched_changes {
@@ -47,11 +61,18 @@ class latched_changes {
   // decides: `policy.occupied(leaf, stored_key, stored_value, value)` for an
   // equal key, `policy.vacant(leaf, key, value)` right before a new one goes
   // in, each with the leaf held exclusively, the key's or the one it goes
-  // into (or splits from, D60).
+  // into (or splits from, D60). Returns the policy's output: of a policy
+  // that may refuse, the empty one if nothing went in (top of the file).
   template <class A, class Policy>
   auto insert(K&& key, V&& value, Policy& policy, const page_source<A>& source) {
     if (!tree_.has_root()) {
-      start_tree(source);
+      if constexpr (refusing_insert_policy<Policy>) {
+        if (!try_start_tree(source)) {
+          return decltype(policy.vacant(leaf_node<T>(), key, value))();
+        }
+      } else {
+        start_tree(source);
+      }
     }
     if (auto appended = append(key, value, policy)) {
       return std::move(*appended);
@@ -123,12 +144,40 @@ class latched_changes {
     tree_.rightmost_leaf_.store(leaf.node().tagged(), std::memory_order_release);
   }
 
-  // Starts a tree with an empty root leaf, unless another thread did first.
+  // Whether `output`, of a policy's `vacant`, refuses the insert, as only a
+  // policy that may refuse does: nothing goes in then, and the output is the
+  // insert's.
+  template <class Policy, class Output>
+  static constexpr bool refuses(const Output& output) noexcept {
+    if constexpr (refusing_insert_policy<Policy>) {
+      return !output.has_value();
+    } else {
+      return false;
+    }
+  }
+
+  // Starts a tree with an empty root leaf, unless another thread did first;
+  // throws `alloc_error` if the allocator refuses its page.
   template <class A>
   [[gnu::cold, gnu::noinline]] void start_tree(const page_source<A>& source) {
+    if (!root_started(source)) {
+      throw alloc_error();
+    }
+  }
+
+  // `start_tree` under a policy that may refuse: false without the page.
+  template <class A>
+  [[gnu::cold, gnu::noinline]] bool try_start_tree(const page_source<A>& source) {
+    return root_started(source);
+  }
+
+  // Whether the tree has a root leaf now, this thread's or another's that
+  // started one first: false if the allocator refuses the page.
+  template <class A>
+  [[gnu::always_inline]] bool root_started(const page_source<A>& source) {
     void* page = source.try_allocate(page_role_traits<T>::kind(page_role::root), T::root_page);
     if (page == nullptr) {
-      throw alloc_error();
+      return false;
     }
     const root_page<T> root = root_page<T>::create(fresh_page<T, page_role::root>::adopt(page));
     node_latch latch(root.node().page());
@@ -138,10 +187,11 @@ class latched_changes {
                                             std::memory_order_acquire)) {
       tree_.rightmost_leaf_.store(root.node().tagged(), std::memory_order_release);
       latch.unlock_exclusive(version);
-      return;
+      return true;
     }
     leaf_node<T>(root.node()).release_annex(source.allocator());
     std::move(root.free()).deallocate(source);
+    return true;
   }
 
   // The key, checked to share what every key does: by the descent that found
@@ -156,7 +206,8 @@ class latched_changes {
   }
 
   // An append to the last leaf, if the key goes after its last key and the
-  // leaf has room (D45); nothing otherwise.
+  // leaf has room (D45); nothing otherwise. A policy's refusal there is an
+  // output: the insert's.
   template <class Policy>
   auto append(K& key, V& value, Policy& policy)
       -> std::optional<decltype(policy.vacant(leaf_node<T>(), key, value))> {
@@ -188,13 +239,17 @@ class latched_changes {
       return std::nullopt;
     }
     auto output = policy.vacant(leaf, std::as_const(key), std::as_const(value));
+    if (refuses<Policy>(output)) {
+      return output;
+    }
     leaf.insert_fit(len, prefixed_key<K&&>(std::move(key)).template window_at<T>(leaf.prefix_len()),
                     std::move(value));
     return output;
   }
 
   // Inserts into the held leaf if it has room or the key is there; nothing,
-  // with the edge where the key belongs, if the leaf is full.
+  // with the edge where the key belongs, if the leaf is full. A policy's
+  // refusal is an output: the insert's.
   template <class Policy>
   auto insert_into(const held_leaf<T, leaf_mode::exclusive>& held, bool at_separator, K& key, V& value,
                    Policy& policy, std::size_t& edge)
@@ -209,6 +264,9 @@ class latched_changes {
     }
     if (leaf.len() < leaf_node<T>::capacity) {
       auto output = policy.vacant(leaf, std::as_const(key), std::as_const(value));
+      if (refuses<Policy>(output)) {
+        return output;
+      }
       const prefixed_key<K&&> checked = prefixed(key, leaf);
       leaf.insert_fit(found.index, checked.template window_at<T>(leaf.prefix_len()), std::move(value));
       return output;
@@ -242,7 +300,9 @@ class latched_changes {
 
   // Takes what the split changes and runs it; nothing if another thread
   // holds one of those nodes, to start over. The policy runs on the full
-  // leaf, before it splits.
+  // leaf, before it splits, once the split has its pages: if it refuses, or,
+  // where it may refuse, the allocator does, its empty output is the
+  // insert's, and the pages go back as `pages` goes.
   template <class Policy, class A>
   auto split(const tree_path<T>& path, const held_leaf<T, leaf_mode::exclusive>& held, std::size_t edge,
              K& key, V& value, Policy& policy, node_pages<T, A>& pages)
@@ -264,10 +324,17 @@ class latched_changes {
     const std::size_t leaves = !room && depth == 0 ? 2 : 1;
     const std::size_t internals = room ? splits : (depth == 0 ? 0 : splits + 1);
     if (!pages.reserve(page_kind::leaf, leaves) || !pages.reserve(page_kind::internal, internals)) {
-      throw alloc_error();
+      if constexpr (refusing_insert_policy<Policy>) {
+        return decltype(policy.vacant(leaf_node<T>(), key, value))();
+      } else {
+        throw alloc_error();
+      }
     }
     const leaf_node<T> leaf = held.leaf();
     auto output = policy.vacant(leaf, std::as_const(key), std::as_const(value));
+    if (refuses<Policy>(output)) {
+      return output;
+    }
     const bool was_last_leaf = rightmost_leaf() == leaf.node();
     const prefixed_key<K&&> checked = prefixed(key, leaf);
     tree_.change_held([&](tree<T>& whole) {
