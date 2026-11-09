@@ -20,6 +20,7 @@ set(BBTREE_TEST_SOURCES
   unsync/drop_accounting_test.cpp
   unsync/bulk_drop_accounting_test.cpp
   unsync/set_drop_accounting_test.cpp
+  unsync/page_ownership_test.cpp
   shared/lookup_stress_test.cpp
   shared/change_stress_test.cpp
   shared/scan_test.cpp

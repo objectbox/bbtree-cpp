@@ -64,7 +64,11 @@ class tree_owner {
     std::swap(length_, other.length_);
   }
 
+  // Takes `built`'s tree in place of this one, which holds no entry but may
+  // hold a root page: a tree keeps its root page when its last entry goes,
+  // and gets one before an insert whose value then throws.
   void adopt(std::pair<tree_type, std::size_t>&& built) noexcept {
+    clear_tree();
     tree_ = std::move(built.first);
     length_ = built.second;
   }
@@ -129,7 +133,6 @@ class tree_owner {
     }
     // The moved-from shells are destroyed with their trees.
     other.clear_tree();
-    clear_tree();
     adopt(std::move(builder).finish());
   }
 
