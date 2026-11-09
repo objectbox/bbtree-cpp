@@ -71,6 +71,42 @@ struct values_that_cannot_be_assigned {
   }
 };
 
+// Random inserts, lookups, bounds and erases of keys `K`, made by `key_of`
+// from a number, on a map and a std::map; then both hold the same.
+template <class K>
+struct against_std_map {
+  template <class KeyOf>
+  static void run(KeyOf key_of) {
+    bbtree::unsync::bbtree_map<K, std::uint64_t> map;
+    std::map<K, std::uint64_t> model;
+    std::mt19937_64 rng(11);
+    for (std::uint64_t step = 0; step < 20'000; ++step) {
+      const K key = key_of(rng() % 5000);
+      switch (rng() % 4) {
+        case 0:
+        case 1:
+          REQUIRE(map.insert_or_assign(key, step).second == model.insert_or_assign(key, step).second);
+          break;
+        case 2:
+          REQUIRE(map.erase(key) == model.erase(key));
+          break;
+        default: {
+          REQUIRE(map.contains(key) == model.contains(key));
+          const auto lower = map.lower_bound(key);
+          const auto expected = model.lower_bound(key);
+          REQUIRE((lower == map.end()) == (expected == model.end()));
+          REQUIRE((lower == map.end() || lower->first == expected->first));
+          break;
+        }
+      }
+    }
+    map.check_invariants();
+    REQUIRE(map.size() == model.size());
+    REQUIRE(std::equal(map.begin(), map.end(), model.begin(), model.end(),
+                       [](auto a, const auto& b) { return a.first == b.first && a.second == b.second; }));
+  }
+};
+
 }  // namespace
 
 // Generic code erases `[lower_bound(a), lower_bound(b))` with no key between.
@@ -112,5 +148,16 @@ TEMPLATE_TEST_CASE("erasing an empty range of a set erases nothing", "[set][std]
 TEST_CASE("a mapped type that can't be assigned can be inserted, found and erased", "[map][std]") {
   values_that_cannot_be_assigned<std_map_of>::run();
   values_that_cannot_be_assigned<bbtree_map_of>::run();
+}
+
+// `double <=> double` is a `std::partial_ordering`; std::map takes such keys
+// (and leaves a NaN key to the user).
+TEST_CASE("keys whose three-way comparison is a partial order", "[map][std]") {
+  against_std_map<double>::run(
+      [](std::uint64_t number) { return static_cast<double>(number) / 8.0 - 300.0; });
+  against_std_map<float>::run([](std::uint64_t number) { return static_cast<float>(number) * 0.5f; });
+  against_std_map<std::pair<int, double>>::run([](std::uint64_t number) {
+    return std::pair<int, double>(static_cast<int>(number % 7), static_cast<double>(number / 7));
+  });
 }
 
