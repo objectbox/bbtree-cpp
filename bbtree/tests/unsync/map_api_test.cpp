@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <concepts>
 #include <cstdint>
 #include <iterator>
 #include <map>
@@ -25,6 +26,12 @@ static_assert(std::bidirectional_iterator<u64_map::iterator>);
 static_assert(std::bidirectional_iterator<u64_map::const_iterator>);
 static_assert(std::bidirectional_iterator<string_map::iterator>);
 static_assert(std::ranges::bidirectional_range<u64_map>);
+static_assert(std::bidirectional_iterator<u64_map::reverse_iterator>);
+static_assert(std::bidirectional_iterator<u64_map::const_reverse_iterator>);
+static_assert(std::bidirectional_iterator<string_map::reverse_iterator>);
+static_assert(std::convertible_to<u64_map::reverse_iterator, u64_map::const_reverse_iterator>);
+static_assert(!std::convertible_to<u64_map::const_reverse_iterator, u64_map::reverse_iterator>);
+static_assert(!std::convertible_to<u64_map::iterator, u64_map::reverse_iterator>);
 static_assert(sizeof(u64_map) == 64, "the map is a cache line (D50, D52)");
 
 }  // namespace
@@ -97,6 +104,89 @@ TEST_CASE("iteration visits every entry in order, both ways", "[map]") {
   }
   CHECK(backward == std::vector<std::pair<std::uint64_t, std::uint64_t>>(model.rbegin(), model.rend()));
   CHECK(static_cast<std::size_t>(std::distance(map.begin(), map.end())) == map.size());
+}
+
+TEST_CASE("reverse iterators walk as std::map's, both ways, with their bases", "[map][iterator]") {
+  // No entry, one, a root leaf, and trees of two and three levels.
+  for (const std::uint64_t entries : {0u, 1u, 2u, 40u, 3000u, 30000u}) {
+    u64_map map;
+    std::map<std::uint64_t, std::uint64_t> model;
+    for (std::uint64_t i = 0; i < entries; ++i) {
+      const std::uint64_t key = i * 7919 % 100'003;
+      map.insert_or_assign(key, i);
+      model.insert_or_assign(key, i);
+    }
+    CHECK(map.rbegin().base() == map.end());
+    CHECK(map.rend().base() == map.begin());
+    CHECK((map.rbegin() == map.rend()) == model.empty());
+
+    auto ours = map.rbegin();
+    auto theirs = model.rbegin();
+    for (; theirs != model.rend(); ++ours, ++theirs) {
+      REQUIRE(ours != map.rend());
+      REQUIRE(ours->first == theirs->first);
+      REQUIRE((*ours).second == theirs->second);
+      REQUIRE(ours.base() == map.upper_bound(theirs->first));
+    }
+    REQUIRE(ours == map.rend());
+    while (theirs != model.rbegin()) {
+      --ours;
+      --theirs;
+      REQUIRE(ours->first == theirs->first);
+    }
+    CHECK(ours == map.rbegin());
+
+    const auto same_entry = [](const auto& a, const auto& b) {
+      return a.first == b.first && a.second == b.second;
+    };
+    CHECK(std::equal(map.crbegin(), map.crend(), model.crbegin(), model.crend(), same_entry));
+    CHECK(std::equal(std::as_const(map).rbegin(), std::as_const(map).rend(), model.rbegin(), model.rend(),
+                     same_entry));
+  }
+}
+
+TEST_CASE("a reverse iterator made from an iterator is at the entry before it", "[map][iterator]") {
+  u64_map map;
+  std::map<std::uint64_t, std::uint64_t> model;
+  for (std::uint64_t i = 0; i < 5000; ++i) {
+    map.insert_or_assign(i * 3, i);
+    model.insert_or_assign(i * 3, i);
+  }
+  CHECK(u64_map::reverse_iterator(map.end()) == map.rbegin());
+  CHECK(u64_map::reverse_iterator(map.begin()) == map.rend());
+  CHECK(u64_map::const_reverse_iterator(map.cbegin()) == map.crend());
+  std::mt19937_64 rng(11);
+  for (int round = 0; round < 2000; ++round) {
+    const std::uint64_t key = rng() % 15'100;
+    // From a lookup's iterator, which has no node stack yet, and from a
+    // bound's, which has one.
+    const bool by_bound = round % 2 == 0;
+    u64_map::reverse_iterator ours(by_bound ? map.lower_bound(key) : map.find(key));
+    auto theirs = std::make_reverse_iterator(by_bound ? model.lower_bound(key) : model.find(key));
+    for (int step = 0; step < 70; ++step) {
+      REQUIRE((ours == map.rend()) == (theirs == model.rend()));
+      if (theirs == model.rend()) {
+        break;
+      }
+      REQUIRE(ours->first == theirs->first);
+      // Post-increments return where they were.
+      REQUIRE((ours++)->first == (theirs++)->first);
+    }
+    for (int step = 0; step < 5 && theirs != model.rbegin(); ++step) {
+      REQUIRE((--ours)->first == (--theirs)->first);
+      REQUIRE((ours--)->first == (theirs--)->first);
+      ++ours;
+      ++theirs;
+    }
+  }
+
+  // It writes through, and converts to a const one at the same entry.
+  auto last = map.rbegin();
+  last->second = 77;
+  CHECK(map.at(14'997) == 77);
+  const u64_map::const_reverse_iterator const_last = last;
+  CHECK(const_last == map.crbegin());
+  CHECK(const_last->second == 77);
 }
 
 TEST_CASE("for_each visits every entry in order and writes values", "[map]") {

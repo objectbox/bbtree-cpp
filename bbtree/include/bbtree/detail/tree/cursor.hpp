@@ -107,12 +107,29 @@ class cursor {
   // Steps to the previous entry; from past the last, to the last. Inlined
   // with its crossing, as `next` (above).
   [[gnu::always_inline]] void prev() noexcept {
+    prev_or_end();
+    assert(!is_end() && "stepping before the first entry");
+  }
+
+  // As `prev`, and from the first entry to past the last: a reverse
+  // iterator's step, whose end is that position (`reverse_iterator.hpp`).
+  [[gnu::always_inline]] void prev_or_end() noexcept {
     if (at_.key_end != nullptr && at_.key != key_begin(at_)) {
       at_.key = advance(at_.key, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
       at_.value = advance(at_.value, -static_cast<std::ptrdiff_t>(T::leaf.value_stride));
       return;
     }
     at_ = cross_backward(root_, stack_, at_);
+  }
+
+  // As `next`, and from past the last entry to the first: a reverse
+  // iterator's step back from its end.
+  void next_or_first() noexcept {
+    if (is_end()) {
+      *this = first_under(root_);
+    } else {
+      next();
+    }
   }
 
   // The node stack at the entry, attached first if the cursor has none; for
@@ -250,8 +267,9 @@ class cursor {
           return position_of_stack(stack);
         }
       }
-      assert(false && "stepping before the first entry");
-      return at;
+      // Nothing is before the first entry.
+      stack.detach();
+      return {};
     }
     // At a separator: the last entry of the rightmost leaf left of it.
     stack.template descend_to_leaf<node_end::last>();

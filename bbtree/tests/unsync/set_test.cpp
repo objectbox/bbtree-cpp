@@ -16,6 +16,7 @@
 namespace {
 
 static_assert(std::bidirectional_iterator<bbtree::unsync::bbtree_set<std::uint64_t>::const_iterator>);
+static_assert(std::bidirectional_iterator<bbtree::unsync::bbtree_set<std::uint64_t>::reverse_iterator>);
 
 template <class K>
 K make_key(std::uint64_t n) {
@@ -135,6 +136,28 @@ TEST_CASE("set bulk builds, splits and appends", "[set]") {
   CHECK(upper.empty());
   CHECK(*set.first() == *model.begin());
   CHECK(set.pop_last() == *model.rbegin());
+}
+
+TEMPLATE_TEST_CASE("the set's reverse iterators walk as std::set's", "[set]", std::uint64_t, std::string) {
+  using K = TestType;
+  for (const std::uint64_t keys : {0u, 1u, 50u, 20'000u}) {
+    bbtree::unsync::bbtree_set<K> set;
+    std::set<K> model;
+    for (std::uint64_t i = 0; i < keys; ++i) {
+      set.insert(make_key<K>(i * 7919 % 100'003));
+      model.insert(make_key<K>(i * 7919 % 100'003));
+    }
+    CHECK(std::equal(set.rbegin(), set.rend(), model.rbegin(), model.rend()));
+    CHECK(std::equal(set.crbegin(), set.crend(), model.crbegin(), model.crend()));
+    CHECK(set.rbegin().base() == set.end());
+    CHECK(set.rend().base() == set.begin());
+    auto ours = set.rend();
+    for (auto theirs = model.rend(); theirs != model.rbegin();) {
+      REQUIRE(*--ours == *--theirs);
+      REQUIRE(ours.base() == set.upper_bound(*theirs));
+    }
+    CHECK(ours == set.rbegin());
+  }
 }
 
 TEST_CASE("erasing by iterator walks the set", "[set]") {

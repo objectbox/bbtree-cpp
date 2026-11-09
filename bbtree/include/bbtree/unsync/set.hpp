@@ -13,6 +13,7 @@
 #include <bbtree/allocator.hpp>
 #include <bbtree/detail/tree/batch.hpp>
 #include <bbtree/detail/tree/cursor.hpp>
+#include <bbtree/detail/tree/reverse_iterator.hpp>
 #include <bbtree/detail/tree/tree.hpp>
 #include <bbtree/detail/tree/tree_owner.hpp>
 #include <bbtree/detail/tree/walk.hpp>
@@ -113,13 +114,14 @@ class bbtree_set
     }
 
    private:
+    friend class detail::reverse_iterator<const_iterator>;
     explicit const_iterator(cursor_type cursor) noexcept : cursor_(std::move(cursor)) {}
 
     cursor_type cursor_;
   };
 
   using iterator = const_iterator;
-  using reverse_iterator = std::reverse_iterator<const_iterator>;
+  using reverse_iterator = detail::reverse_iterator<const_iterator>;
   using const_reverse_iterator = reverse_iterator;
 
   // --- Construction ---
@@ -155,7 +157,9 @@ class bbtree_set
   const_iterator end() const noexcept { return const_iterator(cursor_type(&tree_)); }
   const_iterator cend() const noexcept { return end(); }
   reverse_iterator rbegin() const noexcept { return reverse_iterator(end()); }
-  reverse_iterator rend() const noexcept { return reverse_iterator(begin()); }
+  reverse_iterator crbegin() const noexcept { return rbegin(); }
+  reverse_iterator rend() const noexcept { return reverse_iterator::at(end()); }
+  reverse_iterator crend() const noexcept { return rend(); }
 
   // Runs `visit(key)` on every key in order, a leaf at a time: faster than
   // iterators (P16).

@@ -23,6 +23,7 @@
 #include <bbtree/allocator.hpp>
 #include <bbtree/detail/tree/batch.hpp>
 #include <bbtree/detail/tree/cursor.hpp>
+#include <bbtree/detail/tree/reverse_iterator.hpp>
 #include <bbtree/detail/tree/tree.hpp>
 #include <bbtree/detail/tree/tree_owner.hpp>
 #include <bbtree/detail/tree/walk.hpp>
@@ -127,6 +128,7 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
    private:
     friend class basic_iterator<true>;
+    friend class detail::reverse_iterator<basic_iterator>;
     explicit basic_iterator(cursor_type cursor) noexcept : cursor_(std::move(cursor)) {}
 
     cursor_type cursor_;
@@ -134,8 +136,8 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
   using iterator = basic_iterator<false>;
   using const_iterator = basic_iterator<true>;
-  using reverse_iterator = std::reverse_iterator<iterator>;
-  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+  using reverse_iterator = detail::reverse_iterator<iterator>;
+  using const_reverse_iterator = detail::reverse_iterator<const_iterator>;
 
   // --- Construction ---
 
@@ -178,8 +180,10 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   const_iterator cend() const noexcept { return end(); }
   reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
   const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
-  reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
-  const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+  const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+  reverse_iterator rend() noexcept { return reverse_iterator::at(end()); }
+  const_reverse_iterator rend() const noexcept { return const_reverse_iterator::at(end()); }
+  const_reverse_iterator crend() const noexcept { return rend(); }
 
   // Runs `visit(key, value)` on every entry in key order, a leaf at a time:
   // faster than iterators, whose steps keep their place in memory (P16).
