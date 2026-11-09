@@ -464,6 +464,125 @@ TEMPLATE_TEST_CASE("a split_off refused a page changes nothing", "[map][failure]
   REQUIRE(ledger.nothing_left());
 }
 
+// `append` moves the entries of both maps into one bulk build, so it takes
+// the build's pages before the first entry moves.
+TEMPLATE_TEST_CASE("an append refused a page leaves both maps as they were", "[map][failure]",
+                   BBTREE_TEST_FAILURE_MAPS, bbtree_test::move_only_singly_moved_inline_keys) {
+  object_ledger ledger;
+  page_book pages;
+  // (entries, the step between their orders) of each map: disjoint and
+  // overlapping keys, root leaves and trees of several levels.
+  struct filling {
+    std::uint64_t count;
+    std::uint64_t step;
+  };
+  const std::pair<filling, filling> fillings[] = {
+      {{1, 1}, {1, 1}}, {{5, 2}, {6, 3}}, {{12, 2}, {13, 2}}, {{500, 2}, {500, 3}}, {{40, 50}, {2000, 1}}};
+  for (const auto& [left_filling, right_filling] : fillings) {
+    TestType left{checked_allocator(pages)};
+    TestType right{checked_allocator(pages)};
+    shuffled_fill<TestType>::of(left, ledger, left_filling.count, left_filling.step, 57);
+    shuffled_fill<TestType>::of(right, ledger, right_filling.count, right_filling.step, 58);
+    const auto held_by_left = held_entries<TestType>::forward(left);
+    const auto held_by_right = held_entries<TestType>::forward(right);
+    const long live = ledger.live();
+    const std::size_t in_use = pages.in_use();
+    const long refusals = every_failure_point::of_pages(
+        pages, [&] { left.append(right); },
+        [&] {
+          REQUIRE(pages.in_use() == in_use);
+          REQUIRE(ledger.live() == live);
+          REQUIRE(held_entries<TestType>::forward(left) == held_by_left);
+          REQUIRE(held_entries<TestType>::forward(right) == held_by_right);
+        });
+    REQUIRE(refusals >= 1);
+    REQUIRE(right.empty());
+    left.check_invariants();
+    right.check_invariants();
+    // The other map's entries are all in, with their objects.
+    for (const auto& [order, ids] : held_by_right) {
+      const auto at = left.find(typename TestType::key_type(ledger, order));
+      REQUIRE(at != left.end());
+      REQUIRE(entry_ids{at->first.id(), at->second.id()} == ids);
+    }
+  }
+  REQUIRE(pages.in_use() == 0);
+  REQUIRE(ledger.nothing_left());
+}
+
+// The same as a user of string keys sees it: no key or value turns empty.
+TEST_CASE("an append of string maps refused a page keeps their entries", "[map][failure]") {
+  page_book pages;
+  {
+    using map_type = checked_map<std::string, std::string>;
+    map_type left{checked_allocator(pages)};
+    map_type right{checked_allocator(pages)};
+    std::map<std::string, std::string> left_model;
+    std::map<std::string, std::string> right_model;
+    for (int number = 0; number < 400; ++number) {
+      const std::string key =
+          "a key long enough to live on the heap, number " + std::to_string(1000 + number);
+      const std::string value = "value " + std::to_string(number);
+      (number % 2 == 0 ? left : right).try_emplace(key, value);
+      (number % 2 == 0 ? left_model : right_model).emplace(key, value);
+    }
+    const auto same = [](const map_type& map, const std::map<std::string, std::string>& model) {
+      return std::equal(map.begin(), map.end(), model.begin(), model.end(),
+                        [](auto a, const auto& b) { return a.first == b.first && a.second == b.second; });
+    };
+    const long refusals = every_failure_point::of_pages(
+        pages, [&] { left.append(right); },
+        [&] {
+          REQUIRE(same(left, left_model));
+          REQUIRE(same(right, right_model));
+        });
+    REQUIRE(refusals > 6);
+    left_model.merge(right_model);
+    REQUIRE(same(left, left_model));
+    REQUIRE(right.empty());
+    left.check_invariants();
+  }
+  REQUIRE(pages.in_use() == 0);
+}
+
+// What `append` takes beforehand is what a build of as many entries takes,
+// page for page: one less would be missed part of the way.
+TEMPLATE_TEST_CASE("the pages counted for a build are the pages it takes", "[map][failure][build]",
+                   bbtree_test::singly_moved_plain_keys, bbtree_test::byte_moved_paired_entries,
+                   (bbtree_test::checked_map<std::uint64_t, std::uint64_t>)) {
+  using K = typename TestType::key_type;
+  using V = typename TestType::mapped_type;
+  using types = bbtree::detail::tree_types<K, V, std::less<K>, bbtree::auto_inline_keys>;
+  object_ledger ledger;
+  const auto entry_of = [&](std::uint64_t order) {
+    if constexpr (std::is_integral_v<K>) {
+      return std::pair<K, V>(order, order);
+    } else {
+      return std::pair<K, V>(K(ledger, order), V(ledger, order));
+    }
+  };
+  // Every count while the tree is small, then the ones around each new leaf,
+  // far enough for a root above internal nodes.
+  const std::uint64_t per_leaf = types::leaf_capacity + 1;
+  const std::uint64_t most = (types::internal_capacity + 2) * per_leaf + 2;
+  for (std::uint64_t count = 0; count <= most; ++count) {
+    if (count > 400 && count % per_leaf > 1 && count % per_leaf != per_leaf - 1) {
+      continue;
+    }
+    std::vector<std::pair<K, V>> entries;
+    entries.reserve(count);
+    for (std::uint64_t order = 0; order < count; ++order) {
+      entries.push_back(entry_of(order));
+    }
+    page_book pages;
+    const TestType built(std::make_move_iterator(entries.begin()), std::make_move_iterator(entries.end()),
+                         checked_allocator(pages));
+    const auto counted = bbtree::detail::build_page_counts::of<types>(count);
+    REQUIRE(built.size() == count);
+    REQUIRE(pages.handed_out() == counted.leaf + counted.internal);
+  }
+}
+
 // A batch inserts one by one: refused a page part of the way, the entries
 // before it are in, the rest are not, and the map is well formed.
 TEMPLATE_TEST_CASE("a batch refused a page leaves a well-formed map", "[map][failure][batch]",

@@ -12,7 +12,9 @@
 
 #include <bbtree/detail/tree/tree.hpp>
 
+#include <cassert>
 #include <cstddef>
+#include <cstring>
 #include <iterator>
 #include <utility>
 
@@ -147,6 +149,137 @@ class tree_builder {
   tree<T> tree_;
   leaf_node<T> border_leaf_;
   std::size_t length_ = 0;
+};
+
+// How many pages of each kind a `tree_builder` takes for a number of entries,
+// the root page among its kind's: every leaf but the last is full, with one
+// more entry as the head of the leaf after it, and so is every internal node
+// but the last of its level; the top node lives in the root page.
+struct build_page_counts {
+  std::size_t leaf = 0;
+  std::size_t internal = 0;
+
+  template <class T>
+  static constexpr build_page_counts of(std::size_t entries) noexcept {
+    build_page_counts counts;
+    if (entries == 0) {
+      return counts;
+    }
+    (T::root_is_leaf_sized ? counts.leaf : counts.internal) = 1;
+    std::size_t nodes = entries / (leaf_node<T>::capacity + 1) + 1;
+    if (nodes == 1) {
+      return counts;
+    }
+    counts.leaf += nodes;
+    while (true) {
+      nodes = (nodes + internal_node<T>::capacity) / (internal_node<T>::capacity + 1);
+      if (nodes == 1) {
+        return counts;
+      }
+      counts.internal += nodes;
+    }
+  }
+};
+
+// The pages of a bulk build, taken from a map's allocator before the build
+// moves its first entry (D8). `append` merges two trees by moving their
+// entries into one build: a page refused part of the way would leave both
+// trees holding moved-from entries, so it takes every page the build can
+// take first, and the build then can't fail. Pages wait linked through their
+// first word, are handed out zeroed again, and take back what the build
+// frees; what is left at the end goes back to the map's allocator.
+template <class T, class A>
+class prepaid_build_pages {
+ public:
+  // Takes the pages of a build of at most `entries` entries. Throws
+  // `alloc_error`, with every page given back, if one is refused.
+  prepaid_build_pages(const page_source<A>& source, std::size_t entries) : source_(source) {
+    const build_page_counts counts = build_page_counts::of<T>(entries);
+    try {
+      for (std::size_t taken = 0; taken < counts.leaf; ++taken) {
+        push(page_kind::leaf, source_.allocate(page_kind::leaf, T::leaf.page));
+      }
+      for (std::size_t taken = 0; taken < counts.internal; ++taken) {
+        push(page_kind::internal, source_.allocate(page_kind::internal, T::internal.page));
+      }
+    } catch (const alloc_error&) {
+      give_back(page_kind::leaf);
+      give_back(page_kind::internal);
+      throw;
+    }
+  }
+  prepaid_build_pages(const prepaid_build_pages&) = delete;
+  prepaid_build_pages& operator=(const prepaid_build_pages&) = delete;
+  ~prepaid_build_pages() {
+    give_back(page_kind::leaf);
+    give_back(page_kind::internal);
+  }
+
+  // The page allocator a `tree_builder` builds on (`allocator.hpp`): each
+  // kind's pages from the prepaid ones.
+  class allocator {
+   public:
+    explicit allocator(prepaid_build_pages& pages) noexcept : pages_(&pages) {}
+
+    void* allocate_leaf(page_layout /*layout*/) const noexcept { return pages_->pop(page_kind::leaf); }
+    void* allocate_internal(page_layout /*layout*/) const noexcept {
+      return pages_->pop(page_kind::internal);
+    }
+    void deallocate_leaf(void* page, page_layout /*layout*/) const noexcept {
+      pages_->take_back(page_kind::leaf, page);
+    }
+    void deallocate_internal(void* page, page_layout /*layout*/) const noexcept {
+      pages_->take_back(page_kind::internal, page);
+    }
+    // A build asks for its pages by kind only.
+    void* allocate_zeroed(page_layout /*layout*/) const noexcept { return nullptr; }
+    void deallocate(void* /*page*/, page_layout /*layout*/) const noexcept {}
+
+   private:
+    prepaid_build_pages* pages_;
+  };
+
+ private:
+  static constexpr page_layout layout_of(page_kind kind) noexcept {
+    return kind == page_kind::leaf ? T::leaf.page : T::internal.page;
+  }
+  void*& top_of(page_kind kind) noexcept { return kind == page_kind::leaf ? leaf_top_ : internal_top_; }
+
+  void push(page_kind kind, void* page) noexcept {
+    void*& top = top_of(kind);
+    std::memcpy(page, &top, sizeof top);
+    top = page;
+  }
+
+  void* pop(page_kind kind) noexcept {
+    void*& top = top_of(kind);
+    assert(top != nullptr && "build_page_counts covers every page a build takes");
+    if (top == nullptr) {
+      return source_.try_allocate(kind, layout_of(kind));
+    }
+    void* page = top;
+    std::memcpy(&top, page, sizeof top);
+    std::memset(page, 0, sizeof top);
+    return page;
+  }
+
+  void take_back(page_kind kind, void* page) noexcept {
+    std::memset(page, 0, layout_of(kind).size);
+    push(kind, page);
+  }
+
+  void give_back(page_kind kind) noexcept {
+    void*& top = top_of(kind);
+    while (top != nullptr) {
+      void* page = top;
+      std::memcpy(&top, page, sizeof top);
+      source_.deallocate(kind, page, layout_of(kind));
+    }
+  }
+
+  const page_source<A>& source_;
+  void* leaf_top_ = nullptr;
+  void* internal_top_ = nullptr;
 };
 
 }  // namespace bbtree::detail

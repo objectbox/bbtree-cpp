@@ -98,7 +98,10 @@ class tree_owner {
   }
 
   // Moves every entry of `other` in, `other`'s winning at an equal key; both
-  // trees' entries move in order into one bulk build (D25).
+  // trees' entries move in order into one bulk build (D25). The build's pages
+  // come first, as many as it takes if no keys are equal: a page refused
+  // throws `alloc_error` before an entry has moved, with both trees as they
+  // were.
   void append_from(tree_owner& other) {
     if (other.length_ == 0) {
       return;
@@ -107,7 +110,12 @@ class tree_owner {
       swap_with(other);
       return;
     }
-    tree_builder<T, Allocator> builder(pages());
+    using prepaid_pages = prepaid_build_pages<T, Allocator>;
+    const pages_type own_pages = pages();
+    prepaid_pages prepaid(own_pages, length_ + other.length_);
+    const typename prepaid_pages::allocator prepaid_allocator(prepaid);
+    tree_builder<T, typename prepaid_pages::allocator> builder{
+        page_source<typename prepaid_pages::allocator>(prepaid_allocator)};
     cursor_type mine = cursor_type::first(&tree_);
     cursor_type theirs = cursor_type::first(&other.tree_);
     auto take = [&](cursor_type& from) {
