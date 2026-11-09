@@ -107,6 +107,22 @@ struct against_std_map {
   }
 };
 
+// Three words whose addresses ascend and whose order descends: compared as
+// what they are, pointers, a range of them looks sorted.
+struct words_in_one_array {
+  static constexpr char storage[] = "pear\0fig\0apple";
+  static constexpr const char* pear = storage;
+  static constexpr const char* fig = storage + 5;
+  static constexpr const char* apple = storage + 9;
+};
+
+// A key made of a number only on request.
+struct explicit_number {
+  std::uint64_t number;
+  explicit explicit_number(std::uint64_t number_) : number(number_) {}
+  friend auto operator<=>(const explicit_number&, const explicit_number&) = default;
+};
+
 }  // namespace
 
 // Generic code erases `[lower_bound(a), lower_bound(b))` with no key between.
@@ -159,5 +175,47 @@ TEST_CASE("keys whose three-way comparison is a partial order", "[map][std]") {
   against_std_map<std::pair<int, double>>::run([](std::uint64_t number) {
     return std::pair<int, double>(static_cast<int>(number % 7), static_cast<double>(number / 7));
   });
+}
+
+// `std::less<>` is what README recommends for string keys.
+TEST_CASE("a range of elements that convert to keys builds a sorted map", "[map][set][std][build]") {
+  const std::vector<std::pair<const char*, int>> entries{
+      {words_in_one_array::pear, 1}, {words_in_one_array::fig, 2}, {words_in_one_array::apple, 3}};
+  const std::map<std::string, int, std::less<>> model(entries.begin(), entries.end());
+  SECTION("C strings into a map of std::string") {
+    const bbtree::unsync::bbtree_map<std::string, int, std::less<>> map(entries.begin(), entries.end());
+    map.check_invariants();
+    REQUIRE(std::equal(map.begin(), map.end(), model.begin(), model.end(),
+                       [](auto a, const auto& b) { return a.first == b.first && a.second == b.second; }));
+    REQUIRE(map.contains("apple"));
+    REQUIRE(map.contains(std::string_view("pear")));
+  }
+  SECTION("C strings into a map of compact_string") {
+    const bbtree::unsync::bbtree_map<bbtree::compact_string, int, std::less<>> map(entries.begin(),
+                                                                                   entries.end());
+    map.check_invariants();
+    REQUIRE(map.size() == 3);
+    REQUIRE(std::string_view(map.begin()->first) == "apple");
+    REQUIRE(map.contains("fig"));
+  }
+  SECTION("C strings into a set of std::string") {
+    const std::vector<const char*> keys{words_in_one_array::pear, words_in_one_array::fig,
+                                        words_in_one_array::apple};
+    const bbtree::unsync::bbtree_set<std::string, std::less<>> set(keys.begin(), keys.end());
+    set.check_invariants();
+    REQUIRE(std::vector<std::string>(set.begin(), set.end()) ==
+            std::vector<std::string>{"apple", "fig", "pear"});
+    REQUIRE(set.contains("apple"));
+  }
+  SECTION("numbers into a set of keys made of them on request, as std::set takes them") {
+    const std::vector<std::uint64_t> numbers{3, 1, 2, 1};
+    const std::set<explicit_number> expected(numbers.begin(), numbers.end());
+    const bbtree::unsync::bbtree_set<explicit_number> set(numbers.begin(), numbers.end());
+    set.check_invariants();
+    REQUIRE(std::equal(set.begin(), set.end(), expected.begin(), expected.end()));
+    const std::vector<std::uint64_t> ascending{5, 6, 7};
+    const bbtree::unsync::bbtree_set<explicit_number> built(ascending.begin(), ascending.end());
+    REQUIRE(built.size() == 3);
+  }
 }
 

@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <compare>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -284,7 +285,7 @@ class bbtree_set
       }
       return;
     }
-    if constexpr (std::forward_iterator<It>) {
+    if constexpr (std::forward_iterator<It> && ranges_over_keys<It>) {
       auto out_of_order = [](const auto& a, const auto& b) { return !key_order::less(a, b); };
       if (std::adjacent_find(first, last, out_of_order) == last) {
         this->build_ascending(first, last, [](auto&& key) {
@@ -452,6 +453,13 @@ class bbtree_set
   void check_invariants() const { tree_.check_invariants(length_); }
 
  private:
+  // Whether a range's elements are keys `K`. Only then does the set's order,
+  // applied to the range as it is, say whether it ascends: other elements
+  // convert to keys first, since a transparent comparator would compare them
+  // as what they are (C strings as pointers).
+  template <class It>
+  static constexpr bool ranges_over_keys = std::same_as<std::remove_cvref_t<std::iter_reference_t<It>>, K>;
+
   // Whether a set operation should look this set's keys up in `other` one
   // by one, rather than walk both: when this set is much smaller.
   bool looks_up_in(const bbtree_set& other) const noexcept { return size() * 16 < other.size(); }

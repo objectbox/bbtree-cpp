@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <array>
 #include <compare>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -393,7 +394,7 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
       }
       return;
     }
-    if constexpr (std::forward_iterator<It>) {
+    if constexpr (std::forward_iterator<It> && ranges_over_keys<It>) {
       auto out_of_order = [](const auto& a, const auto& b) { return !key_order::less(a.first, b.first); };
       if (std::adjacent_find(first, last, out_of_order) == last) {
         this->build_ascending(
@@ -573,6 +574,15 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
  private:
   using key_order = typename types::order;
+
+  // Whether the entries of a range hold their keys as `K`. Only then does
+  // the map's order, applied to the range as it is, say whether it ascends:
+  // other elements convert to entries first, since a transparent comparator
+  // would compare them as what they are (C strings as pointers).
+  template <class It>
+  static constexpr bool ranges_over_keys = requires(std::iter_reference_t<It> entry) {
+    requires std::same_as<std::remove_cvref_t<decltype((entry.first))>, K>;
+  };
 
   iterator found_or_end(std::optional<detail::found_entry<types>> found) noexcept {
     return found ? iterator(cursor_type(&tree_, *found)) : end();
