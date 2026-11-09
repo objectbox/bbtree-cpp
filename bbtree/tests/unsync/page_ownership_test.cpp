@@ -195,3 +195,41 @@ TEST_CASE("a range inserted into an emptied map gives its root page back", "[map
   REQUIRE(pages.in_use() == 0);
 }
 
+// set/tests.rs: set_operators_build_from_the_left_sets_allocator. With an
+// allocator a set, the result must not outlive the right one's.
+TEST_CASE("set operators build their result on the left set's allocator", "[set][allocator]") {
+  using set_type = checked_set<std::uint64_t>;
+  // Sizes on both sides of where an operator looks one set's keys up in the
+  // other instead of walking both.
+  const std::pair<std::uint64_t, std::uint64_t> sizes[] = {{300, 300}, {20, 2000}, {2000, 20}};
+  page_book left_pages;
+  page_book right_pages;
+  for (const auto& [left_count, right_count] : sizes) {
+    set_type left{checked_allocator(left_pages)};
+    set_type right{checked_allocator(right_pages)};
+    for (std::uint64_t index = 0; index < left_count; ++index) {
+      left.insert(index * 3);
+    }
+    for (std::uint64_t index = 0; index < right_count; ++index) {
+      right.insert(index * 2);
+    }
+    const std::size_t pages_of_right = right_pages.in_use();
+    using set_operator = set_type (*)(const set_type&, const set_type&);
+    const set_operator operators[] = {
+        [](const set_type& a, const set_type& b) { return a | b; },
+        [](const set_type& a, const set_type& b) { return a & b; },
+        [](const set_type& a, const set_type& b) { return a - b; },
+        [](const set_type& a, const set_type& b) { return a ^ b; },
+    };
+    for (const set_operator apply : operators) {
+      const std::size_t pages_of_left = left_pages.in_use();
+      const set_type result = apply(left, right);
+      REQUIRE_FALSE(result.empty());
+      REQUIRE(right_pages.in_use() == pages_of_right);
+      REQUIRE(left_pages.in_use() > pages_of_left);
+      REQUIRE(result.get_allocator() == left.get_allocator());
+    }
+  }
+  REQUIRE(left_pages.in_use() == 0);
+  REQUIRE(right_pages.in_use() == 0);
+}

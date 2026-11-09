@@ -6,7 +6,8 @@
 // as std::set's does. Every insert and erase invalidates every iterator.
 // Extras from the Rust crate: `first`/`last`, `pop_first`/`pop_last`,
 // `retain`, `append`, `split_off`, `is_subset`/`is_superset`/`is_disjoint`,
-// and the set algebra `|`, `&`, `-`, `^`.
+// and the set algebra `|`, `&`, `-`, `^`, whose results are built on the left
+// set's allocator.
 #pragma once
 
 #include <bbtree/allocator.hpp>
@@ -422,16 +423,16 @@ class bbtree_set
   }
   friend bbtree_set operator&(const bbtree_set& a, const bbtree_set& b) {
     if (a.looks_up_in(b)) {
-      return a.filtered([&](const K& key) { return b.contains(key); });
+      return a.filtered(a.allocator_, [&](const K& key) { return b.contains(key); });
     }
     if (b.looks_up_in(a)) {
-      return b.filtered([&](const K& key) { return a.contains(key); });
+      return b.filtered(a.allocator_, [&](const K& key) { return a.contains(key); });
     }
     return a.merged(b, [](bool in_a, bool in_b) { return in_a && in_b; });
   }
   friend bbtree_set operator-(const bbtree_set& a, const bbtree_set& b) {
     if (a.looks_up_in(b)) {
-      return a.filtered([&](const K& key) { return !b.contains(key); });
+      return a.filtered(a.allocator_, [&](const K& key) { return !b.contains(key); });
     }
     return a.merged(b, [](bool in_a, bool in_b) { return in_a && !in_b; });
   }
@@ -475,10 +476,11 @@ class bbtree_set
     return {const_iterator(cursor_type(&tree_, inserted.entry)), inserted.inserted};
   }
 
-  // The keys of this set that `keep`, built in order.
+  // The keys of this set that `keep`, built in order on `allocator`: the
+  // left operand's, whichever set an operator walks.
   template <class Keep>
-  bbtree_set filtered(Keep keep) const {
-    bbtree_set result(allocator_);
+  bbtree_set filtered(const Allocator& allocator, Keep keep) const {
+    bbtree_set result(allocator);
     detail::tree_builder<types, Allocator> builder(result.pages());
     for (const K& key : *this) {
       if (keep(key)) {
