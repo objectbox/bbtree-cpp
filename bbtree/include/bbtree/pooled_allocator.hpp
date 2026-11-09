@@ -238,6 +238,11 @@ class pooled_allocator {
  public:
   pooled_allocator() : pool_(std::make_shared<detail::page_pool>()) {}
 
+  // A move is a copy: the allocator moved from keeps its pool, as std's
+  // allocators stay usable after a move, and a map on it still allocates.
+  pooled_allocator(const pooled_allocator&) noexcept = default;
+  pooled_allocator& operator=(const pooled_allocator&) noexcept = default;
+
   void* allocate_zeroed(page_layout layout) const noexcept { return pool_->allocate(layout, true); }
   void deallocate(void* page, page_layout layout) const noexcept { pool_->deallocate(page, layout); }
 

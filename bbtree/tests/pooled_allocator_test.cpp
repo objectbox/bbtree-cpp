@@ -13,6 +13,7 @@
 #include <random>
 #include <set>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -69,6 +70,26 @@ TEST_CASE("copies of a pooled allocator share its pool", "[allocator][pooled]") 
   copy.deallocate(page, layout);
   CHECK(copy.allocate_zeroed(layout) == page);
   original.deallocate(page, layout);
+}
+
+TEST_CASE("a pooled allocator moved from keeps its pool", "[allocator][pooled]") {
+  using pooled_map = bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t, std::less<std::uint64_t>,
+                                                bbtree::pooled_allocator>;
+  bbtree::pooled_allocator original;
+  const bbtree::pooled_allocator moved_to = std::move(original);
+  CHECK(moved_to == original);  // NOLINT(bugprone-use-after-move): the state under test
+  bbtree::pooled_allocator assigned;
+  assigned = std::move(original);
+  CHECK(assigned == original);  // NOLINT(bugprone-use-after-move)
+  const bbtree::page_layout layout{1024, 64};
+  void* page = original.allocate_zeroed(layout);
+  REQUIRE(page != nullptr);
+  moved_to.deallocate(page, layout);
+  pooled_map map(original);
+  for (std::uint64_t key = 0; key < 1000; ++key) {
+    map.insert({key, key});
+  }
+  CHECK(map.size() == 1000);
 }
 
 TEST_CASE("a pooled allocator passes odd and large layouts to operator new", "[allocator][pooled]") {
