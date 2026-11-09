@@ -137,10 +137,16 @@ class node_latch {
     return (word & exclusive) == 0;
   }
 
-  // Whether the node is still at `version`, after the reads it vouches for;
-  // the fence keeps those reads before the check.
+  // Whether the node is still at `version`, after the reads it vouches for.
+  // Those reads race with writers, so the language orders nothing here: what
+  // keeps them before the check, and keeps a compiler from reading the node
+  // again after it in place of a copy it made before, is that the compilers
+  // take the fence, and by their documentation the empty statement that
+  // clobbers memory, to change any memory (PORTING.md, P15). Neither emits
+  // an instruction on x86-64.
   bool is_unchanged(latch_version version) const noexcept {
     std::atomic_thread_fence(std::memory_order_acquire);
+    __asm__ __volatile__("" ::: "memory");
     return (word_.load(std::memory_order_relaxed) & ~shared_mask) == version.word();
   }
 
