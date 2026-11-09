@@ -263,8 +263,8 @@ struct byte_string<const char*> {
 
 template <class T>
 concept std_byte_string = requires(const T& t) {
-                            { byte_string<T>::bytes(t) } -> std::same_as<std::span<const std::uint8_t>>;
-                          };
+  { byte_string<T>::bytes(t) } -> std::same_as<std::span<const std::uint8_t>>;
+};
 
 // Byte spans: the windows of their bytes, as std byte strings have (the Rust
 // crate's `InlineKey for [u8]`), for a key that is a byte string by another
@@ -329,7 +329,7 @@ struct inline_key<int128> {
 // Whether `K` has an `inline_key` specialization.
 template <class K>
 concept has_inline_key = requires(const K& key) {
-                           { inline_key<K>::at(key, std::size_t{}) } -> std::same_as<inline_word>;
-                         };
+  { inline_key<K>::at(key, std::size_t{}) } -> std::same_as<inline_word>;
+};
 
 }  // namespace bbtree

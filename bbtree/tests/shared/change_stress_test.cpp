@@ -81,14 +81,12 @@ void run_threads(Map& map, MakeKey make_key, int threads, int operations, std::u
 
 TEST_CASE("threads insert and remove u64 keys", "[shared]") {
   bbtree::bbtree_map<std::uint64_t, std::uint64_t> map;
-  run_threads(
-      map, [](std::uint64_t n) { return n * 2654435761u % 1'000'003; }, 4, 60'000, 8000);
+  run_threads(map, [](std::uint64_t n) { return n * 2654435761u % 1'000'003; }, 4, 60'000, 8000);
 }
 
 TEST_CASE("threads insert and remove ascending keys, which append", "[shared]") {
   bbtree::bbtree_map<std::uint64_t, std::uint64_t> map;
-  run_threads(
-      map, [](std::uint64_t n) { return n; }, 4, 60'000, 8000);
+  run_threads(map, [](std::uint64_t n) { return n; }, 4, 60'000, 8000);
 }
 
 TEST_CASE("threads insert and remove string keys that shrink the shared prefix", "[shared]") {

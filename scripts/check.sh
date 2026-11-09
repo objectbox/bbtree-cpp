@@ -5,11 +5,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# clang-format at one version on every machine, as two versions format some
+# code differently: PyPI's build, which uvx (https://docs.astral.sh/uv/)
+# fetches once, 2 MB. Reformat with the same command and `-i`.
+clang_format=(uvx --from clang-format==20.1.8 clang-format)
 files=$(git ls-files '*.hpp' '*.cpp')
 if [ -n "$files" ]; then
-  clang-format --version
+  "${clang_format[@]}" --version
   # shellcheck disable=SC2086
-  clang-format --dry-run --Werror $files
+  "${clang_format[@]}" --dry-run --Werror $files
 fi
 
 presets=(debug gcc)

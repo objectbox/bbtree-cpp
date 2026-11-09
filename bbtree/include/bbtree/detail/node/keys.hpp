@@ -52,7 +52,8 @@ struct key_order {
   template <class A, class B>
   static std::weak_ordering cmp(const A& a, const B& b) noexcept {
     if constexpr ((std::is_same_v<Compare, std::less<A>> || std::is_same_v<Compare, std::less<>> ||
-                   std::is_same_v<Compare, std::less<B>>)&&std::three_way_comparable_with<A, B>) {
+                   std::is_same_v<Compare, std::less<B>>) &&
+                  std::three_way_comparable_with<A, B>) {
       return std::weak_ordering(a <=> b);
     } else {
       if (Compare{}(a, b)) {

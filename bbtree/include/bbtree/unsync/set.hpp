@@ -188,8 +188,8 @@ class bbtree_set
   }
   bool contains(const K& key) const noexcept { return tree_.find(key).has_value(); }
   template <class Q>
-    requires transparent<Q> bool
-  contains(const Q& key) const noexcept {
+    requires transparent<Q>
+  bool contains(const Q& key) const noexcept {
     return tree_.find(key).has_value();
   }
   size_type count(const K& key) const noexcept { return contains(key) ? 1 : 0; }
@@ -462,8 +462,8 @@ class bbtree_set
 
   template <class KeyRef>
   std::pair<const_iterator, bool> put(KeyRef&& key) {
-    const auto inserted = tree_.insert(
-        std::forward<KeyRef>(key), [] { return detail::set_value{}; }, false, pages(), length_);
+    const auto inserted =
+        tree_.insert(std::forward<KeyRef>(key), [] { return detail::set_value{}; }, false, pages(), length_);
     return {const_iterator(cursor_type(&tree_, inserted.entry)), inserted.inserted};
   }
 

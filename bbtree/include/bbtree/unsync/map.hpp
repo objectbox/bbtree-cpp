@@ -226,8 +226,8 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
   bool contains(const K& key) const noexcept { return tree_.find(key).has_value(); }
   template <class Q>
-    requires transparent<Q> bool
-  contains(const Q& key) const noexcept {
+    requires transparent<Q>
+  bool contains(const Q& key) const noexcept {
     return tree_.find(key).has_value();
   }
   size_type count(const K& key) const noexcept { return contains(key) ? 1 : 0; }
@@ -418,13 +418,11 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
   template <class M>
   std::pair<iterator, bool> insert_or_assign(const K& key, M&& value) {
-    return put(
-        key, [&] { return V(std::forward<M>(value)); }, true);
+    return put(key, [&] { return V(std::forward<M>(value)); }, true);
   }
   template <class M>
   std::pair<iterator, bool> insert_or_assign(K&& key, M&& value) {
-    return put(
-        std::move(key), [&] { return V(std::forward<M>(value)); }, true);
+    return put(std::move(key), [&] { return V(std::forward<M>(value)); }, true);
   }
   template <class M>
   iterator insert_or_assign(const_iterator /*hint*/, const K& key, M&& value) {
@@ -437,13 +435,11 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
   template <class... Args>
   std::pair<iterator, bool> try_emplace(const K& key, Args&&... args) {
-    return put(
-        key, [&] { return V(std::forward<Args>(args)...); }, false);
+    return put(key, [&] { return V(std::forward<Args>(args)...); }, false);
   }
   template <class... Args>
   std::pair<iterator, bool> try_emplace(K&& key, Args&&... args) {
-    return put(
-        std::move(key), [&] { return V(std::forward<Args>(args)...); }, false);
+    return put(std::move(key), [&] { return V(std::forward<Args>(args)...); }, false);
   }
   template <class... Args>
   iterator try_emplace(const_iterator /*hint*/, const K& key, Args&&... args) {
@@ -459,8 +455,7 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   template <class... Args>
   std::pair<iterator, bool> emplace(Args&&... args) {
     std::pair<K, V> entry(std::forward<Args>(args)...);
-    return put(
-        std::move(entry.first), [&] { return std::move(entry.second); }, false);
+    return put(std::move(entry.first), [&] { return std::move(entry.second); }, false);
   }
   template <class... Args>
   iterator emplace_hint(const_iterator /*hint*/, Args&&... args) {

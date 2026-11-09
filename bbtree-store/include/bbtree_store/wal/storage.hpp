@@ -50,10 +50,10 @@ struct append_result {
 template <class S>
 concept wal_storage = requires(const S& storage, std::uint64_t file, std::uint64_t offset,
                                std::span<const std::uint8_t> bytes, std::span<std::uint8_t> buf) {
-                        { S::max_appends } -> std::convertible_to<std::uint32_t>;
-                        { storage.append(file, offset, bytes) } -> std::same_as<append_result>;
-                        { storage.len(file) } -> std::same_as<std::optional<std::uint64_t>>;
-                        { storage.read(file, offset, buf) } -> std::same_as<bool>;
-                      };
+  { S::max_appends } -> std::convertible_to<std::uint32_t>;
+  { storage.append(file, offset, bytes) } -> std::same_as<append_result>;
+  { storage.len(file) } -> std::same_as<std::optional<std::uint64_t>>;
+  { storage.read(file, offset, buf) } -> std::same_as<bool>;
+};
 
 }  // namespace bbtree_store::wal

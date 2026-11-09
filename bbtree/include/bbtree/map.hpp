@@ -126,8 +126,8 @@ class bbtree_map {
 
   bool contains(const K& key) const { return tree_.contains(key); }
   template <class Q>
-    requires(lookup_type<Q>) bool
-  contains(const Q& key) const {
+    requires(lookup_type<Q>)
+  bool contains(const Q& key) const {
     return tree_.contains(key);
   }
 
@@ -309,8 +309,8 @@ class bbtree_map {
 
   bool erase(const K& key) { return remove(key).has_value(); }
   template <class Q>
-    requires(lookup_type<Q>) bool
-  erase(const Q& key) {
+    requires(lookup_type<Q>)
+  bool erase(const Q& key) {
     return remove(key).has_value();
   }
 
@@ -349,8 +349,7 @@ class bbtree_map {
     tree_.change_owned([&](detail::tree<types>& whole) {
       for (; first != last; ++first) {
         const auto& entry = *first;
-        whole.insert(
-            K(entry.first), [&] { return V(entry.second); }, true, pages(), ignored_length);
+        whole.insert(K(entry.first), [&] { return V(entry.second); }, true, pages(), ignored_length);
       }
     });
   }

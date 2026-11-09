@@ -39,7 +39,9 @@ class counting_allocator {
   template <class T>
   std::size_t bytes_freed_by_dropping(T&& value) noexcept {
     const std::size_t before = live_bytes_.load(std::memory_order_relaxed);
-    { [[maybe_unused]] const auto dropped = std::forward<T>(value); }
+    {
+      [[maybe_unused]] const auto dropped = std::forward<T>(value);
+    }
     return before - live_bytes_.load(std::memory_order_relaxed);
   }
 

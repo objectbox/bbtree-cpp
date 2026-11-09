@@ -66,9 +66,8 @@ class value_maker {
   static value_maker structs() noexcept
     requires std::is_same_v<V, struct32>
   {
-    return value_maker([](std::uint64_t index) noexcept {
-      return struct32{index, ~index, seeded_rng::mix(index), 0};
-    });
+    return value_maker(
+        [](std::uint64_t index) noexcept { return struct32{index, ~index, seeded_rng::mix(index), 0}; });
   }
 
  private:

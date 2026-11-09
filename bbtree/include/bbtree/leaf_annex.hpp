@@ -47,9 +47,9 @@ namespace bbtree {
 template <class L>
 concept leaf_annex = std::is_nothrow_default_constructible_v<L> && std::is_nothrow_destructible_v<L> &&
                      is_trivially_relocatable_v<L> && requires(L& annex, L& right, L&& gone) {
-                                                        { annex.split(right) } noexcept;
-                                                        { annex.merge(std::move(gone)) } noexcept;
-                                                      };
+                       { annex.split(right) } noexcept;
+                       { annex.merge(std::move(gone)) } noexcept;
+                     };
 
 // An annex that a map of allocator `A` releases, as its leaf goes with the
 // map, giving what it holds back to the map's allocator:
@@ -57,10 +57,8 @@ concept leaf_annex = std::is_nothrow_default_constructible_v<L> && std::is_nothr
 //   void release(const A& allocator) && noexcept;
 template <class L, class A>
 concept leaf_annex_for = leaf_annex<L> && page_allocator<A> && requires(L&& annex, const A& allocator) {
-                                                                 {
-                                                                   std::move(annex).release(allocator)
-                                                                 } noexcept;
-                                                               };
+  { std::move(annex).release(allocator) } noexcept;
+};
 
 // The strategy whose inline keys and node config are strategy `S`'s, and
 // whose leaves keep an annex `L`: for a shared map.

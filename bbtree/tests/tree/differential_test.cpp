@@ -27,8 +27,7 @@ class tree_under_test {
   ~tree_under_test() { tree_.destroy(pages_); }
 
   bool insert_or_assign(K key, V value) {
-    auto result = tree_.insert(
-        std::move(key), [&] { return value; }, true, pages_, length_);
+    auto result = tree_.insert(std::move(key), [&] { return value; }, true, pages_, length_);
     return result.inserted;
   }
   const V* find(const K& key) const {
@@ -178,7 +177,9 @@ void run_differential_with(std::uint64_t seed, int operations, std::uint64_t key
 template <class K, class V, class S>
 void run_differential(std::uint64_t seed, int operations, std::uint64_t key_space) {
   bbtree_test::drop_ledger ledger;
-  { run_differential_with<K, V, S>(seed, operations, key_space, ledger); }
+  {
+    run_differential_with<K, V, S>(seed, operations, key_space, ledger);
+  }
   REQUIRE(ledger.alive() == 0);
 }
 }  // namespace

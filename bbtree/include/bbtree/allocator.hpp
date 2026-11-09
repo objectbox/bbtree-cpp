@@ -43,11 +43,9 @@ enum class page_kind : unsigned char { internal, leaf };
 // - No member throws: a map calls them in the middle of changing its nodes.
 template <class A>
 concept page_allocator = std::copy_constructible<A> && requires(const A& a, void* p, page_layout l) {
-                                                         {
-                                                           a.allocate_zeroed(l)
-                                                           } noexcept -> std::same_as<void*>;
-                                                         { a.deallocate(p, l) } noexcept;
-                                                       };
+  { a.allocate_zeroed(l) } noexcept -> std::same_as<void*>;
+  { a.deallocate(p, l) } noexcept;
+};
 
 // The global allocator: aligned `operator new`, zeroed. What a map uses
 // unless given another.

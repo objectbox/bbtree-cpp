@@ -34,7 +34,7 @@ class mapped_file {
     if (fd < 0) {
       throw std::system_error(errno, std::generic_category(), "bbtree_mmap: open");
     }
-    struct stat status {};
+    struct stat status{};
     if (::fstat(fd, &status) != 0) {
       const int error = errno;
       ::close(fd);
