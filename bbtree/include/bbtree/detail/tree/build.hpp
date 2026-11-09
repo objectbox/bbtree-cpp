@@ -48,31 +48,46 @@ class tree_builder {
   // past every key before them: `push` for each, with the run of a leaf (the
   // entries into the border leaf while it has room, under the prefix every
   // key shares) in a loop of its own, as Rust's `extend` loops. The loop
-  // keeps the leaf, what every key shares and the count in locals, which
-  // the stores into the leaf's page can't change: members would be read
-  // back after each store (a quarter off a 1M u64 build).
+  // keeps the leaf, its length, what every key shares and the count in
+  // locals, which the stores into the leaf's page can't change: members
+  // would be read back after each store (a quarter off a 1M u64 build). The
+  // leaf's header takes the length, and the builder the count, when the run
+  // ends.
   template <std::input_iterator It, class EntryOf>
   void extend(It first, It last, EntryOf entry_of) {
     leaf_node<T> leaf = border_leaf_;
     shared_prefix shared = tree_.shared();
     std::size_t len = length_ > 0 ? leaf.len() : leaf_node<T>::capacity;
     std::size_t run = 0;
-    for (; first != last; ++first) {
-      std::pair<K, V> entry = entry_of(*first);
-      if (len < leaf_node<T>::capacity && shared.template is_shared_by<T>(entry.first)) [[likely]] {
-        leaf.insert_fit(len, prefixed_key<K&&>(std::move(entry.first)).template window_at<T>(shared.len()),
-                        std::move(entry.second));
-        ++len;
-        ++run;
-        continue;
+    const auto end_run = [&]() noexcept {
+      if (run > 0) {
+        leaf.set_len_after_appends(len);
+        length_ += std::exchange(run, 0);
       }
-      length_ += std::exchange(run, 0);
-      push_past_run(std::move(entry.first), std::move(entry.second));
-      leaf = border_leaf_;
-      shared = tree_.shared();
-      len = leaf.len();
+    };
+    try {
+      for (; first != last; ++first) {
+        std::pair<K, V> entry = entry_of(*first);
+        if (len < leaf_node<T>::capacity && shared.template is_shared_by<T>(entry.first)) [[likely]] {
+          leaf.append_uncounted(len,
+                                prefixed_key<K&&>(std::move(entry.first)).template window_at<T>(shared.len()),
+                                std::move(entry.second));
+          ++len;
+          ++run;
+          continue;
+        }
+        end_run();
+        push_past_run(std::move(entry.first), std::move(entry.second));
+        leaf = border_leaf_;
+        shared = tree_.shared();
+        len = leaf.len();
+      }
+    } catch (...) {
+      // The input threw: the teardown reads the leaf's length.
+      end_run();
+      throw;
     }
-    length_ += run;
+    end_run();
   }
 
   // The tree, with its right border fixed, and its length.

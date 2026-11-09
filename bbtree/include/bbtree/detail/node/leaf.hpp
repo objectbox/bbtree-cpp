@@ -291,6 +291,20 @@ class leaf_node : public child_node<T, leaf_node<T>, true> {
     node_.set_len(old_len + 1);
   }
 
+  // Writes `key` and `value` past the leaf's `len` entries, which has room,
+  // and leaves the length alone: for a run of appends whose caller counts
+  // them and sets the length when the run ends (`set_len_after_appends`),
+  // where `insert_fit` would read the length back and set it every entry.
+  void append_uncounted(std::size_t len, windowed_key<K>&& key, V&& value) const noexcept {
+    assert(len < capacity);
+    keys_and_columns().write(len, std::move(key));
+    value_slots().construct(len, std::move(value));
+  }
+  void set_len_after_appends(std::size_t len) const noexcept {
+    assert(this->len() <= len && len <= capacity);
+    node_.set_len(len);
+  }
+
   // Splits the full leaf and inserts at edge `index`, on the side where that
   // edge ended up. The separator goes up; its entry becomes the right leaf's
   // head (D17, D49).
