@@ -3,8 +3,8 @@
 # tests on AArch64 Linux and on macOS, the tests under AddressSanitizer +
 # UBSan and under ThreadSanitizer (the Shuttle tests' stand-in), each fuzz
 # target for a minute, and the bench's self-check.
-# Ubuntu 24.04 ships the versions the port is developed with: Clang and
-# clang-format 15, GCC 13, CMake 3.28.
+# Linux jobs build with Ubuntu 24.04's default Clang (18), GCC 13 and CMake
+# 3.28; clang-format is pinned in scripts/check.sh.
 name: test
 
 # Every pushed branch runs, so that work in progress is checked before it
@@ -30,9 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y clang-15 clang-format-15 g++-13 ninja-build ccache
-      - name: Use Clang 15
-        run: scripts/use-clang-15.sh clang clang++ clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-rt-dev ninja-build ccache
+      - uses: astral-sh/setup-uv@v6
       - name: Format, build and test
         run: scripts/check.sh
       - name: Install, and build a project against the install
@@ -41,14 +40,12 @@ jobs:
   # AArch64: the in-node counts as NEON vectors (the compiler's), the hash
   # tags' scalar loop and the latch's `isb` spin hint (PORTING.md, P33).
   arm:
-    name: AArch64 Linux, Clang 15 + tests
+    name: AArch64 Linux, Clang + tests
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: |
-          sudo apt-get update && sudo apt-get install -y clang-15 ninja-build ccache
-          scripts/use-clang-15.sh clang clang++
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-rt-dev ninja-build ccache
       - run: cmake --preset debug
       - run: cmake --build --preset debug
       - run: ctest --preset debug
@@ -78,9 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: |
-          sudo apt-get update && sudo apt-get install -y clang-15 ninja-build ccache
-          scripts/use-clang-15.sh clang clang++
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-rt-dev ninja-build ccache
       # ThreadSanitizer needs the address space layout it was built for.
       - name: Fix the address space layout for TSan
         if: matrix.preset == 'tsan'
@@ -95,9 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: |
-          sudo apt-get update && sudo apt-get install -y clang-15 libclang-rt-15-dev ninja-build ccache
-          scripts/use-clang-15.sh clang clang++
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-rt-dev ninja-build ccache
       - run: cmake --preset fuzz
       - run: cmake --build --preset fuzz
       - name: Run every target
@@ -113,9 +106,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: |
-          sudo apt-get update && sudo apt-get install -y clang-15 ninja-build ccache
-          scripts/use-clang-15.sh clang clang++
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-rt-dev ninja-build ccache
       - run: cmake --preset bench
       - run: cmake --build --preset bench
       - run: build/bench/bbtree/bench/bbtree-bench self-check

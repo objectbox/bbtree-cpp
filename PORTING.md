@@ -15,8 +15,8 @@ D1–D60) still hold unless an entry here says otherwise.
   (`--preset tsan`); the GitHub workflows become one (`.github/workflows/
   ci.yml`: format, Clang and GCC tests, both sanitizers, a minute of each
   fuzz target, the bench's self-check). The Nix flake, which pins the Rust
-  toolchain, is not carried over: the workflow pins Ubuntu 24.04's Clang 15,
-  GCC 13 and CMake 3.28, the versions the port is built with.
+  toolchain, is not carried over: the workflow builds with Ubuntu 24.04's
+  default Clang, GCC and CMake, and pins only clang-format (P2).
 - **Left out:** the racing-reads checker (P15), and the release workflows
   (crates.io publishing has no counterpart). The Verus proofs
   (`bbtree/src/proof`, the WAL's lemmas).
@@ -30,7 +30,17 @@ D1–D60) still hold unless an entry here says otherwise.
 
 ## P2. C++20, built and tested with Clang and GCC
 
-- **Chosen:** C++20, no extensions, warnings as errors, Clang 15 and GCC 13.
+- **Chosen:** C++20, no extensions, warnings as errors, Clang 15 and GCC 13,
+  the versions the port was written and measured with.
+- **CI builds with Ubuntu 24.04's default Clang** (18), not a pinned one,
+  as the port builds with any recent Clang; the local builds keep Clang 15
+  covered. It first pinned Clang 15, which stopped working when the runner
+  images added GCC 14: Clang takes the newest GCC's libstdc++, and Clang 15
+  can't parse GCC 14's C++20 ranges headers.
+- **clang-format is pinned,** to 20.1.8 from PyPI, which `scripts/check.sh`
+  runs through `uvx`: the format check needs one version everywhere (15 and
+  20 lay out 50 places differently), and PyPI's build is the same small
+  binary on every machine, apart from the compiler.
 - **Alternative:** C++23 (`std::expected`, deducing `this`,
   `std::flat_map`'s proxy precedent in the library). The installed
   compilers support little of it, and nothing in the port needs it.
@@ -883,9 +893,8 @@ an owning byte string for keys that does neither.
   host's libstdc++ headers and a 64-bit word-size shim, as there is no
   AArch64 sysroot here), with `-Wall -Wextra -Wconversion`; and the AArch64
   assembly shows the NEON counts and `isb`. CI gains an AArch64 Linux job
-  (`ubuntu-24.04-arm`, Clang 15) and a macOS job (`macos-15`, Apple
-  silicon), which build and run the tests. Neither has run yet: nothing of
-  this branch is pushed.
+  (`ubuntu-24.04-arm`, Ubuntu's default Clang as on x86, P2) and a macOS job
+  (`macos-15`, Apple silicon), which build and run the tests; both pass.
 - **Native builds:** the host-CPU flag is `-march=native` on x86 and
   `-mcpu=native` on AArch64 (`BBTREE_NATIVE`, and the tests' native
   target), which Apple's Clang requires on Apple silicon.
