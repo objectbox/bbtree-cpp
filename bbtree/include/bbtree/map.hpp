@@ -349,7 +349,8 @@ class bbtree_map {
     tree_.change_owned([&](detail::tree<types>& whole) {
       for (; first != last; ++first) {
         const auto& entry = *first;
-        whole.insert(K(entry.first), [&] { return V(entry.second); }, true, pages(), ignored_length);
+        whole.template insert<detail::existing_value::assigned>(
+            K(entry.first), [&] { return V(entry.second); }, pages(), ignored_length);
       }
     });
   }

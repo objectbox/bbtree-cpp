@@ -462,8 +462,8 @@ class bbtree_set
 
   template <class KeyRef>
   std::pair<const_iterator, bool> put(KeyRef&& key) {
-    const auto inserted =
-        tree_.insert(std::forward<KeyRef>(key), [] { return detail::set_value{}; }, false, pages(), length_);
+    const auto inserted = tree_.template insert<detail::existing_value::kept>(
+        std::forward<KeyRef>(key), [] { return detail::set_value{}; }, pages(), length_);
     return {const_iterator(cursor_type(&tree_, inserted.entry)), inserted.inserted};
   }
 

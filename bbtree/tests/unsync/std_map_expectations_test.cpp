@@ -24,6 +24,53 @@ namespace {
 using u64_map = bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t>;
 using u64_set = bbtree::unsync::bbtree_set<std::uint64_t>;
 
+// The two maps under one shape, for cases that run on several entry types.
+template <class K, class V>
+using bbtree_map_of = bbtree::unsync::bbtree_map<K, V>;
+template <class K, class V>
+using std_map_of = std::map<K, V>;
+
+// A value that can be moved and copied into place, never assigned.
+struct labelled {
+  const std::uint64_t id;
+  std::string label;
+
+  labelled(std::uint64_t id_, std::string label_) : id(id_), label(std::move(label_)) {}
+  labelled(const labelled&) = default;
+  labelled(labelled&&) noexcept = default;
+};
+
+// std::map asks assignment of its mapped type only where the user assigns
+// (`insert_or_assign`, `map[key] = value`).
+template <template <class, class> class MapOf>
+struct values_that_cannot_be_assigned {
+  static void run() {
+    MapOf<std::uint64_t, labelled> map;
+    REQUIRE(map.try_emplace(1, 1u, "one").second);
+    REQUIRE(map.emplace(2, labelled(2, "two")).second);
+    REQUIRE(map.insert({3, labelled(3, "three")}).second);
+    REQUIRE_FALSE(map.try_emplace(1, 9u, "nine").second);
+    REQUIRE_FALSE(map.emplace(2, labelled(9, "nine")).second);
+    REQUIRE((*map.find(1)).second.label == "one");
+    // Enough to split and merge nodes, which construct and destroy.
+    for (std::uint64_t key = 4; key < 3000; ++key) {
+      REQUIRE(map.try_emplace(key * 7919 % 3001 + 4, key, "a label long enough to live on the heap").second);
+    }
+    for (std::uint64_t key = 0; key < 3100; key += 2) {
+      map.erase(key);
+    }
+    REQUIRE(map.at(3).label == "three");
+    REQUIRE(map.find(4) == map.end());
+    REQUIRE(map.size() > 1000);
+
+    MapOf<std::uint64_t, const std::uint64_t> constant;
+    REQUIRE(constant.try_emplace(1, 10).second);
+    REQUIRE(constant.emplace(2, 20).second);
+    REQUIRE_FALSE(constant.insert({2, 21}).second);
+    REQUIRE(constant.at(2) == 20);
+  }
+};
+
 }  // namespace
 
 // Generic code erases `[lower_bound(a), lower_bound(b))` with no key between.
@@ -60,5 +107,10 @@ TEMPLATE_TEST_CASE("erasing an empty range of a set erases nothing", "[set][std]
   REQUIRE(set.size() == 5000);
   REQUIRE(*next == 2500);
   REQUIRE(set.erase(set.end(), set.end()) == set.end());
+}
+
+TEST_CASE("a mapped type that can't be assigned can be inserted, found and erased", "[map][std]") {
+  values_that_cannot_be_assigned<std_map_of>::run();
+  values_that_cannot_be_assigned<bbtree_map_of>::run();
 }
 

@@ -35,8 +35,8 @@ bool tree<T>::appends_to_rightmost(const K& key) noexcept {
 }
 
 template <class T>
-template <class KeyRef, class A, class MakeValue>
-insertion<T> tree<T>::insert(KeyRef&& key, MakeValue&& make_value, bool assign, const page_source<A>& pages,
+template <existing_value Existing, class KeyRef, class A, class MakeValue>
+insertion<T> tree<T>::insert(KeyRef&& key, MakeValue&& make_value, const page_source<A>& pages,
                              std::size_t& length) {
   static_assert(std::is_same_v<std::remove_cvref_t<KeyRef>, K>);
   if (const node_ptr<T> remembered = rightmost_leaf_; appends_to_rightmost(key)) {
@@ -63,22 +63,14 @@ insertion<T> tree<T>::insert(KeyRef&& key, MakeValue&& make_value, bool assign, 
     const internal_node<T> internal(node);
     const search_result found = internal.search(query);
     if (found.found) {
-      const found_entry<T> entry{node, found.index};
-      if (assign) {
-        *entry.value() = make_value();
-      }
-      return {entry, false};
+      return settle_existing<Existing>({node, found.index}, make_value);
     }
     node = internal.edge(found.index);
   }
   const leaf_node<T> leaf(node);
   const search_result found = leaf.search(query);
   if (found.found) {
-    const found_entry<T> entry{node, found.index};
-    if (assign) {
-      *entry.value() = make_value();
-    }
-    return {entry, false};
+    return settle_existing<Existing>({node, found.index}, make_value);
   }
   if (leaf.len() < leaf_node<T>::capacity) {
     V value = make_value();
@@ -86,23 +78,19 @@ insertion<T> tree<T>::insert(KeyRef&& key, MakeValue&& make_value, bool assign, 
     ++length;
     return {{node, found.index}, true};
   }
-  return insert_with_stack(prefixed, std::forward<MakeValue>(make_value), assign, pages, length);
+  return insert_with_stack<Existing>(prefixed, std::forward<MakeValue>(make_value), pages, length);
 }
 
 // The insert into a full leaf: searches again, recording the node stack, takes
 // the split's pages, then splits.
 template <class T>
-template <class KeyRef, class A, class MakeValue>
+template <existing_value Existing, class KeyRef, class A, class MakeValue>
 [[gnu::noinline]] insertion<T> tree<T>::insert_with_stack(const prefixed_key<KeyRef>& key,
-                                                          MakeValue&& make_value, bool assign,
-                                                          const page_source<A>& pages, std::size_t& length) {
+                                                          MakeValue&& make_value, const page_source<A>& pages,
+                                                          std::size_t& length) {
   node_stack_mut<T> stack(*this);
   if (stack.search(search_key<T, K>(key.key()))) {
-    const found_entry<T> entry = stack.found();
-    if (assign) {
-      *entry.value() = make_value();
-    }
-    return {entry, false};
+    return settle_existing<Existing>(stack.found(), make_value);
   }
   // A split takes a leaf page, one internal page per full internal node
   // above it, and one more for a root that moves down: all before changing

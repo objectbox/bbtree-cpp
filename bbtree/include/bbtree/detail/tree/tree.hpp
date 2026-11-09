@@ -14,6 +14,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <utility>
 
@@ -183,6 +184,12 @@ class node_stack_mut {
   node_stack<T> stack_;
 };
 
+// What an insert does with the value it was given when the tree holds its
+// key: `try_emplace` keeps the entry's value, `insert_or_assign` assigns the
+// new one to it. A template argument, not a flag, so that a mapped type that
+// can't be assigned can still be inserted, as std::map's can.
+enum class existing_value : std::uint8_t { kept, assigned };
+
 // What an insert did: where the entry is, and whether it is new.
 template <class T>
 struct insertion {
@@ -324,13 +331,13 @@ class tree {
   // --- Inserting (`insert.hpp`) ---
 
   // Inserts `key` with the value `make_value()` makes, unless the tree holds
-  // the key; then, if `assign`, assigns the made value to its entry. The key
-  // (`const K&` or `K&&`) is copied or moved only if it goes in. The value is
-  // made before the tree changes, and a split's pages are taken before it:
-  // an exception from either leaves the tree's entries as they were.
-  template <class KeyRef, class A, class MakeValue>
-  insertion<T> insert(KeyRef&& key, MakeValue&& make_value, bool assign, const page_source<A>& pages,
-                      std::size_t& length);
+  // the key; then `Existing` says whether the made value is assigned to its
+  // entry. The key (`const K&` or `K&&`) is copied or moved only if it goes
+  // in. The value is made before the tree changes, and a split's pages are
+  // taken before it: an exception from either leaves the tree's entries as
+  // they were.
+  template <existing_value Existing, class KeyRef, class A, class MakeValue>
+  insertion<T> insert(KeyRef&& key, MakeValue&& make_value, const page_source<A>& pages, std::size_t& length);
 
   // --- Removing (`remove.hpp`) ---
 
@@ -378,9 +385,18 @@ class tree {
   void check_invariants(std::size_t length) const;
 
  private:
-  template <class KeyRef, class A, class MakeValue>
-  insertion<T> insert_with_stack(const prefixed_key<KeyRef>& key, MakeValue&& make_value, bool assign,
+  template <existing_value Existing, class KeyRef, class A, class MakeValue>
+  insertion<T> insert_with_stack(const prefixed_key<KeyRef>& key, MakeValue&& make_value,
                                  const page_source<A>& pages, std::size_t& length);
+
+  // The entry of a key the tree holds already, as an insert leaves it.
+  template <existing_value Existing, class MakeValue>
+  static insertion<T> settle_existing(found_entry<T> entry, MakeValue& make_value) {
+    if constexpr (Existing == existing_value::assigned) {
+      *entry.value() = make_value();
+    }
+    return {entry, false};
+  }
 
   // The append of `key` to the remembered last leaf, if it has room and
   // `key` is greater than its last key and shares what every key does.

@@ -27,7 +27,8 @@ class tree_under_test {
   ~tree_under_test() { tree_.destroy(pages_); }
 
   bool insert_or_assign(K key, V value) {
-    auto result = tree_.insert(std::move(key), [&] { return value; }, true, pages_, length_);
+    auto result = tree_.template insert<bbtree::detail::existing_value::assigned>(
+        std::move(key), [&] { return value; }, pages_, length_);
     return result.inserted;
   }
   const V* find(const K& key) const {

@@ -418,11 +418,11 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
   template <class M>
   std::pair<iterator, bool> insert_or_assign(const K& key, M&& value) {
-    return put(key, [&] { return V(std::forward<M>(value)); }, true);
+    return put<assigned>(key, [&] { return V(std::forward<M>(value)); });
   }
   template <class M>
   std::pair<iterator, bool> insert_or_assign(K&& key, M&& value) {
-    return put(std::move(key), [&] { return V(std::forward<M>(value)); }, true);
+    return put<assigned>(std::move(key), [&] { return V(std::forward<M>(value)); });
   }
   template <class M>
   iterator insert_or_assign(const_iterator /*hint*/, const K& key, M&& value) {
@@ -435,11 +435,11 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
   template <class... Args>
   std::pair<iterator, bool> try_emplace(const K& key, Args&&... args) {
-    return put(key, [&] { return V(std::forward<Args>(args)...); }, false);
+    return put<kept>(key, [&] { return V(std::forward<Args>(args)...); });
   }
   template <class... Args>
   std::pair<iterator, bool> try_emplace(K&& key, Args&&... args) {
-    return put(std::move(key), [&] { return V(std::forward<Args>(args)...); }, false);
+    return put<kept>(std::move(key), [&] { return V(std::forward<Args>(args)...); });
   }
   template <class... Args>
   iterator try_emplace(const_iterator /*hint*/, const K& key, Args&&... args) {
@@ -455,7 +455,7 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   template <class... Args>
   std::pair<iterator, bool> emplace(Args&&... args) {
     std::pair<K, V> entry(std::forward<Args>(args)...);
-    return put(std::move(entry.first), [&] { return std::move(entry.second); }, false);
+    return put<kept>(std::move(entry.first), [&] { return std::move(entry.second); });
   }
   template <class... Args>
   iterator emplace_hint(const_iterator /*hint*/, Args&&... args) {
@@ -585,10 +585,14 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
     return const_reference{*found->key(), *found->value()};
   }
 
-  template <class KeyRef, class MakeValue>
-  std::pair<iterator, bool> put(KeyRef&& key, MakeValue&& make_value, bool assign) {
-    const auto inserted = tree_.insert(std::forward<KeyRef>(key), std::forward<MakeValue>(make_value), assign,
-                                       pages(), length_);
+  // What an insert does with its value when the map holds the key.
+  static constexpr detail::existing_value kept = detail::existing_value::kept;
+  static constexpr detail::existing_value assigned = detail::existing_value::assigned;
+
+  template <detail::existing_value Existing, class KeyRef, class MakeValue>
+  std::pair<iterator, bool> put(KeyRef&& key, MakeValue&& make_value) {
+    const auto inserted = tree_.template insert<Existing>(
+        std::forward<KeyRef>(key), std::forward<MakeValue>(make_value), pages(), length_);
     return {iterator(cursor_type(&tree_, inserted.entry)), inserted.inserted};
   }
 };
