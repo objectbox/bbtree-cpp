@@ -54,9 +54,10 @@ concept plain_bytes = std::is_trivially_copyable_v<T> && (std::has_unique_object
 // default), or as a slot whose bytes lie after its leaf, which the type's
 // library lays out and checks (bbtree-mmap's `var_bytes`). A specialization
 // has `has_bytes`, `in_writer` (the type a writer's tree holds instead), a
-// `format` number for the fingerprint, and `check(file_bytes, slot)`, which
-// throws `file_error` unless the slot at offset `slot` keeps its bytes in
-// bounds.
+// `format` number for the fingerprint (0 for a plain type, another for each
+// kind of slot with bytes, so that a file map of one is never read as of
+// another of its size), and `check(file_bytes, slot)`, which throws
+// `file_error` unless the slot at offset `slot` keeps its bytes in bounds.
 template <class T>
 struct file_storage {
   static constexpr bool has_bytes = false;
@@ -204,8 +205,9 @@ struct file_format {
   // The bit of a tagged offset that says its page holds a leaf (D52).
   static constexpr std::uint64_t leaf_tag = node_ptr<T>::leaf_tag;
 
-  // A hash of everything the layout depends on: a reader of another layout
-  // refuses the file map.
+  // A hash of everything the layout depends on, and of what the slots hold
+  // (`file_storage::format`): a reader of another layout refuses the file
+  // map.
   static constexpr std::uint64_t fingerprint() noexcept {
     const std::uint64_t fields[] = {
         64,
@@ -214,6 +216,8 @@ struct file_format {
         alignof(K),
         slot_size<V>,
         alignof(V),
+        file_storage<K>::format,
+        file_storage<V>::format,
         static_cast<std::uint64_t>(T::inliner::kind),
         T::leaf_plan.width ? static_cast<std::uint64_t>(*T::leaf_plan.width) : 0,
         T::leaf_plan.hash_tags,
