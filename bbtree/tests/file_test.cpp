@@ -5,10 +5,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <map>
 #include <random>
+#include <utility>
 #include <vector>
 
 TEST_CASE("a file map reads like the map it was written from", "[file]") {
@@ -58,6 +60,42 @@ TEST_CASE("file maps of byte-array keys and a set-like value", "[file]") {
     REQUIRE(*read.get(key) == value);
   }
   CHECK_THROWS_AS(writer::from_ascending(entries.rbegin(), entries.rend()), std::invalid_argument);
+}
+
+// The same entries make the same file map, however the map got them: it is
+// compact, and holds no trace of the map's or the writer's addresses. (The
+// Rust crate's `file_maps_depend_on_the_entries_alone`; the shared map has no
+// writer here.)
+TEST_CASE("file maps depend on the entries alone", "[file]") {
+  using writer = bbtree::file_writer<std::uint64_t, std::uint64_t>;
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> entries;
+  bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t> in_order;
+  for (std::uint64_t key = 0; key < 5000; ++key) {
+    entries.emplace_back(key, ~key);
+    in_order.insert({key, ~key});
+  }
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> shuffled_entries = entries;
+  std::shuffle(shuffled_entries.begin(), shuffled_entries.end(), std::mt19937_64(5));
+  bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t> shuffled;
+  for (const auto& [key, value] : shuffled_entries) {
+    shuffled.insert({key, value});
+    // Entries that come and go, so that the map's nodes held others before.
+    shuffled.insert({key + 5000, value});
+  }
+  for (std::uint64_t key = 5000; key < 10'000; ++key) {
+    shuffled.erase(key);
+  }
+  // The writers live side by side: none builds its tree where another's was.
+  const writer ascending = writer::from_ascending(entries.begin(), entries.end());
+  const writer of_in_order(in_order);
+  const writer of_shuffled(shuffled);
+  const bbtree::file_buf file_bytes = ascending.to_buf();
+  const auto same_bytes = [&](const bbtree::file_buf& other) {
+    return std::equal(other.bytes().begin(), other.bytes().end(), file_bytes.bytes().begin(),
+                      file_bytes.bytes().end());
+  };
+  CHECK(same_bytes(of_in_order.to_buf()));
+  CHECK(same_bytes(of_shuffled.to_buf()));
 }
 
 TEST_CASE("a file map of another layout, misaligned or truncated is refused", "[file]") {

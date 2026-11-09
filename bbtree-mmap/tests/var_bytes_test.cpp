@@ -1,18 +1,22 @@
 // Keys and values of any length, kept in heap pages after their leaves, after
 // the Rust crate's `bbtree-mmap/src/var_bytes/tests.rs`: what a span's check
-// refuses, and that a file map of spans is no file map of plain slots of
-// their size.
+// refuses, that a file map of spans is no file map of plain slots of their
+// size, and that it holds its entries' bytes and nothing else of its writer.
+#include "../../bbtree/fuzz/file_image.hpp"
+
 #include <bbtree_mmap/bbtree_map_file.hpp>
 #include <bbtree_mmap/var_bytes.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <random>
 #include <span>
 #include <string>
 #include <string_view>
@@ -34,6 +38,25 @@ namespace {
 
 using bbtree_mmap::var_bytes;
 using bbtree_test::bytes8;
+using text_map = bbtree::unsync::bbtree_map<std::string, std::string>;
+using text_map_file = bbtree_mmap::bbtree_map_file<std::string, std::string>;
+// A map file of text keys and values, as a reader sees it: spans.
+using span_image = bbtree_fuzz::file_image<var_bytes, var_bytes, std::less<>>;
+
+// The numbers below `count` as text keys, each with a value of a length of
+// its own, in an order `seed` shuffles: the same entries whatever the seed.
+text_map text_map_of(std::size_t count, std::uint64_t seed) {
+  std::vector<std::size_t> numbers(count);
+  for (std::size_t number = 0; number < count; ++number) {
+    numbers[number] = number;
+  }
+  std::shuffle(numbers.begin(), numbers.end(), std::mt19937_64(seed));
+  text_map map;
+  for (const std::size_t number : numbers) {
+    map.insert({"key-" + std::to_string(number), std::string(number % 37, 'v')});
+  }
+  return map;
+}
 
 // Why a checked open of `bytes` as a file map of `K` keys and `V` values
 // refuses them; nothing if it opens them.
@@ -135,4 +158,34 @@ TEST_CASE("a file map of spans is none of plain slots of a span's layout", "[mma
   CHECK(refusal<std::uint64_t, std::uint64_t>(text_values.bytes()) == layout_mismatch);
   CHECK(refusal<std::uint64_t, std::uint64_t>(plain.bytes()) == std::nullopt);
   CHECK(refusal<std::uint64_t, var_bytes>(plain.bytes()) == layout_mismatch);
+}
+
+TEST_CASE("slots past a leaf's entries are zeros, not its writer's pointers", "[mmap]") {
+  const std::size_t capacity = span_image::types::leaf_capacity;
+  std::size_t unused = 0;
+  // A count for every number of entries the last leaf can be left with: the
+  // builder stocks it from the leaf before, whose slots keep what moved out.
+  for (std::size_t count = 3000; count <= 3000 + capacity; ++count) {
+    const span_image image(text_map_file::bytes_of(text_map_of(count, 1)).bytes());
+    const std::vector<bbtree_fuzz::image_node> leaves = image.leaves();
+    for (const bbtree_fuzz::image_node& leaf : leaves) {
+      for (std::size_t index = image.len(leaf); index < capacity; ++index) {
+        CHECK(image.is_zero(span_image::key_slot(leaf, index), sizeof(var_bytes)));
+        CHECK(image.is_zero(span_image::value_slot(leaf, index), sizeof(var_bytes)));
+        ++unused;
+      }
+    }
+    // The first leaf has no head.
+    CHECK(image.is_zero(span_image::head_key_slot(leaves.front()), sizeof(var_bytes)));
+    CHECK(image.is_zero(span_image::head_value_slot(leaves.front()), sizeof(var_bytes)));
+  }
+  CHECK(unused > 0);
+}
+
+TEST_CASE("map files of var-length entries depend on the entries alone", "[mmap]") {
+  for (const std::size_t count : {std::size_t{1}, std::size_t{57}, std::size_t{3001}}) {
+    const bbtree::file_buf one = text_map_file::bytes_of(text_map_of(count, 1));
+    const bbtree::file_buf other = text_map_file::bytes_of(text_map_of(count, 2));
+    CHECK(std::equal(one.bytes().begin(), one.bytes().end(), other.bytes().begin(), other.bytes().end()));
+  }
 }

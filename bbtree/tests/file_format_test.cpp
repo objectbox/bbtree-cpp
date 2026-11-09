@@ -111,3 +111,20 @@ TEST_CASE("a leaf's head flag that its place contradicts is refused", "[file]") 
     CHECK(with_flag(leaves.size() - 1, 2) == "a node header out of range");
   }
 }
+
+TEST_CASE("an internal node's edges past its last are zeros", "[file]") {
+  // The builder raises the root twice on the way to 5000 entries, and moves
+  // edges to stock its right border: the pages keep the pointers they held.
+  const u64_image image = u64_image_of(5000);
+  std::size_t unused = 0;
+  for (const bbtree_fuzz::image_node& node : image.nodes()) {
+    if (node.is_leaf) {
+      continue;
+    }
+    for (std::size_t edge = image.len(node) + 1; edge <= u64_image::types::internal_capacity; ++edge) {
+      CHECK(image.get<std::uint64_t>(u64_image::edge_slot(node, edge)) == 0);
+      ++unused;
+    }
+  }
+  CHECK(unused > 0);
+}

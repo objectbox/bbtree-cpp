@@ -119,6 +119,16 @@ class file_image {
 
   std::size_t len(const image_node& node) const noexcept { return get<std::uint16_t>(len_slot(node)); }
 
+  // Whether the `size` bytes at `at` are zeros.
+  bool is_zero(std::size_t at, std::size_t size) const noexcept {
+    for (const std::byte byte : bytes().subspan(at, size)) {
+      if (byte != std::byte{0}) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // Sets a leaf's length, and the header's count of entries to match, so
   // that the count is not what refuses the file map.
   void resize_leaf(const image_node& leaf, std::size_t new_len) noexcept {

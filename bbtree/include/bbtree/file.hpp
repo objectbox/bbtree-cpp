@@ -9,8 +9,9 @@
 //   auto read = bbtree::file_map<std::uint64_t, std::uint64_t>::open(bytes.bytes());
 //   read.get(21);  // const std::uint64_t*
 //
-// - The tree's own pages: each page is copied byte for byte, so a file map
-//   has the map's layouts, inline keys, hash tags and prefixes.
+// - The tree's own pages: each node's page is copied, so a file map has the
+//   map's layouts, inline keys, hash tags and prefixes. Nothing else of the
+//   writer's memory is: a file map depends on its entries alone.
 // - Compact: the writer builds a fresh tree of full nodes from the entries
 //   in key order (D25).
 // - Level order: the root page, each level of internal nodes, the leaves.
@@ -525,8 +526,11 @@ class file_writer {
     return {std::move(order), at};
   }
 
-  // Copies a page's bytes, its header padding zeroed and its edges made
-  // offsets from it.
+  // Copies a page's bytes as the file map keeps them: a leaf's slots whose
+  // bytes lie after it as `LeafBytes` writes them, an internal node's edges
+  // as offsets from it. What a page holds beside its node's entries is the
+  // writer's memory, addresses among it, and none of them reaches the file
+  // map: the same entries make the same bytes.
   static void copy_page(std::span<std::byte> out, const placed& page,
                         const std::unordered_map<std::uintptr_t, std::uint64_t>& offset_of) {
     std::byte* dest = out.data() + page.offset;
@@ -535,16 +539,44 @@ class file_writer {
     // The header's padding byte, which no write initializes.
     dest[offsetof(detail::node_header, has_head) + 1] = std::byte{0};
     if (page.node.is_leaf()) {
+      zero_slots_with_bytes(dest);
       LeafBytes::write(detail::leaf_node<types>(page.node), dest, page.size, dest + page.size);
       return;
     }
     const detail::internal_node<types> internal(page.node);
+    // Past the node's keys lie its edges, the writer's pointers, and what
+    // the page held before: a root page raised from a leaf keeps the leaf's
+    // bytes there (`root_page::raise`). Zeros, but for the edges it has.
+    const std::size_t keys_end =
+        types::internal.keys.keys_offset + internal.len() * types::internal.keys.key_stride;
+    std::memset(dest + keys_end, 0, copied - keys_end);
     for (std::size_t edge = 0; edge <= internal.len(); ++edge) {
       const auto child = internal.edge(edge);
       const std::uint64_t child_offset = offset_of.at(child.tagged());
       const std::uint64_t relative = child_offset - page.offset + (child.is_leaf() ? 1 : 0);
       std::memcpy(dest + types::internal.edges_offset + edge * types::internal.edge_stride, &relative,
                   sizeof relative);
+    }
+  }
+
+  // Zeroes every slot of `leaf_page`, a leaf's copy, whose bytes lie after
+  // the leaf: each holds a pointer of the writer's, or held one. `LeafBytes`
+  // then writes those of the leaf's entries; the slots past them, and a
+  // missing head's, stay zeros.
+  static void zero_slots_with_bytes(std::byte* leaf_page) noexcept {
+    constexpr auto layout = types::leaf;
+    if constexpr (file_storage<K>::has_bytes) {
+      for (std::size_t index = 0; index < types::leaf_capacity; ++index) {
+        std::memset(leaf_page + layout.keys.keys_offset + index * layout.keys.key_stride, 0, sizeof(KW));
+      }
+      if (layout.head_key_offset) {
+        std::memset(leaf_page + *layout.head_key_offset, 0, sizeof(KW));
+      }
+    }
+    if constexpr (file_storage<V>::has_bytes) {
+      for (std::size_t index = 0; index <= types::leaf_capacity; ++index) {
+        std::memset(leaf_page + layout.head_offset + index * layout.value_stride, 0, sizeof(VW));
+      }
     }
   }
 
