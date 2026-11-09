@@ -149,46 +149,146 @@ TEST_CASE("byte strings compare against prefixes zero-padded", "[inline_key]") {
 
 namespace {
 
-// Sorted live slots, the rest the greatest inline key; the counted equal
-// range must be the sorted one.
-template <bbtree::inline_width W, std::size_t Capacity>
-void check_equal_ranges(std::mt19937_64& rng) {
-  using slot = typename bbtree::detail::inline_slot<W>::type;
-  for (int round = 0; round < 2000; ++round) {
-    const std::size_t len = rng() % (Capacity + 1);
-    std::vector<slot> slots(Capacity, static_cast<slot>(~slot{0}));
-    for (std::size_t i = 0; i < len; ++i) {
-      slots[i] = static_cast<slot>(rng() % 8);
-    }
-    std::sort(slots.begin(), slots.begin() + static_cast<std::ptrdiff_t>(len));
-    const bbtree::detail::node_inline_keys<W, Capacity> keys(slots.data(), len);
-    for (slot target = 0; target < 9; ++target) {
-      const auto live_end = slots.begin() + static_cast<std::ptrdiff_t>(len);
-      const auto lower =
-          static_cast<std::size_t>(std::lower_bound(slots.begin(), live_end, target) - slots.begin());
-      const auto upper =
-          static_cast<std::size_t>(std::upper_bound(slots.begin(), live_end, target) - slots.begin());
-      const auto range = keys.equal_range(bbtree::detail::inline_slot<W>::inline_key(target));
-      REQUIRE(range.start == lower);
-      REQUIRE(range.end == upper);
+using bbtree::inline_width;
+using bbtree::detail::slot_range;
+
+// `Capacity` slots at width `W`, as a node holds them, and no byte more: a
+// vector load that leaves the column is one AddressSanitizer reports.
+template <inline_width W, std::size_t Capacity>
+class slot_column {
+  using slot_traits = bbtree::detail::inline_slot<W>;
+  using slot = typename slot_traits::type;
+  static constexpr slot greatest = static_cast<slot>(~slot{0});
+  static constexpr slot sign_bit = static_cast<slot>(slot{1} << (slot_traits::bits - 1));
+
+  // Inline keys to search among and for: both ends of their range, both
+  // sides of the sign bit, which the vector compares flip, and some between.
+  static constexpr std::array<slot, 12> notable{0,
+                                                1,
+                                                2,
+                                                7,
+                                                static_cast<slot>(sign_bit - 2),
+                                                static_cast<slot>(sign_bit - 1),
+                                                sign_bit,
+                                                static_cast<slot>(sign_bit + 1),
+                                                static_cast<slot>(sign_bit + 9),
+                                                static_cast<slot>(greatest - 2),
+                                                static_cast<slot>(greatest - 1),
+                                                greatest};
+
+ public:
+  slot_column() : slots_(Capacity, greatest) {}
+
+  // For every length up to the capacity: sorted slots with ties, the slots
+  // past the length the greatest (invariant 4), and targets below, among
+  // and above them. Every way of counting must find std's bounds.
+  void check_sorted_equal_ranges(std::mt19937_64& rng) {
+    for (std::size_t len = 0; len <= Capacity; ++len) {
+      for (const std::size_t choices : {std::size_t{1}, std::size_t{3}, notable.size()}) {
+        fill_sorted(rng, len, choices);
+        for (const slot target : notable) {
+          const auto lower = std::lower_bound(slots_.begin(), live_end(len), target) - slots_.begin();
+          const auto upper = std::upper_bound(slots_.begin(), live_end(len), target) - slots_.begin();
+          for (const slot_range found : equal_ranges(len, target)) {
+            if (found.start != static_cast<std::size_t>(lower) ||
+                found.end != static_cast<std::size_t>(upper)) {
+              FAIL("width " << sizeof(slot) << ", capacity " << Capacity << ", len " << len << ", target "
+                            << +target << ": " << found.start << ".." << found.end << ", expected " << lower
+                            << ".." << upper);
+            }
+          }
+        }
+      }
     }
   }
+
+  // Whatever the slots hold, as a reader racing a writer may see them, every
+  // way of counting finds a range within the live slots.
+  void check_any_equal_ranges_stay_in_bounds(std::mt19937_64& rng) {
+    for (int round = 0; round < 200; ++round) {
+      for (slot& value : slots_) {
+        value = notable[rng() % notable.size()];
+      }
+      const std::size_t len = rng() % (Capacity + 1);
+      for (const slot target : notable) {
+        for (const slot_range found : equal_ranges(len, target)) {
+          if (found.start > found.end || found.end > len) {
+            FAIL("width " << sizeof(slot) << ", capacity " << Capacity << ", len " << len << ", target "
+                          << +target << ": " << found.start << ".." << found.end);
+          }
+        }
+      }
+    }
+  }
+
+ private:
+  auto live_end(std::size_t len) { return slots_.begin() + static_cast<std::ptrdiff_t>(len); }
+
+  // `len` sorted live slots drawn from `choices` neighbouring notable inline
+  // keys, the rest the greatest.
+  void fill_sorted(std::mt19937_64& rng, std::size_t len, std::size_t choices) {
+    std::fill(slots_.begin(), slots_.end(), greatest);
+    const std::size_t first_choice = rng() % (notable.size() - choices + 1);
+    for (std::size_t index = 0; index < len; ++index) {
+      slots_[index] = notable[first_choice + rng() % choices];
+    }
+    std::sort(slots_.begin(), live_end(len));
+  }
+
+  // The equal range of `target` among the first `len` slots by every way
+  // this build has of finding it: its own choice, then each one named.
+  std::vector<slot_range> equal_ranges(std::size_t len, slot target) const {
+    const bbtree::detail::node_inline_keys<W, Capacity> keys(slots_.data(), len);
+    std::vector<slot_range> ranges{keys.equal_range(slot_traits::inline_key(target)),
+                                   keys.equal_range_by_count(target), keys.equal_range_by_two_counts(target),
+                                   keys.equal_range_by_binary_search(target)};
+#if defined(__SSE2__)
+    if constexpr (bbtree::detail::vector_count<bbtree::detail::sse2_lanes<slot>, Capacity>::fits) {
+      ranges.push_back(keys.template equal_range_in_vectors<bbtree::detail::sse2_lanes<slot>>(target));
+    }
+#endif
+#if defined(__AVX2__)
+    if constexpr (bbtree::detail::vector_count<bbtree::detail::avx2_lanes<slot>, Capacity>::fits) {
+      ranges.push_back(keys.template equal_range_in_vectors<bbtree::detail::avx2_lanes<slot>>(target));
+    }
+#endif
+    return ranges;
+  }
+
+  std::vector<slot> slots_;
+};
+
+// Columns of width `W` at each of `Capacity`.
+template <inline_width W, std::size_t... Capacity>
+struct slot_columns {
+  template <class Check>
+  static void for_each(Check check) {
+    (check(slot_column<W, Capacity>()), ...);
+  }
+};
+
+// The capacities of the maps' nodes at each width (layout_test.cpp), those
+// around a register's and a mask word's worth of slots, and large ones.
+template <class Check>
+void for_each_slot_column(Check check) {
+  slot_columns<inline_width::two, 12, 13, 15, 16, 17, 23, 28, 31, 32, 33, 38, 48, 49, 55, 63, 64, 65, 100,
+               127, 128, 129, 511, 1023>::for_each(check);
+  slot_columns<inline_width::four, 12, 13, 15, 16, 17, 28, 31, 32, 33, 40, 41, 63, 64, 65, 100, 129,
+               256>::for_each(check);
+  slot_columns<inline_width::eight, 12, 13, 15, 16, 17, 19, 24, 28, 31, 32, 33, 41, 63, 64, 65,
+               128>::for_each(check);
 }
 
 }  // namespace
 
-TEST_CASE("the count finds the equal range at every width and capacity", "[inline_key]") {
+TEST_CASE("every count finds the equal range at every width, capacity and length", "[inline_key]") {
   std::mt19937_64 rng(45);
-  using bbtree::inline_width;
-  check_equal_ranges<inline_width::two, 12>(rng);
-  check_equal_ranges<inline_width::two, 49>(rng);
-  check_equal_ranges<inline_width::two, 55>(rng);
-  check_equal_ranges<inline_width::two, 64>(rng);
-  check_equal_ranges<inline_width::four, 17>(rng);
-  check_equal_ranges<inline_width::four, 28>(rng);
-  check_equal_ranges<inline_width::four, 41>(rng);
-  check_equal_ranges<inline_width::eight, 24>(rng);
-  check_equal_ranges<inline_width::eight, 31>(rng);
+  for_each_slot_column([&rng](auto column) { column.check_sorted_equal_ranges(rng); });
+}
+
+TEST_CASE("every count stays within the live slots whatever they hold", "[inline_key]") {
+  std::mt19937_64 rng(47);
+  for_each_slot_column([&rng](auto column) { column.check_any_equal_ranges_stay_in_bounds(rng); });
 }
 
 TEST_CASE("hash tags find none, one, two or many candidates", "[inline_key]") {

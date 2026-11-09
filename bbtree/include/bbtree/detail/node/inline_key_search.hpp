@@ -3,13 +3,15 @@
 // every slot up to the capacity, not by a binary search: the count's loads
 // don't depend on one another, so a node's lines arrive together (04, Q6).
 //
-// The count runs as the compiler vectorizes it, but on x86-64 without POPCNT,
-// where an SSE2 mask that fits one word gives both bounds by trailing-one
-// counts (D40, D43). On x86-64 without SSE2 (kernels), a binary search.
-// The Rust crate's explicit AVX-512 and NEON counts are not ported
+// On x86-64 the count runs in explicit vectors (`vector_count.hpp`): AVX2's
+// where the build target has them, SSE2's otherwise. On x86-64 without SSE2
+// (kernels), a binary search. Elsewhere, and for 8-byte slots on x86-64
+// without SSE4.2, which has no vector compare for them, a loop over the
+// slots. The Rust crate's explicit AVX-512 and NEON counts are not ported
 // (PORTING.md, P9).
 #pragma once
 
+#include <bbtree/detail/node/vector_count.hpp>
 #include <bbtree/inline_key.hpp>
 
 #include <bit>
@@ -47,7 +49,7 @@ struct slot_range {
 
 // A node's inline keys at width `W`: `Capacity` slots, the first `len` live,
 // the rest holding the greatest inline key (invariant 4). The capacity is a
-// constant, so the count unrolls.
+// constant, so a count is straight-line code.
 template <inline_width W, std::size_t Capacity>
 class node_inline_keys {
   using slot_traits = inline_slot<W>;
@@ -69,19 +71,75 @@ class node_inline_keys {
 
   // The positions of the inline keys equal to the bytes the node keeps of
   // `inline_key`: exactly those for sorted inline keys, a range within
-  // 0..len for any; if none, the empty range where it belongs.
+  // 0..len for any; if none, the empty range where it belongs. Found the
+  // build target's way, one of those below.
   [[gnu::always_inline]] slot_range equal_range(inline_word inline_key) const noexcept {
     const slot_type target = slot_traits::of(inline_key);
 #if defined(__x86_64__) && !defined(__SSE2__)
     return equal_range_by_binary_search(target);
 #else
-#if defined(__SSE2__) && !defined(__POPCNT__)
-    if constexpr (sse2_mask_fits) {
-      return equal_range_by_sse2_mask(target);
+#if defined(__AVX2__)
+    if constexpr (vector_count<avx2_lanes<slot_type>, Capacity>::fits) {
+      return equal_range_in_vectors<avx2_lanes<slot_type>>(target);
     }
 #endif
+#if defined(__SSE2__)
+    if constexpr (vector_count<sse2_lanes<slot_type>, Capacity>::fits) {
+      return equal_range_in_vectors<sse2_lanes<slot_type>>(target);
+    }
+    return equal_range_by_two_counts(target);
+#else
     return equal_range_by_count(target);
 #endif
+#endif
+  }
+
+  // By a count in registers of `Lanes` (`vector_count.hpp`), which fit the
+  // slots.
+  template <class Lanes>
+  [[gnu::always_inline]] slot_range equal_range_in_vectors(slot_type target) const noexcept {
+    return cut_at_len(vector_count<Lanes, Capacity>::of(slots_, target));
+  }
+
+  // By one branch-free pass over every slot, which counts those below the
+  // target and those equal to it, as the compiler vectorizes it.
+  //
+  // The counters have the slots' own width, which holds any count up to the
+  // capacity: 64-bit counters would widen every compared lane, and the
+  // compiler would count four slots a vector instead of sixteen.
+  [[gnu::always_inline]] slot_range equal_range_by_count(slot_type target) const noexcept {
+    static_assert(Capacity <= 0xffff, "a count fits the narrowest slot");
+    slot_type below_count = 0;
+    slot_type equal_count = 0;
+    for (std::size_t index = 0; index < Capacity; ++index) {
+      const slot_type slot = slots_[index];
+      below_count = static_cast<slot_type>(below_count + (slot < target ? 1 : 0));
+      equal_count = static_cast<slot_type>(equal_count + (slot == target ? 1 : 0));
+    }
+    return cut_at_len({below_count, std::size_t{below_count} + equal_count});
+  }
+
+  // By a pass over every slot for each count, a slot at a time: x86-64's
+  // way for 8-byte slots without SSE4.2, which no register compares. A pass
+  // is a compare and an add with carry a slot. Of one pass with both tests,
+  // GCC makes a branch a slot, mispredicted where the slots pass the target.
+  [[gnu::always_inline]] slot_range equal_range_by_two_counts(slot_type target) const noexcept {
+    std::size_t below_count = 0;
+    for (std::size_t index = 0; index < Capacity; ++index) {
+      below_count += slots_[index] < target ? std::size_t{1} : 0;
+    }
+    std::size_t equal_count = 0;
+    for (std::size_t index = 0; index < Capacity; ++index) {
+      equal_count += slots_[index] == target ? std::size_t{1} : 0;
+    }
+    return cut_at_len({below_count, below_count + equal_count});
+  }
+
+  // By two binary searches over the live slots.
+  slot_range equal_range_by_binary_search(slot_type target) const noexcept {
+    const std::size_t start = partition_point(0, [target](slot_type slot) { return slot < target; });
+    const std::size_t end = partition_point(start, [target](slot_type slot) { return slot <= target; });
+    return {start, end};
   }
 
   // Whether every slot past `len` holds the greatest inline key.
@@ -101,25 +159,12 @@ class node_inline_keys {
     return slot;
   }
 
-  // One branch-free pass over every slot counts those below the target and
-  // those equal to it; slots past `len` hold the greatest inline key, so
-  // they never count below, and the cuts at `len` keep the range in bounds.
-  //
-  // The counters have the slots' own width, which holds any count up to the
-  // capacity: 64-bit counters would widen every compared lane, and the
-  // compiler would count four slots a vector instead of sixteen.
-  [[gnu::always_inline]] slot_range equal_range_by_count(slot_type target) const noexcept {
-    static_assert(Capacity <= 0xffff, "a count fits the narrowest slot");
-    slot_type below_count = 0;
-    slot_type equal_count = 0;
-    for (std::size_t index = 0; index < Capacity; ++index) {
-      const slot_type slot = slots_[index];
-      below_count = static_cast<slot_type>(below_count + (slot < target ? 1 : 0));
-      equal_count = static_cast<slot_type>(equal_count + (slot == target ? 1 : 0));
-    }
-    const std::size_t below = below_count < len_ ? below_count : len_;
-    const std::size_t end = below + equal_count < len_ ? below + equal_count : len_;
-    return {below, end};
+  // The equal range of counts over every slot up to the capacity. Slots
+  // past `len` hold the greatest inline key, so they never count below a
+  // target, and the cuts at `len` leave them out; the cuts also keep the
+  // range in bounds whatever the slots hold.
+  slot_range cut_at_len(slot_counts counts) const noexcept {
+    return {counts.below < len_ ? counts.below : len_, counts.through < len_ ? counts.through : len_};
   }
 
   // The first live slot from `low` for which `is_before` is false, by a
@@ -139,96 +184,6 @@ class node_inline_keys {
     }
     return base + (is_before(load(base)) ? 1 : 0);
   }
-
-  slot_range equal_range_by_binary_search(slot_type target) const noexcept {
-    const std::size_t start = partition_point(0, [target](slot_type slot) { return slot < target; });
-    const std::size_t end = partition_point(start, [target](slot_type slot) { return slot <= target; });
-    return {start, end};
-  }
-
-#if defined(__SSE2__)
-  static constexpr std::size_t slot_bytes = sizeof(slot_type);
-  static constexpr std::size_t lanes = 16 / slot_bytes;
-  static constexpr std::size_t unpacked_max_slots = 64 / slot_bytes;
-  // Above one word of byte masks, one packing stage halves each lane (D40).
-  static constexpr bool packed = Capacity > unpacked_max_slots;
-  static constexpr bool sse2_mask_fits = slot_bytes <= 4 && Capacity >= lanes &&
-                                         Capacity <= (packed ? 2 * unpacked_max_slots : unpacked_max_slots) &&
-                                         (!packed || Capacity >= 2 * lanes);
-
-  static __m128i set1(slot_type value) noexcept {
-    if constexpr (slot_bytes == 2) {
-      return _mm_set1_epi16(static_cast<short>(value));
-    } else {
-      return _mm_set1_epi32(static_cast<int>(value));
-    }
-  }
-  static __m128i greater(__m128i a, __m128i b) noexcept {
-    if constexpr (slot_bytes == 2) {
-      return _mm_cmpgt_epi16(a, b);
-    } else {
-      return _mm_cmpgt_epi32(a, b);
-    }
-  }
-  static __m128i equal_lanes(__m128i a, __m128i b) noexcept {
-    if constexpr (slot_bytes == 2) {
-      return _mm_cmpeq_epi16(a, b);
-    } else {
-      return _mm_cmpeq_epi32(a, b);
-    }
-  }
-  static __m128i pack(__m128i a, __m128i b) noexcept {
-    if constexpr (slot_bytes == 2) {
-      return _mm_packs_epi16(a, b);
-    } else {
-      return _mm_packs_epi32(a, b);
-    }
-  }
-  __m128i load_lanes(std::size_t start) const noexcept {
-    return _mm_loadu_si128(reinterpret_cast<const __m128i*>(slots_ + start));
-  }
-
-  // SSE2 compares as signed, so both sides flip their sign bit. Sorted slots
-  // make the `< target` and `<= target` masks runs of low ones; their first
-  // zeros are the bounds, with no software population count.
-  slot_range equal_range_by_sse2_mask(slot_type target) const noexcept {
-    constexpr slot_type sign_bit = static_cast<slot_type>(slot_type{1} << (8 * slot_bytes - 1));
-    const __m128i flip = set1(sign_bit);
-    const __m128i flipped_target = set1(static_cast<slot_type>(target ^ sign_bit));
-    const std::size_t bits_per_slot = packed ? slot_bytes / 2 : slot_bytes;
-    std::uint64_t below_bits = 0;
-    std::uint64_t through_bits = 0;
-    if constexpr (packed) {
-      for (std::size_t offset = 0; offset < Capacity; offset += 2 * lanes) {
-        const std::size_t start = offset < Capacity - 2 * lanes ? offset : Capacity - 2 * lanes;
-        const __m128i first = _mm_xor_si128(load_lanes(start), flip);
-        const __m128i second = _mm_xor_si128(load_lanes(start + lanes), flip);
-        const __m128i lower = pack(greater(flipped_target, first), greater(flipped_target, second));
-        const __m128i above = pack(greater(first, flipped_target), greater(second, flipped_target));
-        below_bits |= static_cast<std::uint64_t>(static_cast<unsigned>(_mm_movemask_epi8(lower)))
-                      << (start * bits_per_slot);
-        through_bits |= static_cast<std::uint64_t>(static_cast<std::uint16_t>(~_mm_movemask_epi8(above)))
-                        << (start * bits_per_slot);
-      }
-    } else {
-      for (std::size_t offset = 0; offset < Capacity; offset += lanes) {
-        const std::size_t start = offset < Capacity - lanes ? offset : Capacity - lanes;
-        const __m128i chunk = _mm_xor_si128(load_lanes(start), flip);
-        const auto lower = static_cast<std::uint64_t>(
-            static_cast<unsigned>(_mm_movemask_epi8(greater(flipped_target, chunk))));
-        const auto equal = static_cast<std::uint64_t>(
-            static_cast<unsigned>(_mm_movemask_epi8(equal_lanes(flipped_target, chunk))));
-        below_bits |= lower << (start * slot_bytes);
-        through_bits |= (lower | equal) << (start * slot_bytes);
-      }
-    }
-    std::size_t below = static_cast<std::size_t>(std::countr_one(below_bits)) / bits_per_slot;
-    std::size_t through = static_cast<std::size_t>(std::countr_one(through_bits)) / bits_per_slot;
-    below = below < len_ ? below : len_;
-    through = through < len_ ? through : len_;
-    return {below, through};
-  }
-#endif
 
   const slot_type* slots_;
   std::size_t len_;
