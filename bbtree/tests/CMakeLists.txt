@@ -5,6 +5,7 @@ set(BBTREE_TEST_SOURCES
   allocator_test.cpp
   pooled_allocator_test.cpp
   file_test.cpp
+  file_format_test.cpp
   fuzz_harness_test.cpp
   readme_test.cpp
   node/inline_key_test.cpp

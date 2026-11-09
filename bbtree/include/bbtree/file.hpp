@@ -201,6 +201,8 @@ struct file_format {
   using V = typename T::mapped_type;
 
   static constexpr std::size_t alignment = T::root_page.align;
+  // The bit of a tagged offset that says its page holds a leaf (D52).
+  static constexpr std::uint64_t leaf_tag = node_ptr<T>::leaf_tag;
 
   // A hash of everything the layout depends on: a reader of another layout
   // refuses the file map.
@@ -261,6 +263,36 @@ struct file_format {
     }
   }
 
+  // Whether a page of layout `page` lies whole in `bytes` at `offset`,
+  // aligned. The offset is a word of the file map, which may hold anything:
+  // `offset + page.size` could wrap, so the sum is never taken.
+  static bool holds_page(std::span<const std::byte> bytes, std::uint64_t offset, page_layout page) noexcept {
+    return offset % page.align == 0 && offset <= bytes.size() && page.size <= bytes.size() - offset;
+  }
+
+  // The header of `bytes`, which a file map of this layout starts with,
+  // checked: its magic, version and fingerprint, that `bytes` is as long as
+  // it says and aligned, and that its root page lies in it, past the header.
+  static file_header read_header(std::span<const std::byte> bytes) {
+    const file_header header = file_header::read(bytes);
+    if (header.fingerprint != fingerprint()) {
+      throw file_error(file_error::kind::layout_mismatch, "a file map of another layout");
+    }
+    if (header.byte_len > bytes.size()) {
+      throw file_error(file_error::kind::corrupt, "a file map longer than its bytes");
+    }
+    if (reinterpret_cast<std::uintptr_t>(bytes.data()) % alignment != 0) {
+      throw file_error(file_error::kind::misaligned, "file map bytes not aligned to its pages");
+    }
+    if (header.root != 0) {
+      const std::uint64_t offset = header.root & ~leaf_tag;
+      if (offset < file_header::size || !holds_page(bytes.first(header.byte_len), offset, T::root_page)) {
+        throw file_error(file_error::kind::corrupt, "a root page outside the file map");
+      }
+    }
+    return header;
+  }
+
   // Checks every page reachable from the root for what keeps reads in
   // bounds: in the file map, aligned, headers in range, edges leading
   // forward to children of one kind per level, and the entry count.
@@ -271,7 +303,6 @@ struct file_format {
       }
       return;
     }
-    constexpr std::uintptr_t leaf_tag = 1;
     std::vector<std::uint64_t> level{header.root};
     std::uint64_t entries = 0;
     std::uint64_t last_reached = header.root & ~leaf_tag;
@@ -282,7 +313,7 @@ struct file_format {
       std::vector<std::uint64_t> children;
       for (const std::uint64_t tagged : level) {
         const std::uint64_t offset = tagged & ~leaf_tag;
-        if (offset % page.align != 0 || offset + page.size > bytes.size()) {
+        if (!holds_page(bytes, offset, page)) {
           throw file_error(file_error::kind::corrupt, "a page outside the file map, or misaligned");
         }
         const std::byte* node = bytes.data() + offset;
@@ -517,19 +548,10 @@ class file_map {
     return map;
   }
 
-  // Opens `bytes`, checking the header alone: for a trusted file map.
+  // Opens `bytes`, checking the header alone, its root page's place
+  // included: for a trusted file map.
   static file_map open_unchecked(std::span<const std::byte> bytes) {
-    if (reinterpret_cast<std::uintptr_t>(bytes.data()) % format::alignment != 0) {
-      throw file_error(file_error::kind::misaligned, "file map bytes not aligned to its pages");
-    }
-    const detail::file_header header = detail::file_header::read(bytes);
-    if (header.fingerprint != format::fingerprint()) {
-      throw file_error(file_error::kind::layout_mismatch, "a file map of another layout");
-    }
-    if (header.byte_len > bytes.size()) {
-      throw file_error(file_error::kind::corrupt, "a file map longer than its bytes");
-    }
-    return file_map(bytes, header);
+    return file_map(bytes, format::read_header(bytes));
   }
 
   file_map(file_map&& other) noexcept
