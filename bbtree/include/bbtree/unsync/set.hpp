@@ -333,16 +333,9 @@ class bbtree_set
   const_iterator erase(const_iterator position) noexcept {
     return const_iterator(this->erase_at(position.cursor_));
   }
+  // Erases [first, last), as the map's range erase does.
   const_iterator erase(const_iterator first, const_iterator last) noexcept {
-    std::size_t count = 0;
-    for (const_iterator at = first; at != last; ++at) {
-      ++count;
-    }
-    const_iterator at = first;
-    for (; count > 0; --count) {
-      at = erase(at);
-    }
-    return at;
+    return const_iterator(this->erase_range(first.cursor_, last.cursor_));
   }
 
   std::optional<K> pop_first() noexcept {

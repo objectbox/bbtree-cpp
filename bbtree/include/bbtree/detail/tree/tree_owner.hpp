@@ -140,6 +140,38 @@ class tree_owner {
     return cursor_type(&tree_, stack.stack());
   }
 
+  // Erases the entries from `first` up to `last`, which is not before it,
+  // and returns the cursor at `last`'s entry. The whole map is cleared. A
+  // range of more than a leaf's entries that reaches one end of the map is
+  // cut off there and dropped (`drop_beside_cut`); below that a cut costs
+  // more than the entries. Any other range goes entry by entry: joining what
+  // lies on both sides of it would take a merge the tree has not.
+  cursor_type erase_range(cursor_type first, const cursor_type& last) noexcept {
+    const bool from_first = first == cursor_type(&tree_, node_end::first);
+    const bool to_end = last.is_end();
+    if (from_first && to_end) {
+      clear_tree();
+      return cursor_type(&tree_);
+    }
+    // Erasing moves entries, so `last` goes stale: count the range instead.
+    std::size_t count = 0;
+    for (cursor_type at = first; !(at == last); at.next()) {
+      if (count == leaf_node<T>::capacity && (from_first || to_end)) {
+        if (to_end && drop_beside_cut(*first.key(), node_end::last)) {
+          return cursor_type(&tree_);
+        }
+        if (from_first && drop_beside_cut(*last.key(), node_end::first)) {
+          return cursor_type(&tree_, node_end::first);
+        }
+      }
+      ++count;
+    }
+    for (; count > 0; --count) {
+      first = erase_at(first);
+    }
+    return first;
+  }
+
   // Moves every entry of `other` in, `other`'s winning at an equal key; both
   // trees' entries move in order into one bulk build (D25). The build's pages
   // come first, as many as it takes if no keys are equal: a page refused
@@ -197,6 +229,23 @@ class tree_owner {
   [[no_unique_address]] Allocator allocator_;
   tree_type tree_;
   std::size_t length_ = 0;
+
+ private:
+  // Cuts the map at `key`, in O(log n), and drops the entries on one side of
+  // the cut: those below `key` (`first`) or those from `key` on (`last`).
+  // False, with the map as it was, if the allocator refuses the cut's pages.
+  bool drop_beside_cut(const K& key, node_end dropped) noexcept {
+    try {
+      tree_owner upper(allocator_);
+      split_off_into(key, upper);
+      if (dropped == node_end::first) {
+        swap_with(upper);
+      }
+      return true;
+    } catch (const alloc_error&) {
+      return false;
+    }
+  }
 };
 
 }  // namespace bbtree::detail

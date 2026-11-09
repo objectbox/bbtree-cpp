@@ -752,3 +752,61 @@ TEST_CASE("erase at an iterator moves entries that are not trivially relocatable
   }
   CHECK(ledger.alive() == 0);
 }
+
+TEST_CASE("erase of a range matches std::map at every kind of range", "[map]") {
+  // Counts around a leaf's entries, where a range at an end starts to be cut
+  // off, and on trees of one to three levels.
+  for (const std::uint64_t count : {0u, 1u, 40u, 56u, 57u, 300u, 20'000u}) {
+    const std::uint64_t step = std::max<std::uint64_t>(1, count / 7);
+    for (std::uint64_t from = 0; from <= count; from += step) {
+      for (std::uint64_t to = from; to <= count; to += step) {
+        u64_map map;
+        std::map<std::uint64_t, std::uint64_t> model;
+        for (std::uint64_t i = 0; i < count; ++i) {
+          map.insert({i * 2, i});
+          model.insert({i * 2, i});
+        }
+        // Empty ranges too, anywhere: nothing goes.
+        const auto next = map.erase(map.lower_bound(from * 2), map.lower_bound(to * 2));
+        const auto model_next = model.erase(model.lower_bound(from * 2), model.lower_bound(to * 2));
+        REQUIRE((next == map.end()) == (model_next == model.end()));
+        if (model_next != model.end()) {
+          REQUIRE(next->first == model_next->first);
+        }
+        check_equal(map, model);
+        // The map takes entries after it, where the range was and at its ends.
+        for (const std::uint64_t key : {from * 2 + 1, std::uint64_t{0}, count * 2 + 1}) {
+          map.insert({key, 1});
+          model.insert({key, 1});
+        }
+        check_equal(map, model);
+      }
+    }
+  }
+}
+
+TEST_CASE("erase of a range drops the values it erases", "[map]") {
+  bbtree_test::drop_ledger ledger;
+  {
+    bbtree::unsync::bbtree_map<std::string, bbtree_test::tracked> map;
+    for (std::uint64_t i = 0; i < 5000; ++i) {
+      map.try_emplace("key-" + std::to_string(10'000 + i), ledger, i);
+    }
+    map.erase(map.find("key-13000"), map.end());
+    CHECK(map.size() == 3000);
+    CHECK(ledger.alive() == 3000);
+    map.erase(map.begin(), map.find("key-11000"));
+    CHECK(map.size() == 2000);
+    CHECK(ledger.alive() == 2000);
+    map.erase(map.find("key-11500"), map.find("key-12500"));
+    CHECK(map.size() == 1000);
+    CHECK(ledger.alive() == 1000);
+    map.check_invariants();
+    CHECK(map.begin()->first == "key-11000");
+    map.erase(map.begin(), map.end());
+    CHECK(map.empty());
+    CHECK(ledger.alive() == 0);
+    map.check_invariants();
+  }
+  CHECK(ledger.alive() == 0);
+}

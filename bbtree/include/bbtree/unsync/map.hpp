@@ -484,23 +484,11 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   iterator erase(const_iterator position) noexcept { return iterator(this->erase_at(position.cursor_)); }
   iterator erase(iterator position) noexcept { return erase(const_iterator(position)); }
 
+  // Erases [first, last): the whole map by clearing it, a long range that
+  // starts at the first entry or ends at `end()` by one cut, O(log n) and a
+  // visit of the dropped nodes; any other entry by entry.
   iterator erase(const_iterator first, const_iterator last) noexcept {
-    if (last == end()) {
-      while (first != last) {
-        first = erase(first);
-      }
-      return end();
-    }
-    // Erasing moves entries, so the last iterator goes stale: count instead.
-    std::size_t count = 0;
-    for (const_iterator at = first; at != last; ++at) {
-      ++count;
-    }
-    iterator at(first.cursor_);
-    for (; count > 0; --count) {
-      at = erase(at);
-    }
-    return at;
+    return iterator(this->erase_range(first.cursor_, last.cursor_));
   }
 
   // Removes and returns the first or last entry, if any.
