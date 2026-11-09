@@ -75,9 +75,12 @@ class racing_node_reads {
   }
 
   // Routes `key` through `node`, read at `version`; none if a check failed.
+  // Inlined, as `candidate` is: the descent's and the lookups' loops are
+  // these two (`latched_tree::descend`).
   template <class Q>
-  static std::optional<routed> route(internal_node<T> node, const search_key<T, Q>& key,
-                                     latch_version version) noexcept {
+  [[gnu::always_inline]] static std::optional<routed> route(internal_node<T> node,
+                                                            const search_key<T, Q>& key,
+                                                            latch_version version) noexcept {
     std::size_t low = 0;
     std::size_t high = 0;
     std::size_t len = 0;
@@ -108,7 +111,8 @@ class racing_node_reads {
 
   // What the leaf's inline keys tell of `key`, read without a latch.
   template <class Q>
-  static leaf_candidate candidate(leaf_node<T> leaf, const search_key<T, Q>& key) noexcept {
+  [[gnu::always_inline]] static leaf_candidate candidate(leaf_node<T> leaf,
+                                                         const search_key<T, Q>& key) noexcept {
     const racing_reads reads;
     const auto [len, prefix_len] = header(leaf.node(), leaf_node<T>::capacity);
     if constexpr (search_key<T, Q>::compares_inline) {

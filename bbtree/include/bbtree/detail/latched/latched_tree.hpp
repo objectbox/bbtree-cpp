@@ -291,8 +291,14 @@ class latched_tree {
   // Descends to the leaf where `key` belongs, holding it in `Mode`; none for a
   // key outside what every key shares (D50). Restarts from the root on any
   // failed check.
+  //
+  // Inlined into every operation, as the Rust crate's is: it is most of what
+  // a lookup runs, and out of line it hands the held leaf back through
+  // memory, 40 bytes written and read again an operation, behind a call that
+  // saves six registers.
   template <leaf_mode Mode, class Q, class Path = no_path>
-  std::optional<descent<T, Mode>> descend(const search_key<T, Q>& key, Path&& path = Path()) const noexcept {
+  [[gnu::always_inline]] std::optional<descent<T, Mode>> descend(const search_key<T, Q>& key,
+                                                                 Path&& path = Path()) const noexcept {
     while (true) {
       path.clear();
       const node_ptr<T> root = root_node();
@@ -471,9 +477,10 @@ class latched_tree {
 
   // The entry at `key`, read and compared as a copy at the leaf's version,
   // where keys order by their own bytes: its value, if `Copies`; none where
-  // that doesn't settle it.
+  // that doesn't settle it. Inlined, so that the two optionals are the
+  // caller's registers, not 24 bytes returned through memory.
   template <bool Copies, class Q>
-  std::optional<std::optional<settled_value<Copies>>> find_unlatched(
+  [[gnu::always_inline]] std::optional<std::optional<settled_value<Copies>>> find_unlatched(
       const search_key<T, Q>& key) const noexcept {
     using settled = std::optional<settled_value<Copies>>;
     auto found = descend<leaf_mode::optimistic>(key);
@@ -520,8 +527,9 @@ class latched_tree {
   // query's, if the query ends within it, is the query's key exactly when
   // its tag, its length, is the query's, so no byte of it is read. Unsettled
   // (null) at a separator, for a longer query, or if the leaf changed.
+  // Inlined as `find_unlatched` is.
   template <bool Copies, class Q>
-  std::optional<std::optional<settled_value<Copies>>> find_unlatched_by_length(
+  [[gnu::always_inline]] std::optional<std::optional<settled_value<Copies>>> find_unlatched_by_length(
       const search_key<T, Q>& key) const {
     using settled = std::optional<settled_value<Copies>>;
     auto found = descend<leaf_mode::optimistic>(key);
