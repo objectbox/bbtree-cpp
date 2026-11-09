@@ -295,7 +295,8 @@ struct file_format {
 
   // Checks every page reachable from the root for what keeps reads in
   // bounds: in the file map, aligned, headers in range, edges leading
-  // forward to children of one kind per level, and the entry count.
+  // forward to children of one kind per level, a key in every leaf below the
+  // root, and the entry count.
   static void check(std::span<const std::byte> bytes, const file_header& header) {
     if (header.root == 0) {
       if (header.length != 0) {
@@ -324,6 +325,13 @@ struct file_format {
           throw file_error(file_error::kind::corrupt, "a node header out of range");
         }
         if (leaves) {
+          // A walk steps from a separator to the first key of the leaf after
+          // it, and back to the last key of the leaf before it
+          // (`cursor.hpp`): a leaf below the root holds a key, as every leaf
+          // a writer makes does.
+          if (depth > 0 && len == 0) {
+            throw file_error(file_error::kind::corrupt, "a leaf below the root without keys");
+          }
           entries += len + has_head;
           check_slots(bytes, offset, len, has_head == 1);
           continue;

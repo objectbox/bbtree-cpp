@@ -80,3 +80,16 @@ TEST_CASE("a root page outside the file map is refused, checked or not", "[file]
     }
   }
 }
+
+TEST_CASE("a leaf below the root without keys is refused", "[file]") {
+  const u64_image image = u64_image_of(5000);
+  const std::vector<bbtree_fuzz::image_node> leaves = image.leaves();
+  // The first leaf, one inside, and the last: a walk would step onto each
+  // one's first key from the separator before it, or onto its last from the
+  // one after. The header's count follows the leaf's, so that it is not the
+  // count that refuses the file map.
+  for (const std::size_t index : {std::size_t{0}, std::size_t{2}, leaves.size() - 1}) {
+    CHECK(image.corruption_after([&](u64_image& damaged) { damaged.resize_leaf(leaves[index], 0); }) ==
+          "a leaf below the root without keys");
+  }
+}
