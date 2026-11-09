@@ -134,7 +134,11 @@ template <class KeyRef, class Pages>
 [[gnu::noinline]] void node_stack_mut<T>::insert_splitting(const prefixed_key<KeyRef>& key, V&& value,
                                                            const Pages& pages, std::size_t& length) {
   const leaf_node<T> bottom = leaf();
-  auto split = bottom.split_insert(index(), key.template window_at<T>(bottom.prefix_len()), std::move(value),
+  // The key's copy, which may throw, on a line of its own: as an argument
+  // beside the page it could run after the page left the reserve, which
+  // would then be lost (arguments are evaluated in no set order).
+  windowed_key<K> windowed = key.template window_at<T>(bottom.prefix_len());
+  auto split = bottom.split_insert(index(), std::move(windowed), std::move(value),
                                    fresh_page<T, page_role::leaf>::allocate(pages));
   std::size_t indexes_in_halves[max_depth + 1];
   std::size_t separator_indexes[max_depth + 1];
