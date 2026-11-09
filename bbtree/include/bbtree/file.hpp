@@ -227,6 +227,10 @@ struct file_format {
   using V = typename T::mapped_type;
 
   static constexpr std::size_t alignment = T::root_page.align;
+  // Without inline keys the internal nodes keep keys (D17), and no bytes
+  // follow an internal node: keys whose bytes lie after their leaf have
+  // inline keys, or there is no file map of them, to write or to read.
+  static constexpr bool keys_fit_internal_nodes = !file_storage<K>::has_bytes || T::has_inline_keys;
   // The bit of a tagged offset that says its page holds a leaf (D52).
   static constexpr std::uint64_t leaf_tag = node_ptr<T>::leaf_tag;
 
@@ -421,6 +425,7 @@ class file_writer {
                     types::leaf_plan.hash_tags == file_types::leaf_plan.hash_tags &&
                     types::internal_plan.width == file_types::internal_plan.width,
                 "a writer's pages and its file map's are of one layout");
+  static_assert(format::keys_fit_internal_nodes, "keys whose bytes lie after their leaf need inline keys");
 
  public:
   // The entries of a map, in key order.
@@ -616,6 +621,7 @@ class file_map {
   using types = detail::tree_types<K, V, Compare, detail::in_file<Strategy>>;
   using format = detail::file_format<types>;
   using cursor_type = detail::cursor<types>;
+  static_assert(format::keys_fit_internal_nodes, "keys whose bytes lie after their leaf need inline keys");
 
  public:
   // Opens `bytes`, checking every page for what keeps reads in bounds, so
