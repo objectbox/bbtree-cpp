@@ -34,6 +34,10 @@ class run_header {
   // cell has run.
   void record_end();
 
+  // Records the events that `--perf` leaves out on this CPU, which the
+  // settings then name.
+  void record_left_out(std::span<const perf_event> events);
+
   // The start time, safe for file names: `20261007T143810Z`.
   std::string file_stamp() const;
 
@@ -133,7 +137,8 @@ class run_record {
 
   // The perf counts per operation, in `perf_events::all` order, to six
   // decimals: one event in a million operations, which rare events, such as
-  // cache lines from memory on small maps, come down to.
+  // cache lines from memory on small maps, come down to. Empty for an event
+  // left out.
   static std::array<std::string, perf_events::all.size()> perf_fields(
       const cell_measurement& measurement, const std::optional<perf_counts>& counts);
 

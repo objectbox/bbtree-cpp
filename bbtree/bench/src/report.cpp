@@ -39,6 +39,17 @@ std::string_view run_header::vector_extensions() noexcept {
 
 void run_header::record_end() { end_ = run_end{std::chrono::steady_clock::now() - started_, load_average()}; }
 
+void run_header::record_left_out(std::span<const perf_event> events) {
+  std::string titles;
+  for (const perf_event event : events) {
+    titles += titles.empty() ? "" : ", ";
+    titles += perf_events::title(event);
+  }
+  if (!titles.empty()) {
+    settings_ += std::format("; not counted on this CPU: {}", titles);
+  }
+}
+
 std::string run_header::file_stamp() const {
   std::string stamp;
   for (const char character : started_at_) {
@@ -225,7 +236,10 @@ std::array<std::string, perf_events::all.size()> run_record::perf_fields(
     return fields;
   }
   for (std::size_t index = 0; index < perf_events::all.size(); ++index) {
-    fields[index] = std::format("{:.6f}", counts->per_operation(perf_events::all[index], timed->operations));
+    if (const std::optional<double> count =
+            counts->per_operation(perf_events::all[index], timed->operations)) {
+      fields[index] = std::format("{:.6f}", *count);
+    }
   }
   return fields;
 }

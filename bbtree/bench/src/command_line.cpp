@@ -250,9 +250,10 @@ options:
   --reps N   repetitions per cell (default 1; more for cells shown to be
              noisy)
   --quick    10x smaller sizes and operation counts, for CI and development
-  --perf     count cycles, instructions, branches, branch misses, L1d misses
-             and cache lines from memory, of the timed regions on the main
-             thread, with `perf stat`
+  --perf     count cycles, instructions, branches, branch misses and, where
+             the CPU counts them beside those, L1d misses and cache lines
+             from memory, of the timed regions on the main thread, with
+             `perf stat`
   --list     print the selected cells and exit
   --out DIR  where to write the CSV and the summary (default: bbtree/bench/results))",
       named<suite>::all_names(), data_directory::variable, named<map_kind>::all_names(),

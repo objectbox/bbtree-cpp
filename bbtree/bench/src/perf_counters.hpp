@@ -14,11 +14,18 @@
 // which the CPU counts all at once or not at all, so that each count is
 // exact rather than scaled up from a share of the time; a cell whose counts
 // aren't exact fails.
+//
+// Cycles, instructions, branches and branch misses are counted on every CPU,
+// and `--perf` fails without them. The cache events are counted where the
+// CPU has them and the group has a counter left for them (the NMI watchdog
+// holds one on AMD); an event left out leaves its CSV column empty, and the
+// report's header names it.
 #pragma once
 
 #include <array>
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -51,6 +58,12 @@ class perf_events {
   // perf counts on this CPU is the one used.
   static std::span<const std::string_view> perf_names(perf_event event) noexcept;
 
+  // Whether `--perf` fails without the event; the others are left out where
+  // they can't be counted.
+  static constexpr bool is_required(perf_event event) noexcept {
+    return event != perf_event::l1d_load_misses && event != perf_event::lines_from_memory;
+  }
+
   // The CSV column of the count per operation.
   static std::string_view column(perf_event event) noexcept;
 
@@ -67,8 +80,12 @@ class perf_event_names {
   explicit perf_event_names(names_type names) noexcept : names_(names) {}
 
   // The first name of each event that perf counts here, checked to count as
-  // one group.
+  // one group. Leaves out the events that aren't required and that perf
+  // can't count here, alone or in the group, and says so on stderr.
   static perf_event_names for_this_cpu();
+
+  // The events left out, in `perf_events::all` order.
+  std::vector<perf_event> left_out() const;
 
   // `perf stat` counting the events as one group, on the main thread only,
   // in CSV.
@@ -79,6 +96,10 @@ class perf_event_names {
  private:
   // `event` alone, as `name`.
   static perf_event_names only(perf_event event, std::string_view name) noexcept;
+
+  // The last event in the group that isn't required, to leave out of a group
+  // that doesn't count; none once only the required ones are in.
+  std::optional<perf_event> last_optional() const noexcept;
 
   // Counts the events over `true`; throws unless every count is exact.
   void count_trial() const;
@@ -94,12 +115,19 @@ class perf_counts {
   // there, counted all the time.
   static perf_counts parse(std::string_view text, const perf_event_names& names);
 
-  double per_operation(perf_event event, std::uint64_t operations) const noexcept {
-    return counts_[static_cast<std::size_t>(event)] / static_cast<double>(operations);
+  // The event's count per operation; none for an event left out.
+  std::optional<double> per_operation(perf_event event, std::uint64_t operations) const noexcept {
+    const std::optional<double> count = counts_[static_cast<std::size_t>(event)];
+    return count ? std::optional(*count / static_cast<double>(operations)) : std::nullopt;
   }
 
  private:
-  std::array<double, perf_events::all.size()> counts_{};
+  // Whether perf reports the count of the event it was asked for as `name`
+  // under `reported`: the same name, or, for the cache events of perf's own
+  // vocabulary (`L1-dcache-load-misses:u`), the name without its modifier.
+  static bool reports_as(std::string_view name, std::string_view reported) noexcept;
+
+  std::array<std::optional<double>, perf_events::all.size()> counts_{};
 };
 
 // The runner's side: the events as perf names them on this CPU, and the
@@ -107,10 +135,12 @@ class perf_counts {
 // long as this does.
 class perf_stat {
  public:
-  // Checks that perf counts every event exactly on this CPU, then creates
-  // the scratch directory and its FIFOs. Its path must not contain a comma,
+  // Checks which events perf counts exactly on this CPU, then creates the
+  // scratch directory and its FIFOs. Its path must not contain a comma,
   // which separates the FIFOs in perf's arguments.
   static perf_stat prepare(std::filesystem::path directory);
+
+  const perf_event_names& event_names() const noexcept { return event_names_; }
 
   perf_stat(perf_stat&& other) noexcept;
   perf_stat& operator=(perf_stat&&) = delete;

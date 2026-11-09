@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cstring>
 #include <format>
+#include <iostream>
 #include <system_error>
 #include <utility>
 
@@ -22,9 +23,12 @@ std::span<const std::string_view> perf_events::perf_names(perf_event event) noex
   static constexpr std::array<std::string_view, 1> branches{"branches:u"};
   static constexpr std::array<std::string_view, 1> branch_misses{"branch-misses:u"};
   static constexpr std::array<std::string_view, 1> l1d_load_misses{"L1-dcache-load-misses:u"};
-  static constexpr std::array<std::string_view, 2> lines_from_memory{
+  static constexpr std::array<std::string_view, 3> lines_from_memory{
       // AMD Zen 4 and later: L1d fills from DRAM or I/O, demand and prefetch.
       "ls_any_fills_from_sys.dram_io_all:u",
+      // AMD Zen 2 and 3: the same, from this NUMA node's DRAM, which is all
+      // of it on one socket.
+      "ls_any_fills_from_sys.mem_io_local:u",
       // Intel: the core's requests that miss L3: loads, stores and
       // prefetches.
       "longest_lat_cache.miss:u",
@@ -100,20 +104,52 @@ perf_event_names perf_event_names::for_this_cpu() {
       for (const std::string& failure : failures) {
         reasons += reasons.empty() ? failure : "; " + failure;
       }
-      throw bench_error(std::format("perf can't count {} here: {}", perf_events::title(event), reasons));
+      const std::string problem =
+          std::format("perf can't count {} here: {}", perf_events::title(event), reasons);
+      if (perf_events::is_required(event)) {
+        throw bench_error(problem);
+      }
+      std::cerr << problem << "; left out\n";
     }
   }
-  const perf_event_names event_names(names);
-  try {
-    event_names.count_trial();
-  } catch (const bench_error& failure) {
-    throw bench_error(
-        std::format("{}. The group needs a hardware counter per event at once: another perf session may hold "
-                    "some, or, on "
-                    "AMD, the NMI watchdog (`sysctl kernel.nmi_watchdog=0` frees it)",
-                    failure.what()));
+  perf_event_names event_names(names);
+  for (;;) {
+    try {
+      event_names.count_trial();
+      return event_names;
+    } catch (const bench_error& failure) {
+      const std::string problem = std::format(
+          "{}. The group needs a hardware counter per event at once: another perf session may "
+          "hold some, or, on AMD, the NMI watchdog (`sysctl kernel.nmi_watchdog=0` frees it)",
+          failure.what());
+      const std::optional<perf_event> dropped = event_names.last_optional();
+      if (!dropped) {
+        throw bench_error(problem);
+      }
+      std::cerr << std::format("{}; {} left out\n", problem, perf_events::title(*dropped));
+      event_names.names_[static_cast<std::size_t>(*dropped)] = {};
+    }
   }
-  return event_names;
+}
+
+std::vector<perf_event> perf_event_names::left_out() const {
+  std::vector<perf_event> events;
+  for (const perf_event event : perf_events::all) {
+    if (names_[static_cast<std::size_t>(event)].empty()) {
+      events.push_back(event);
+    }
+  }
+  return events;
+}
+
+std::optional<perf_event> perf_event_names::last_optional() const noexcept {
+  std::optional<perf_event> last;
+  for (const perf_event event : perf_events::all) {
+    if (!perf_events::is_required(event) && !names_[static_cast<std::size_t>(event)].empty()) {
+      last = event;
+    }
+  }
+  return last;
 }
 
 perf_event_names perf_event_names::only(perf_event event, std::string_view name) noexcept {
@@ -156,7 +192,7 @@ perf_counts perf_counts::parse(std::string_view text, const perf_event_names& na
     std::optional<std::vector<std::string_view>> found;
     for (const std::string_view line : text_lines::of(text)) {
       std::vector<std::string_view> fields = text_lines::split(line, ',');
-      if (fields.size() > 2 && fields[2] == name) {
+      if (fields.size() > 2 && reports_as(name, fields[2])) {
         found = std::move(fields);
         break;
       }
@@ -183,6 +219,11 @@ perf_counts perf_counts::parse(std::string_view text, const perf_event_names& na
     counts.counts_[index] = *value;
   }
   return counts;
+}
+
+bool perf_counts::reports_as(std::string_view name, std::string_view reported) noexcept {
+  const std::size_t modifier = name.rfind(':');
+  return reported == name || (modifier != std::string_view::npos && reported == name.substr(0, modifier));
 }
 
 perf_stat perf_stat::prepare(std::filesystem::path directory) {

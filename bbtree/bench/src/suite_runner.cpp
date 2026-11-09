@@ -69,6 +69,7 @@ void suite_runner::run() const {
   std::optional<perf_stat> stat;
   if (request_.perf()) {
     stat.emplace(perf_stat::prepare(directory / (".perf-" + file_stem)));
+    header.record_left_out(stat->event_names().left_out());
   }
   const std::filesystem::path executable = std::filesystem::read_symlink("/proc/self/exe", error);
   if (error) {
