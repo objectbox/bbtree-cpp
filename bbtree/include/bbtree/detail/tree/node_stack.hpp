@@ -163,6 +163,13 @@ class node_stack {
       }
       return false;
     }
+    return search_sharing_prefix(key);
+  }
+
+  // The same for a key that shares what every key of the tree shares, as a
+  // key of the tree does: no shared prefix to check it against.
+  template <class Q>
+  [[gnu::always_inline]] bool search_sharing_prefix(const search_key<T, Q>& key) noexcept {
     std::size_t at = depth();
     node_ptr<T> node = node_at(at);
     while (!node.is_leaf()) {

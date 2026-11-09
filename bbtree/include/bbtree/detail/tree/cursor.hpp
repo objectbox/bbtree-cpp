@@ -15,6 +15,10 @@
 // no ancestors (D32, D37), gets it on its first crossing, by searching its
 // key.
 //
+// Of its tree a cursor keeps the root node, not the tree's address: a tree
+// keeps its root page for life (D52), so a cursor stays at its entry when its
+// map is swapped or moved, as std::map's iterators do.
+//
 // A step, its crossing included, is inlined into the loop that steps, and
 // nothing it calls takes the cursor's address: the search that
 // gives a lookup's cursor its node stack returns the stack by value. So the
@@ -50,41 +54,31 @@ class cursor {
   cursor() noexcept = default;
 
   // Past the last entry of `owner`.
-  explicit cursor(const tree<T>* owner) noexcept : tree_(owner) {}
+  explicit cursor(const tree<T>* owner) noexcept : root_(owner->root_or_none()) {}
 
   // At `entry`, which a lookup or an insert found; its node stack comes on
   // its first crossing.
-  cursor(const tree<T>* owner, found_entry<T> entry) noexcept : tree_(owner), at_(position_of(entry)) {}
+  cursor(const tree<T>* owner, found_entry<T> entry) noexcept
+      : root_(owner->root_or_none()), at_(position_of(entry)) {}
 
   // At the entry a node stack of `owner` ends at, or past the last if it is
   // detached.
-  cursor(const tree<T>* owner, const node_stack<T>& at) noexcept : tree_(owner), stack_(at) {
+  cursor(const tree<T>* owner, const node_stack<T>& at) noexcept : root_(owner->root_or_none()), stack_(at) {
     if (stack_.is_attached()) {
       at_ = position_of_stack(stack_);
     }
   }
 
   // At the tree's first entry, or past the last for an empty tree.
-  static cursor first(const tree<T>* owner) noexcept {
-    cursor at(owner);
-    if (owner->has_root()) {
-      at.stack_.attach(owner->root());
-      if (at.stack_.descend_to_first_key()) {
-        at.at_ = position_of_stack(at.stack_);
-      } else {
-        at.stack_.detach();
-      }
-    }
-    return at;
-  }
+  static cursor first(const tree<T>* owner) noexcept { return first_under(owner->root_or_none()); }
 
   // At the first entry not ordered before `query` (`side` before), or after
   // it (`side` after): a range bound.
   template <class Q>
   static cursor beside(const tree<T>* owner, const Q& query, key_side side) noexcept {
     cursor at(owner);
-    if (owner->has_root()) {
-      at.stack_.attach(owner->root());
+    if (at.root_) {
+      at.stack_.attach(at.root_);
       at.stack_.search_to_edge(search_key<T, Q>(query), side, owner->shared());
       at.at_ = at_leaf_edge(at.stack_);
     }
@@ -94,7 +88,6 @@ class cursor {
   bool is_end() const noexcept { return at_.key == nullptr; }
   K* key() const noexcept { return at_.key; }
   V* value() const noexcept { return at_.value; }
-  const tree<T>* owner() const noexcept { return tree_; }
   friend bool operator==(const cursor& a, const cursor& b) noexcept { return a.at_.key == b.at_.key; }
 
   // Steps to the next entry, or past the last; inlined with its crossing,
@@ -108,7 +101,7 @@ class cursor {
         return;
       }
     }
-    at_ = cross_forward(tree_, stack_, at_);
+    at_ = cross_forward(root_, stack_, at_);
   }
 
   // Steps to the previous entry; from past the last, to the last. Inlined
@@ -119,17 +112,32 @@ class cursor {
       at_.value = advance(at_.value, -static_cast<std::ptrdiff_t>(T::leaf.value_stride));
       return;
     }
-    at_ = cross_backward(tree_, stack_, at_);
+    at_ = cross_backward(root_, stack_, at_);
   }
 
   // The node stack at the entry, attached first if the cursor has none; for
   // a removal at the cursor.
   const node_stack<T>& attached_stack() noexcept {
-    attach(tree_, stack_, at_);
+    attach(root_, stack_, at_);
     return stack_;
   }
 
  private:
+  // At the first entry of the tree under `root`, or past the last.
+  static cursor first_under(node_ptr<T> root) noexcept {
+    cursor at;
+    at.root_ = root;
+    if (root) {
+      at.stack_.attach(root);
+      if (at.stack_.descend_to_first_key()) {
+        at.at_ = position_of_stack(at.stack_);
+      } else {
+        at.stack_.detach();
+      }
+    }
+    return at;
+  }
+
   template <class P>
   static P* advance(P* pointer, std::ptrdiff_t bytes) noexcept {
     return reinterpret_cast<P*>(reinterpret_cast<std::byte*>(pointer) + bytes);
@@ -166,7 +174,7 @@ class cursor {
 
   // Attaches the node stack at the entry by searching its key, if it has
   // none, or brings its leaf index to where the in-leaf steps went.
-  [[gnu::always_inline]] static void attach(const tree<T>* owner, node_stack<T>& stack,
+  [[gnu::always_inline]] static void attach(node_ptr<T> root, node_stack<T>& stack,
                                             const position& at) noexcept {
     if (stack.is_attached()) {
       if (at.key_end != nullptr) {
@@ -179,39 +187,39 @@ class cursor {
     }
     // Returned by value, not filled in through the cursor's address, so that
     // the cursor's position can stay in registers.
-    stack = searched_stack(owner, at.key);
+    stack = searched_stack(root, at.key);
   }
 
-  [[gnu::noinline]] static node_stack<T> searched_stack(const tree<T>* owner, const K* key) noexcept {
+  [[gnu::noinline]] static node_stack<T> searched_stack(node_ptr<T> root, const K* key) noexcept {
     node_stack<T> stack;
-    stack.attach(owner->root());
-    [[maybe_unused]] const bool found = stack.search(search_key<T, K>(*key), owner->shared());
+    stack.attach(root);
+    [[maybe_unused]] const bool found = stack.search_sharing_prefix(search_key<T, K>(*key));
     assert(found && "a cursor's key is found at its entry");
     return stack;
   }
 
-  [[gnu::always_inline]] static position cross_forward(const tree<T>* owner, node_stack<T>& stack,
+  [[gnu::always_inline]] static position cross_forward(node_ptr<T> root, node_stack<T>& stack,
                                                        position at) noexcept {
     if (at.key_end != nullptr) {
       // Past the leaf's last entry: the leaf edge after it.
       at.key = advance(at.key, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
-      attach(owner, stack, at);
+      attach(root, stack, at);
       stack.set_index(stack.index() + 1);
       return climb_to_separator_after(stack);
     }
-    attach(owner, stack, at);
+    attach(root, stack, at);
     // At a separator: the first entry of the leftmost leaf right of it.
     stack.set_index(stack.index() + 1);
     stack.template descend_to_leaf<node_end::first>();
     return position_of_stack(stack);
   }
 
-  [[gnu::always_inline]] static position cross_backward(const tree<T>* owner, node_stack<T>& stack,
+  [[gnu::always_inline]] static position cross_backward(node_ptr<T> root, node_stack<T>& stack,
                                                         position at) noexcept {
     if (at.key == nullptr) {
       // From past the last entry: the last.
-      if (owner->has_root()) {
-        stack.attach(owner->root());
+      if (root) {
+        stack.attach(root);
         if (stack.descend_to_last_key()) {
           return position_of_stack(stack);
         }
@@ -219,7 +227,7 @@ class cursor {
       }
       return {};
     }
-    attach(owner, stack, at);
+    attach(root, stack, at);
     if (stack.ends_at_leaf()) {
       // Before the leaf's first entry: the separator left of it.
       for (std::size_t level = stack.depth(); level-- > 0;) {
@@ -255,7 +263,8 @@ class cursor {
     return {};
   }
 
-  const tree<T>* tree_ = nullptr;
+  // The root node of the cursor's tree; none for a tree without a root page.
+  node_ptr<T> root_;
   position at_;
   node_stack<T> stack_;
 };

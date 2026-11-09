@@ -236,6 +236,8 @@ class tree {
     assert(has_root() && "an operation on a tree there is not");
     return root_.node();
   }
+  // The root node, or none: what a cursor keeps of its tree.
+  node_ptr<T> root_or_none() const noexcept { return root_.node(); }
   const shared_prefix& shared() const noexcept { return shared_; }
   shared_prefix& shared_mut() noexcept { return shared_; }
 

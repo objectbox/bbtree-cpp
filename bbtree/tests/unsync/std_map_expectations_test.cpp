@@ -71,6 +71,48 @@ struct values_that_cannot_be_assigned {
   }
 };
 
+// [container.reqmts]: no swap invalidates an iterator to an element, and the
+// elements of a moved map keep theirs; the iterators then walk, and erase
+// from, the map that holds their elements.
+template <template <class, class> class MapOf>
+struct iterators_across_swaps_and_moves {
+  using map_type = MapOf<std::uint64_t, std::uint64_t>;
+
+  static void run() {
+    map_type a;
+    map_type b;
+    for (std::uint64_t key = 0; key < 1000; ++key) {
+      a.emplace(key, key);
+      b.emplace(key + 100'000, key);
+    }
+    auto from_find = a.find(10);
+    auto from_bound = a.lower_bound(600);
+    a.swap(b);
+    for (std::uint64_t expected = 10; expected < 300; ++expected, ++from_find) {
+      REQUIRE((*from_find).first == expected);
+    }
+    for (std::uint64_t expected = 600; expected > 300; --expected, --from_bound) {
+      REQUIRE((*from_bound).first == expected);
+    }
+
+    auto in_moved = b.find(900);
+    map_type c(std::move(b));
+    for (std::uint64_t expected = 900; expected < 1000; ++expected, ++in_moved) {
+      REQUIRE((*in_moved).first == expected);
+    }
+    REQUIRE(in_moved == c.end());
+    REQUIRE((*--in_moved).first == 999);
+
+    auto in_assigned = c.find(20);
+    map_type d;
+    d.emplace(1, 1);
+    d = std::move(c);
+    REQUIRE((*std::next(in_assigned, 100)).first == 120);
+    REQUIRE((*d.erase(in_assigned)).first == 21);
+    REQUIRE(d.size() == 999);
+  }
+};
+
 // Random inserts, lookups, bounds and erases of keys `K`, made by `key_of`
 // from a number, on a map and a std::map; then both hold the same.
 template <class K>
@@ -219,3 +261,7 @@ TEST_CASE("a range of elements that convert to keys builds a sorted map", "[map]
   }
 }
 
+TEST_CASE("iterators stay at their entries when their map is swapped or moved", "[map][std]") {
+  iterators_across_swaps_and_moves<std_map_of>::run();
+  iterators_across_swaps_and_moves<bbtree_map_of>::run();
+}
