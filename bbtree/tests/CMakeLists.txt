@@ -42,3 +42,14 @@ if(NOT BBTREE_NATIVE)
   bbtree_add_tests(bbtree_tests_native)
   target_compile_options(bbtree_tests_native PRIVATE ${BBTREE_NATIVE_FLAG})
 endif()
+
+# The shared map's threads under a scheduler of their own
+# (support/interleaving_schedule.hpp): the one target built with the latched
+# tree's switch points, which every other target compiles to nothing.
+add_executable(bbtree_interleaving_tests
+  support/interleaving_schedule.cpp
+  shared/interleaving_schedule_test.cpp)
+target_compile_definitions(bbtree_interleaving_tests PRIVATE BBTREE_INTERLEAVING=1)
+target_link_libraries(bbtree_interleaving_tests PRIVATE bbtree::bbtree bbtree_warnings Catch2::Catch2WithMain
+                                                        Threads::Threads)
+catch_discover_tests(bbtree_interleaving_tests DISCOVERY_MODE PRE_TEST TEST_PREFIX "bbtree_interleaving_tests: ")

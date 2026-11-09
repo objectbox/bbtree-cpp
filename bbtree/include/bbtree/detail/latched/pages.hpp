@@ -76,8 +76,8 @@ class free_list {
     locked_.store(false, std::memory_order_release);
   }
 
-  std::atomic<bool> locked_{false};
-  std::atomic<std::byte*> top_{nullptr};
+  interleaved<std::atomic<bool>> locked_{false};
+  interleaved<std::atomic<std::byte*>> top_{nullptr};
 };
 
 template <class T>

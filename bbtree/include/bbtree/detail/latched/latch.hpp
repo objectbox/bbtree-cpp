@@ -14,6 +14,8 @@
 // holders, a 43-bit version. A version is the word without its count.
 #pragma once
 
+#include <bbtree/detail/latched/interleaving.hpp>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -55,10 +57,14 @@ struct latched {};
 namespace bbtree::detail {
 
 // Waits that start with a short spin and then yield to the scheduler, as the
-// holder may be preempted or running a user's closure (D3).
+// holder may be preempted or running a user's closure (D3). Under a test's
+// scheduler (`interleaving`) a round lets another thread run instead.
 class backoff {
  public:
   void wait() noexcept {
+    if (interleaving::let_another_run()) {
+      return;
+    }
     if (step_ < spin_steps) {
       for (unsigned spin = 0; spin < (1u << step_); ++spin) {
         spin_hint();
@@ -101,7 +107,8 @@ class latch_version {
 };
 
 // A node's latch word, at offset 8 of every latched page. Only atomics touch
-// it; a fresh, zeroed page is unheld at version 0.
+// it, each access a switch point of `interleaving`; a fresh, zeroed page is
+// unheld at version 0.
 class node_latch {
  public:
   static constexpr std::uint64_t exclusive = 1;
@@ -231,21 +238,25 @@ class node_latch {
     }
   }
 
-  std::atomic_ref<std::uint64_t> word_;
+  interleaved<std::atomic_ref<std::uint64_t>> word_;
 };
 
 // Tells ThreadSanitizer to ignore the reads between its construction and its
 // end: the racing reads of optimistic lock coupling, which the version check
-// after them vouches for or throws away (PORTING.md, P11).
+// after them vouches for or throws away (PORTING.md, P11). A switch point of
+// `interleaving` first: a writer may run before the reads.
 class racing_reads {
  public:
 #if BBTREE_TSAN_ANNOTATIONS
-  racing_reads() noexcept { ::AnnotateIgnoreReadsBegin(__FILE__, __LINE__); }
+  racing_reads() noexcept {
+    interleaving::switch_point();
+    ::AnnotateIgnoreReadsBegin(__FILE__, __LINE__);
+  }
   ~racing_reads() { ::AnnotateIgnoreReadsEnd(__FILE__, __LINE__); }
 #else
   // User-provided, so that a guard that does nothing outside ThreadSanitizer
   // builds is not an unused variable.
-  racing_reads() noexcept {}
+  racing_reads() noexcept { interleaving::switch_point(); }
   ~racing_reads() {}
 #endif
   racing_reads(const racing_reads&) = delete;

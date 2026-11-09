@@ -152,6 +152,7 @@ class latched_tree {
       node_ptr<T> root_before;
       ~write_back() {
         if (!(whole.shared() == before)) {
+          interleaving::switch_point();
           self.shared_ = whole.shared();
         }
         const node_ptr<T> root = whole.has_root() ? whole.root() : node_ptr<T>();
@@ -547,15 +548,18 @@ class latched_tree {
 
   friend class latched_changes<T>;
 
-  static void exchange_relaxed(std::atomic<std::uintptr_t>& a, std::atomic<std::uintptr_t>& b) noexcept {
+  // A tagged node pointer that threads share.
+  using atomic_node_ptr = interleaved<std::atomic<std::uintptr_t>>;
+
+  static void exchange_relaxed(atomic_node_ptr& a, atomic_node_ptr& b) noexcept {
     const std::uintptr_t held = a.load(std::memory_order_relaxed);
     a.store(b.load(std::memory_order_relaxed), std::memory_order_relaxed);
     b.store(held, std::memory_order_relaxed);
   }
 
-  std::atomic<std::uintptr_t> root_{0};
+  atomic_node_ptr root_{0};
   shared_prefix shared_;
-  alignas(128) std::atomic<std::uintptr_t> rightmost_leaf_{0};
+  alignas(128) atomic_node_ptr rightmost_leaf_{0};
   alignas(128) mutable free_lists<T> free_;
 };
 
