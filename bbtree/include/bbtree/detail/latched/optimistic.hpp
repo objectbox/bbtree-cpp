@@ -99,7 +99,11 @@ class racing_node_reads {
         high = len;
       }
     }
-    return route_tied(node, key, version, low, high, len, target);
+    const tie_break tie = route_tied(node, key, version, low, high, target);
+    if (tie.node_changed) {
+      return std::nullopt;
+    }
+    return routed{tie.edge, tie.at_separator, len};
   }
 
   // What the leaf's inline keys tell of `key`, read without a latch.
@@ -222,28 +226,40 @@ class racing_node_reads {
     }
   }
 
+  // What the tied separators' keys told: the edge the key takes and whether
+  // it equals the separator left of that edge, or that a check failed. Two
+  // words, which `route_tied` returns in registers. An optional of `routed`
+  // returns through memory, and `route`, inlined, then kept its own result in
+  // that memory too: every node's edge was stored and loaded back right
+  // before the load of the child it names, on the one chain of dependent
+  // loads a descent has.
+  struct tie_break {
+    std::size_t edge;
+    bool at_separator;
+    bool node_changed;
+  };
+  static_assert(sizeof(tie_break) <= 2 * sizeof(std::size_t));
+
   // Binary search over the tied separators, comparing their head keys.
   template <class Q>
-  [[gnu::noinline]] static std::optional<routed> route_tied(internal_node<T> node,
-                                                            const search_key<T, Q>& key,
-                                                            latch_version version, std::size_t low,
-                                                            std::size_t high, std::size_t len,
-                                                            window target) noexcept {
+  [[gnu::noinline]] static tie_break route_tied(internal_node<T> node, const search_key<T, Q>& key,
+                                                latch_version version, std::size_t low, std::size_t high,
+                                                window target) noexcept {
     while (low < high) {
       const std::size_t middle = low + (high - low) / 2;
       const std::optional<std::weak_ordering> ordering = cmp_separator(node, middle, key, version, target);
       if (!ordering) {
-        return std::nullopt;
+        return {0, false, true};
       }
       if (*ordering < 0) {
         high = middle;
       } else if (*ordering > 0) {
         low = middle + 1;
       } else {
-        return routed{middle + 1, true, len};
+        return {middle + 1, true, false};
       }
     }
-    return routed{low, false, len};
+    return {low, false, false};
   }
 };
 
