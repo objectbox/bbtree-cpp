@@ -88,20 +88,21 @@ class bbtree_set
     reference operator*() const noexcept { return *cursor_.key(); }
     pointer operator->() const noexcept { return cursor_.key(); }
 
-    const_iterator& operator++() noexcept {
+    // Inlined into the loop that steps, as the map's (`map.hpp`).
+    [[gnu::always_inline]] const_iterator& operator++() noexcept {
       cursor_.next();
       return *this;
     }
-    const_iterator operator++(int) noexcept {
+    [[gnu::always_inline]] const_iterator operator++(int) noexcept {
       const_iterator before = *this;
       cursor_.next();
       return before;
     }
-    const_iterator& operator--() noexcept {
+    [[gnu::always_inline]] const_iterator& operator--() noexcept {
       cursor_.prev();
       return *this;
     }
-    const_iterator operator--(int) noexcept {
+    [[gnu::always_inline]] const_iterator operator--(int) noexcept {
       const_iterator before = *this;
       cursor_.prev();
       return before;

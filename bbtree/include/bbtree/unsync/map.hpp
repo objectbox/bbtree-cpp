@@ -99,20 +99,23 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
     reference operator*() const noexcept { return {*cursor_.key(), *cursor_.value()}; }
     pointer operator->() const noexcept { return pointer(**this); }
 
-    basic_iterator& operator++() noexcept {
+    // The steps are inlined into the loop that steps, as the cursor's are
+    // into them (`cursor.hpp`): left to the inliner, Clang makes a step a
+    // call wherever a program has more than one loop over a map type.
+    [[gnu::always_inline]] basic_iterator& operator++() noexcept {
       cursor_.next();
       return *this;
     }
-    basic_iterator operator++(int) noexcept {
+    [[gnu::always_inline]] basic_iterator operator++(int) noexcept {
       basic_iterator before = *this;
       cursor_.next();
       return before;
     }
-    basic_iterator& operator--() noexcept {
+    [[gnu::always_inline]] basic_iterator& operator--() noexcept {
       cursor_.prev();
       return *this;
     }
-    basic_iterator operator--(int) noexcept {
+    [[gnu::always_inline]] basic_iterator operator--(int) noexcept {
       basic_iterator before = *this;
       cursor_.prev();
       return before;

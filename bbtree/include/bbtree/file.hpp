@@ -678,11 +678,12 @@ class file_map {
 
     const_iterator() noexcept = default;
     reference operator*() const noexcept { return {*cursor_.key(), *cursor_.value()}; }
-    const_iterator& operator++() noexcept {
+    // Inlined into the loop that steps, as the map's (`unsync/map.hpp`).
+    [[gnu::always_inline]] const_iterator& operator++() noexcept {
       cursor_.next();
       return *this;
     }
-    const_iterator& operator--() noexcept {
+    [[gnu::always_inline]] const_iterator& operator--() noexcept {
       cursor_.prev();
       return *this;
     }
