@@ -40,7 +40,12 @@
 
 namespace bbtree_bench {
 
-// The entries a build consumes, in its order.
+// The entries a build consumes, in its order. A build takes them by rvalue
+// reference: it moves every entry out and leaves the list, with what a move
+// leaves of each entry, to its caller, which destroys it after the timed
+// region. Destroying it is a pass over every entry for keys that have a
+// destructor, and no part of building a map: the Rust bench's `Vec`, its
+// entries moved out, has only its buffer left to free.
 template <class K, class V>
 using entry_list = std::vector<std::pair<K, V>>;
 
@@ -160,7 +165,7 @@ class std_interface_map {
 
   // The range constructor, from entries sorted by key: Rust's
   // `FromIterator`.
-  static std_interface_map from_sorted_entries(entry_list<K, V> entries) {
+  static std_interface_map from_sorted_entries(entry_list<K, V>&& entries) {
     std_interface_map built;
     built.map_ = Map(std::make_move_iterator(entries.begin()), std::make_move_iterator(entries.end()));
     return built;
@@ -228,7 +233,7 @@ class stx_unsync_map {
     }
     return std::pair<K, V>(std::move(entry->key), std::move(entry->value));
   }
-  static stx_unsync_map from_sorted_entries(entry_list<K, V>) {
+  static stx_unsync_map from_sorted_entries(entry_list<K, V>&&) {
     unsupported_operation::reached(operation::bulk_build);
   }
 
@@ -322,7 +327,7 @@ class counted_bbtree {
 
   std::optional<std::pair<K, V>> pop_first() { unsupported_operation::reached(operation::pop_first); }
 
-  static counted_bbtree from_sorted_entries(entry_list<K, V>) {
+  static counted_bbtree from_sorted_entries(entry_list<K, V>&&) {
     unsupported_operation::reached(operation::bulk_build);
   }
 

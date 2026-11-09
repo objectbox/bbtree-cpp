@@ -227,9 +227,9 @@ class many_maps_cell {
     });
   }
 
-  // Builds each map from its share of `entries`, in their order.
+  // Builds each map from its share of `input`, in its order.
   template <class M>
-  std::vector<M> build_maps(entry_list<K, V> input) const {
+  std::vector<M> build_maps(entry_list<K, V>&& input) const {
     std::vector<M> maps;
     maps.reserve(keys_.map_count());
     std::size_t next = 0;
@@ -244,6 +244,7 @@ class many_maps_cell {
 
   template <class M>
   std::size_t time_builds(stopwatch& watch) const {
+    // Destroyed after the region, with what the build left of its entries.
     entry_list<K, V> input = entries();
     const std::vector<M> maps = watch.time([&] { return build_maps<M>(std::move(input)); });
     std::size_t entry_count = 0;

@@ -184,7 +184,7 @@ class single_map_cell {
   }
 
   template <class M>
-  static M insert_all(entry_list<K, V> entries) {
+  static M insert_all(entry_list<K, V>&& entries) {
     M map;
     for (auto& [key, value] : entries) {
       map.insert(std::move(key), std::move(value));
@@ -200,7 +200,7 @@ class single_map_cell {
   }
 
   template <class M>
-  static M build_map(operation op, entry_list<K, V> input) {
+  static M build_map(operation op, entry_list<K, V>&& input) {
     if (op == operation::bulk_build) {
       return M::from_sorted_entries(std::move(input));
     }
@@ -250,6 +250,7 @@ class single_map_cell {
   template <class M>
   std::size_t time_builds(operation op, stopwatch& watch) const {
     for (std::size_t round = 0; round < rounds(); ++round) {
+      // Destroyed after the region, with what the build left of its entries.
       entry_list<K, V> input = build_input(op);
       const M map = watch.time([&] { return build_map<M>(op, std::move(input)); });
       bench_error::unless(map.entry_count() == entry_count(), "the build holds every entry");
