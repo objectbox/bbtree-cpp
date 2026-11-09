@@ -296,7 +296,7 @@ struct file_format {
   // Checks every page reachable from the root for what keeps reads in
   // bounds: in the file map, aligned, headers in range, edges leading
   // forward to children of one kind per level, a key in every leaf below the
-  // root, and the entry count.
+  // root, a head in every leaf but the first, and the entry count.
   static void check(std::span<const std::byte> bytes, const file_header& header) {
     if (header.root == 0) {
       if (header.length != 0) {
@@ -312,6 +312,9 @@ struct file_format {
       const page_layout page = depth == 0 ? T::root_page : leaves ? T::leaf.page : T::internal.page;
       const std::size_t capacity = leaves ? T::leaf_capacity : T::internal_capacity;
       std::vector<std::uint64_t> children;
+      // A leaf's head is the entry of the separator left of it (D17): every
+      // leaf has one but the first.
+      std::uint8_t head_of_leaf = 0;
       for (const std::uint64_t tagged : level) {
         const std::uint64_t offset = tagged & ~leaf_tag;
         if (!holds_page(bytes, offset, page)) {
@@ -332,6 +335,13 @@ struct file_format {
           if (depth > 0 && len == 0) {
             throw file_error(file_error::kind::corrupt, "a leaf below the root without keys");
           }
+          // A reader takes a separator's key and value from the head of the
+          // leaf right of it, whatever that leaf's flag says: the flag must
+          // say so, for the head's slots to be checked below.
+          if (has_head != head_of_leaf) {
+            throw file_error(file_error::kind::corrupt, "a head in the first leaf, or none in a later one");
+          }
+          head_of_leaf = 1;
           entries += len + has_head;
           check_slots(bytes, offset, len, has_head == 1);
           continue;

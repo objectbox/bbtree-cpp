@@ -93,3 +93,21 @@ TEST_CASE("a leaf below the root without keys is refused", "[file]") {
           "a leaf below the root without keys");
   }
 }
+
+TEST_CASE("a leaf's head flag that its place contradicts is refused", "[file]") {
+  const std::string misplaced = "a head in the first leaf, or none in a later one";
+  for (const std::uint64_t count : {40u, 5000u}) {
+    const u64_image image = u64_image_of(count);
+    const std::vector<bbtree_fuzz::image_node> leaves = image.leaves();
+    const auto with_flag = [&](std::size_t index, std::uint8_t flag) {
+      return image.corruption_after([&](u64_image& damaged) { damaged.set_head_flag(leaves[index], flag); });
+    };
+    CHECK(with_flag(0, 1) == misplaced);
+    // A reader takes a separator's key and value from the leaf right of it
+    // without asking the leaf: it has them.
+    for (std::size_t index = 1; index < leaves.size(); index += leaves.size() / 3 + 1) {
+      CHECK(with_flag(index, 0) == misplaced);
+    }
+    CHECK(with_flag(leaves.size() - 1, 2) == "a node header out of range");
+  }
+}
