@@ -134,7 +134,7 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
     template <class... Position>
     explicit basic_iterator(const detail::tree<types>* tree, Position&&... position) noexcept
         : cursor_(tree, std::forward<Position>(position)...) {}
-    // At another iterator's cursor, copied: a const iterator's, to erase at.
+    // At a cursor an erase returned, or another iterator's.
     explicit basic_iterator(const cursor_type& cursor) noexcept : cursor_(cursor) {}
 
     cursor_type cursor_;
@@ -481,12 +481,7 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   }
 
   // Erases the entry at `position` and returns the next.
-  iterator erase(const_iterator position) noexcept {
-    cursor_type at = position.cursor_;
-    detail::node_stack_mut<types> stack(tree_, at.attached_stack());
-    stack.remove_and_go_to_next(pages(), length_);
-    return iterator(&tree_, stack.stack());
-  }
+  iterator erase(const_iterator position) noexcept { return iterator(this->erase_at(position.cursor_)); }
   iterator erase(iterator position) noexcept { return erase(const_iterator(position)); }
 
   iterator erase(const_iterator first, const_iterator last) noexcept {

@@ -119,6 +119,8 @@ class bbtree_set
     template <class... Position>
     explicit const_iterator(const detail::tree<types>* tree, Position&&... position) noexcept
         : cursor_(tree, std::forward<Position>(position)...) {}
+    // At a cursor an erase returned.
+    explicit const_iterator(const cursor_type& cursor) noexcept : cursor_(cursor) {}
 
     cursor_type cursor_;
   };
@@ -329,10 +331,7 @@ class bbtree_set
     return tree_.remove(key, pages(), length_) ? 1 : 0;
   }
   const_iterator erase(const_iterator position) noexcept {
-    cursor_type at = position.cursor_;
-    detail::node_stack_mut<types> stack(tree_, at.attached_stack());
-    stack.remove_and_go_to_next(pages(), length_);
-    return const_iterator(&tree_, stack.stack());
+    return const_iterator(this->erase_at(position.cursor_));
   }
   const_iterator erase(const_iterator first, const_iterator last) noexcept {
     std::size_t count = 0;

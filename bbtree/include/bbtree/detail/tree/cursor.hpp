@@ -148,6 +148,29 @@ class cursor {
     return stack_;
   }
 
+  // Removes the entry of a cursor without a node stack, one a lookup or an
+  // insert made, where that takes no node above its leaf, and counts it out
+  // of `length`, the tree's: the entry is in a leaf that keeps its minimum,
+  // or is the root, and is not the leaf's last, so the next entry moves into
+  // its slot and the cursor is at that one after. Returns whether it did:
+  // `erase(find(key))` then descends once. A cursor with its node stack
+  // removes along it, which costs it no descent.
+  bool erase_within_leaf(std::size_t& length) noexcept {
+    if (stack_.is_attached() || at_.key_end == nullptr) {
+      return false;
+    }
+    const std::size_t to_end = entries_to_leaf_end(at_);
+    const leaf_node<T> leaf = leaf_of(at_);
+    if (to_end == 1 || !(leaf.keeps_its_minimum() || leaf.node() == root_)) {
+      return false;
+    }
+    leaf.remove(at_.leaf_len - to_end);
+    --length;
+    --at_.leaf_len;
+    at_.key_end = advance(at_.key_end, -static_cast<std::ptrdiff_t>(T::leaf.keys.key_stride));
+    return true;
+  }
+
  private:
   // At the first entry or the last, by `end`, of the tree under `root`; past
   // the last for no tree or an empty one.
@@ -171,6 +194,19 @@ class cursor {
 
   static K* key_begin(const position& at) noexcept {
     return advance(at.key_end, -static_cast<std::ptrdiff_t>(at.leaf_len * T::leaf.keys.key_stride));
+  }
+
+  // How many entries of its leaf lie from the position's on, itself included.
+  static std::size_t entries_to_leaf_end(const position& at) noexcept {
+    return static_cast<std::size_t>(reinterpret_cast<std::byte*>(at.key_end) -
+                                    reinterpret_cast<std::byte*>(at.key)) /
+           T::leaf.keys.key_stride;
+  }
+
+  // The leaf of a position in one: its keys start `keys_offset` into its page.
+  static leaf_node<T> leaf_of(const position& at) noexcept {
+    return leaf_node<T>(
+        node_ptr<T>::leaf_at(reinterpret_cast<std::byte*>(key_begin(at)) - T::leaf.keys.keys_offset));
   }
 
   // The position at `entry`: a leaf's key, with the leaf's run, or a
@@ -204,10 +240,7 @@ class cursor {
                                             const position& at) noexcept {
     if (stack.is_attached()) {
       if (at.key_end != nullptr) {
-        const auto from_end = static_cast<std::size_t>(reinterpret_cast<std::byte*>(at.key_end) -
-                                                       reinterpret_cast<std::byte*>(at.key)) /
-                              T::leaf.keys.key_stride;
-        stack.set_index(at.leaf_len - from_end);
+        stack.set_index(at.leaf_len - entries_to_leaf_end(at));
       }
       return;
     }

@@ -126,6 +126,20 @@ class tree_owner {
     adopt(std::move(builder).finish());
   }
 
+  // Erases the entry at `at` and returns the cursor at the next entry:
+  // within its leaf where that takes no node above it, else along the
+  // cursor's node stack, which a cursor from a lookup searches for first.
+  // Inlined, so that a loop that steps and erases keeps its cursor's copies
+  // out of memory.
+  [[gnu::always_inline]] cursor_type erase_at(cursor_type at) noexcept {
+    if (at.erase_within_leaf(length_)) {
+      return at;
+    }
+    node_stack_mut<T> stack(tree_, at.attached_stack());
+    stack.remove_and_go_to_next(pages(), length_);
+    return cursor_type(&tree_, stack.stack());
+  }
+
   // Moves every entry of `other` in, `other`'s winning at an equal key; both
   // trees' entries move in order into one bulk build (D25). The build's pages
   // come first, as many as it takes if no keys are equal: a page refused

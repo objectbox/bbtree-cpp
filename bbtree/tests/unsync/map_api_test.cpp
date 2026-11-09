@@ -694,3 +694,61 @@ TEST_CASE("append merges in order, the appended values winning", "[map][build]")
     check_equal(left, model);
   }
 }
+
+TEST_CASE("erase at the iterator a lookup made, down to an empty map", "[map]") {
+  // In random order, so that the entry is in a leaf with entries to spare,
+  // the last of its leaf, in a leaf at its minimum, a separator, and at last
+  // in the root.
+  u64_map map;
+  std::map<std::uint64_t, std::uint64_t> model;
+  std::vector<std::uint64_t> keys;
+  for (std::uint64_t i = 0; i < 8000; ++i) {
+    keys.push_back(i * 3);
+    map.insert({i * 3, i});
+    model.insert({i * 3, i});
+  }
+  std::shuffle(keys.begin(), keys.end(), std::mt19937_64(21));
+  for (const std::uint64_t key : keys) {
+    auto next = map.erase(map.find(key));
+    auto model_next = model.erase(model.find(key));
+    // The returned iterator is at the next entry, and steps on from it.
+    for (int steps = 0; steps < 3; ++steps) {
+      REQUIRE((next == map.end()) == (model_next == model.end()));
+      if (model_next == model.end()) {
+        break;
+      }
+      REQUIRE(next->first == model_next->first);
+      REQUIRE(next->second == model_next->second);
+      ++next;
+      ++model_next;
+    }
+    map.check_invariants();
+  }
+  CHECK(map.empty());
+}
+
+TEST_CASE("erase at an iterator moves entries that are not trivially relocatable", "[map]") {
+  bbtree_test::drop_ledger ledger;
+  {
+    bbtree::unsync::bbtree_map<std::string, bbtree_test::tracked> map;
+    std::map<std::string, std::uint64_t> model;
+    for (std::uint64_t i = 0; i < 3000; ++i) {
+      const std::string key = "key-" + std::to_string(i * 7919 % 3001);
+      map.try_emplace(key, ledger, i);
+      model.try_emplace(key, i);
+    }
+    std::mt19937_64 rng(22);
+    while (model.size() > 100) {
+      auto model_at = std::next(model.begin(), static_cast<std::ptrdiff_t>(rng() % model.size()));
+      auto next = map.erase(map.find(model_at->first));
+      model_at = model.erase(model_at);
+      REQUIRE((next == map.end()) == (model_at == model.end()));
+      if (model_at != model.end()) {
+        REQUIRE(next->first == model_at->first);
+      }
+      REQUIRE(static_cast<std::size_t>(ledger.alive()) == model.size());
+    }
+    map.check_invariants();
+  }
+  CHECK(ledger.alive() == 0);
+}

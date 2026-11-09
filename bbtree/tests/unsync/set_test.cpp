@@ -11,6 +11,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -170,5 +171,48 @@ TEST_CASE("erasing by iterator walks the set", "[set]") {
   for (std::uint64_t expected = 0; it != set.end(); expected += 2, ++it) {
     REQUIRE(*it == expected);
   }
+  set.check_invariants();
+}
+
+TEMPLATE_TEST_CASE("erase at the iterator a lookup made, and of ranges, matches std::set", "[set]",
+                   std::uint64_t, std::string) {
+  using K = TestType;
+  bbtree::unsync::bbtree_set<K> set;
+  std::set<K> model;
+  std::vector<K> keys;
+  for (std::uint64_t i = 0; i < 12'000; ++i) {
+    keys.push_back(make_key<K>(i * 7919 % 12'007));
+    set.insert(keys.back());
+    model.insert(keys.back());
+  }
+  std::shuffle(keys.begin(), keys.end(), std::mt19937_64(23));
+  for (std::size_t index = 0; index < 4000; ++index) {
+    const auto next = set.erase(set.find(keys[index]));
+    const auto model_next = model.erase(model.find(keys[index]));
+    REQUIRE((next == set.end()) == (model_next == model.end()));
+    if (model_next != model.end()) {
+      REQUIRE(*next == *model_next);
+    }
+  }
+  check_equal(set, model);
+  // An empty range, one inside, one from the first key and one to the end.
+  std::sort(keys.begin() + 4000, keys.end());
+  const std::vector<K> left(keys.begin() + 4000, keys.end());
+  using range = std::pair<std::size_t, std::size_t>;
+  for (const auto& [from, to] : {range{100, 100}, range{3000, 4500}, range{0, 2000}, range{5000, 8000}}) {
+    const auto first = from < left.size() ? set.find(left[from]) : set.end();
+    const auto last = to < left.size() ? set.find(left[to]) : set.end();
+    const auto model_first = from < left.size() ? model.find(left[from]) : model.end();
+    const auto model_last = to < left.size() ? model.find(left[to]) : model.end();
+    const auto next = set.erase(first, last);
+    const auto model_next = model.erase(model_first, model_last);
+    REQUIRE((next == set.end()) == (model_next == model.end()));
+    if (model_next != model.end()) {
+      REQUIRE(*next == *model_next);
+    }
+    check_equal(set, model);
+  }
+  set.erase(set.begin(), set.end());
+  CHECK(set.empty());
   set.check_invariants();
 }
