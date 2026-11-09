@@ -2,6 +2,7 @@
 // and comparisons, after the Rust crate's `unsync/map/tests`.
 #include <bbtree/unsync/map.hpp>
 
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -15,6 +16,7 @@
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -645,6 +647,85 @@ TEST_CASE("a copy has the same entries and is independent", "[map][build]") {
     REQUIRE(copy.size() + 1 == map.size());
   }
   CHECK(ledger.alive() == 0);
+}
+
+TEST_CASE("a copy of trivially copyable entries, of every tree height", "[map][build]") {
+  for (const std::uint64_t count : {0u, 1u, 4u, 55u, 56u, 1000u, 100'000u}) {
+    u64_map map;
+    std::map<std::uint64_t, std::uint64_t> model;
+    for (std::uint64_t i = 0; i < count; ++i) {
+      map.insert({i * 7919 % 100'003, i});
+      model.insert({i * 7919 % 100'003, i});
+    }
+    u64_map copy = map;
+    check_equal(copy, model);
+    // The copy is the map's equal in every way, and shares nothing with it.
+    for (std::uint64_t i = 0; i < count; i += 3) {
+      REQUIRE(copy.erase(i * 7919 % 100'003) == 1);
+    }
+    copy.insert({100'003, 1});
+    copy.check_invariants();
+    check_equal(map, model);
+    copy = map;
+    check_equal(copy, model);
+  }
+  bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t> emptied;
+  emptied.insert({1, 1});
+  emptied.erase(1);
+  const auto copy_of_emptied = emptied;
+  CHECK(copy_of_emptied.empty());
+  copy_of_emptied.check_invariants();
+}
+
+// Hands out the global allocator's pages, up to a limit of pages out at once.
+struct limited_allocator {
+  struct account {
+    long limit;
+    long live = 0;
+  };
+  account* pages;
+
+  void* allocate_zeroed(bbtree::page_layout layout) const noexcept {
+    if (pages->live >= pages->limit) {
+      return nullptr;
+    }
+    ++pages->live;
+    return bbtree::global_allocator{}.allocate_zeroed(layout);
+  }
+  void deallocate(void* page, bbtree::page_layout layout) const noexcept {
+    --pages->live;
+    bbtree::global_allocator{}.deallocate(page, layout);
+  }
+};
+
+TEMPLATE_TEST_CASE("a copy whose pages are refused leaves nothing behind", "[map][build]", std::uint64_t,
+                   std::string) {
+  using K = TestType;
+  using map_type = bbtree::unsync::bbtree_map<K, std::uint64_t, std::less<K>, limited_allocator>;
+  limited_allocator::account account{1'000'000};
+  map_type map{limited_allocator{&account}};
+  for (std::uint64_t i = 0; i < 5000; ++i) {
+    if constexpr (std::is_same_v<K, std::string>) {
+      map.insert({"key-" + std::to_string(100'000 + i), i});
+    } else {
+      map.insert({i, i});
+    }
+  }
+  // Three levels: the copy's pages run out in a leaf, an internal node, the
+  // root.
+  const long held = account.live;
+  REQUIRE(held > 100);
+  for (long spare = 0; spare < held; ++spare) {
+    account.limit = held + spare;
+    REQUIRE_THROWS_AS(map_type(map), bbtree::alloc_error);
+    REQUIRE(account.live == held);
+  }
+  account.limit = 3 * held;
+  const map_type copy(map);
+  CHECK(account.live == 2 * held);
+  CHECK(copy == map);
+  copy.check_invariants();
+  map.check_invariants();
 }
 
 TEST_CASE("split_off cuts at every kind of position", "[map][build]") {
