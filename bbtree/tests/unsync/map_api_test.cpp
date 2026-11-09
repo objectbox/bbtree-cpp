@@ -7,11 +7,14 @@
 #include <algorithm>
 #include <concepts>
 #include <cstdint>
+#include <cstdio>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <random>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -368,6 +371,156 @@ TEST_CASE("transparent lookups take string views", "[map]") {
   CHECK(map.contains("apple"));
   CHECK(map.erase(std::string_view("apple")) == 1);
   CHECK_FALSE(map.contains("apple"));
+}
+
+TEST_CASE("string literals and C strings are looked up as std::map looks them up", "[map]") {
+  using map_type = bbtree::unsync::bbtree_map<std::string, std::uint64_t, std::less<>>;
+  using types = bbtree::detail::tree_types<std::string, std::uint64_t, std::less<>, bbtree::auto_inline_keys>;
+  // A literal and a `char*` are searched for as a `const char*`, by inline
+  // keys, as a string view is.
+  static_assert(bbtree::detail::converted_query<types, char[6]>::converts);
+  static_assert(bbtree::detail::converted_query<types, char*>::converts);
+  static_assert(!bbtree::detail::converted_query<types, const char*>::converts);
+  static_assert(!bbtree::detail::converted_query<types, std::string_view>::converts);
+  static_assert(bbtree::detail::search_key<types, const char*>::compares_inline);
+
+  map_type map;
+  std::map<std::string, std::uint64_t, std::less<>> model;
+  for (std::uint64_t i = 0; i < 4000; ++i) {
+    const std::string key = "key" + std::to_string(i * 7919 % 10'007);
+    map.insert_or_assign(key, i);
+    model.insert_or_assign(key, i);
+  }
+  map.insert_or_assign("ab", 1);
+  model.insert_or_assign("ab", 1);
+
+  const auto same_position = [&](map_type::const_iterator ours, auto theirs) {
+    return theirs == model.end() ? ours == map.end() : ours != map.end() && ours->first == theirs->first;
+  };
+  // Every lookup, with one query expression for both maps.
+  const auto check_lookups = [&](const auto& query) {
+    REQUIRE(same_position(map.find(query), model.find(query)));
+    REQUIRE(same_position(std::as_const(map).find(query), model.find(query)));
+    REQUIRE(same_position(map.lower_bound(query), model.lower_bound(query)));
+    REQUIRE(same_position(map.upper_bound(query), model.upper_bound(query)));
+    REQUIRE(map.contains(query) == model.contains(query));
+    REQUIRE(map.count(query) == model.count(query));
+    REQUIRE((map.get(query) != nullptr) == model.contains(query));
+  };
+  check_lookups("key42");
+  check_lookups("key");
+  check_lookups("");
+  check_lookups("zebra");
+  // A literal with a NUL inside ends there, as a C string does.
+  check_lookups("ab\0cd");
+  // An array longer than its string, and pointers to it.
+  char buffer[32];
+  for (std::uint64_t i = 0; i < 10'100; i += 13) {
+    std::snprintf(buffer, sizeof buffer, "key%llu", static_cast<unsigned long long>(i));
+    check_lookups(buffer);
+    char* const pointer = buffer;
+    check_lookups(pointer);
+    const char* const const_pointer = buffer;
+    check_lookups(const_pointer);
+    check_lookups(std::string_view(buffer));
+  }
+
+  CHECK(map.erase("key42") == model.erase("key42"));
+  CHECK(map.erase("key42") == model.erase("key42"));
+  std::snprintf(buffer, sizeof buffer, "key%d", 7);
+  CHECK(map.erase(buffer) == model.erase(buffer));
+  CHECK(map.size() == model.size());
+  map.check_invariants();
+}
+
+TEST_CASE("integers of other types are looked up as std::map looks them up", "[map]") {
+  using unsigned_types =
+      bbtree::detail::tree_types<std::uint64_t, std::uint64_t, std::less<>, bbtree::auto_inline_keys>;
+  using signed_types =
+      bbtree::detail::tree_types<std::int64_t, std::uint64_t, std::less<>, bbtree::auto_inline_keys>;
+  // What `<` converts to the key type is converted; what it converts the key
+  // for is not, nor is a query that is no integer.
+  static_assert(bbtree::detail::converted_query<unsigned_types, int>::converts);
+  static_assert(bbtree::detail::converted_query<unsigned_types, std::int64_t>::converts);
+  static_assert(bbtree::detail::converted_query<unsigned_types, bool>::converts);
+  static_assert(!bbtree::detail::converted_query<unsigned_types, std::uint64_t>::converts);
+  static_assert(!bbtree::detail::converted_query<unsigned_types, double>::converts);
+  static_assert(bbtree::detail::converted_query<signed_types, int>::converts);
+  static_assert(bbtree::detail::converted_query<signed_types, std::uint32_t>::converts);
+  static_assert(!bbtree::detail::converted_query<signed_types, std::uint64_t>::converts);
+
+  const auto check_lookups = [](const auto& map, const auto& model, const auto& query) {
+    const auto same_position = [&](auto ours, auto theirs) {
+      return theirs == model.end() ? ours == map.end() : ours != map.end() && ours->first == theirs->first;
+    };
+    REQUIRE(same_position(map.find(query), model.find(query)));
+    REQUIRE(same_position(map.lower_bound(query), model.lower_bound(query)));
+    REQUIRE(same_position(map.upper_bound(query), model.upper_bound(query)));
+    REQUIRE(map.contains(query) == model.contains(query));
+    REQUIRE(map.count(query) == model.count(query));
+    REQUIRE((map.get(query) != nullptr) == model.contains(query));
+  };
+
+  SECTION("unsigned keys: a negative query is the key it wraps to") {
+    bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t, std::less<>> map;
+    std::map<std::uint64_t, std::uint64_t, std::less<>> model;
+    const std::uint64_t keys[] = {0,           1,           5,          127,        255,       0x7fff'ffff,
+                                  0x8000'0000, 0xffff'ffff, 1ull << 40, 1ull << 63, ~0ull - 5, ~0ull};
+    for (const std::uint64_t key : keys) {
+      map.insert_or_assign(key, key);
+      model.insert_or_assign(key, key);
+    }
+    for (std::uint64_t i = 0; i < 3000; ++i) {
+      map.insert_or_assign(1000 + i * 3, i);
+      model.insert_or_assign(1000 + i * 3, i);
+    }
+    for (const int query : {0, 1, 5, 6, 127, 1000, 1001, 9997, 0x7fff'ffff, -1, -6, -7}) {
+      check_lookups(map, model, query);
+      check_lookups(map, model, static_cast<long long>(query));
+      check_lookups(map, model, static_cast<short>(query));
+      check_lookups(map, model, static_cast<unsigned>(query));
+      check_lookups(map, model, static_cast<signed char>(query));
+      check_lookups(map, model, static_cast<unsigned char>(query));
+    }
+    check_lookups(map, model, true);
+    check_lookups(map, model, std::numeric_limits<std::int64_t>::min());
+    CHECK(map.contains(-1));
+    // std::map's erase takes no other key type before C++23.
+    CHECK(map.erase(-1) == model.erase(~std::uint64_t{0}));
+    CHECK(map.erase(-1) == model.erase(~std::uint64_t{0}));
+    CHECK(map.erase(5) == model.erase(std::uint64_t{5}));
+    CHECK(map.size() == model.size());
+    map.check_invariants();
+  }
+
+  SECTION("signed keys") {
+    bbtree::unsync::bbtree_map<std::int64_t, std::uint64_t, std::less<>> map;
+    std::map<std::int64_t, std::uint64_t, std::less<>> model;
+    for (std::int64_t key = -3000; key < 3000; key += 3) {
+      map.insert_or_assign(key, 1);
+      model.insert_or_assign(key, 1);
+    }
+    for (const int query : {-3001, -3000, -2999, -1, 0, 1, 3, 2997, 2998}) {
+      check_lookups(map, model, query);
+      check_lookups(map, model, static_cast<short>(query));
+    }
+    check_lookups(map, model, std::uint32_t{3});
+    check_lookups(map, model, std::uint32_t{0xffff'ffff});
+  }
+
+  SECTION("128-bit keys") {
+    bbtree::unsync::bbtree_map<bbtree::uint128, std::uint64_t, std::less<>> map;
+    std::map<bbtree::uint128, std::uint64_t, std::less<>> model;
+    for (const bbtree::uint128 key :
+         {bbtree::uint128{0}, bbtree::uint128{42}, bbtree::uint128{1} << 100, ~bbtree::uint128{0}}) {
+      map.insert_or_assign(key, 1);
+      model.insert_or_assign(key, 1);
+    }
+    for (const int query : {0, 41, 42, 43, -1}) {
+      check_lookups(map, model, query);
+      check_lookups(map, model, static_cast<std::uint64_t>(query));
+    }
+  }
 }
 
 TEST_CASE("copies, moves, swaps and comparisons", "[map]") {

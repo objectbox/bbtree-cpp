@@ -88,6 +88,11 @@ class cursor {
       at_ = at_leaf_edge(stack_);
     }
   }
+  // The same, for a query the search converts first (`converted_query`).
+  template <class Q>
+    requires converted_query<T, Q>::converts
+  cursor(const tree<T>* owner, const Q& query, key_side side) noexcept
+      : cursor(owner, converted_query<T, Q>::of(query), side) {}
 
   bool is_end() const noexcept { return at_.key == nullptr; }
   K* key() const noexcept { return at_.key; }

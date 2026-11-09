@@ -5,9 +5,9 @@
 // type, `tree_types`, carries all of it, and node types take it as their one
 // parameter.
 //
-// Also here: `separator`, a separator on its way between nodes, and
-// `search_key`, what a search looks for; both depend on whether the map has
-// inline keys.
+// Also here: `separator`, a separator on its way between nodes;
+// `search_key`, what a search looks for; and `converted_query`, the queries
+// a search converts first. All depend on whether the map has inline keys.
 #pragma once
 
 #include <bbtree/detail/latched/latch.hpp>
@@ -15,6 +15,7 @@
 #include <bbtree/detail/node/layout.hpp>
 
 #include <compare>
+#include <concepts>
 #include <cstddef>
 #include <optional>
 #include <type_traits>
@@ -248,6 +249,51 @@ class search_key {
  private:
   const Q& key_;
   search_bytes bytes_;
+};
+
+// The queries a search converts before it looks, in a map of `T` with a
+// transparent comparator: those of a type `Q` that the comparison with a key
+// converts anyway, to a type whose queries the nodes compare by inline keys.
+// As it is, such a query is compared with whole keys at every node
+// (`search_key`), about twice the work.
+// - For std byte-string keys, a char array or a `char*`: its `const char*`,
+//   the bytes up to the NUL, as `std::string` compares with one. A string
+//   literal is a char array.
+// - For integer keys, an integer of another type that the usual arithmetic
+//   conversions bring to the key type: the built-in `<` behind `std::less<>`
+//   converts it so before it compares. An `int` -1 therefore finds a
+//   `std::uint64_t` key 2^64 - 1, as it does in a `std::map` with
+//   `std::less<>`. A `std::uint64_t` query for `std::int64_t` keys is left
+//   alone: there the conversion is the key's.
+template <class T, class Q>
+class converted_query {
+  using K = typename T::key_type;
+  using inliner = typename T::inliner;
+
+  static constexpr bool c_string_for_bytes =
+      inliner::is_byte_string && !std_byte_string<Q> &&
+      (std::is_same_v<std::decay_t<Q>, char*> || std::is_same_v<std::decay_t<Q>, const char*>);
+  static constexpr bool integer_as_key = [] {
+    constexpr bool integer_key =
+        std::is_integral_v<K> || std::is_same_v<K, int128> || std::is_same_v<K, uint128>;
+    if constexpr (inliner::kind == inliner_kind::trait && integer_key && std::is_integral_v<Q> &&
+                  !std::is_same_v<Q, K>) {
+      return std::is_same_v<std::common_type_t<K, Q>, K>;
+    } else {
+      return false;
+    }
+  }();
+
+ public:
+  static constexpr bool converts = c_string_for_bytes || integer_as_key;
+
+  using type = std::conditional_t<c_string_for_bytes, const char*, K>;
+
+  static type of(const Q& query) noexcept
+    requires converts
+  {
+    return static_cast<type>(query);
+  }
 };
 
 }  // namespace bbtree::detail

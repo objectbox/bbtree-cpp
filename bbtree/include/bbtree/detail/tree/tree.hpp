@@ -289,6 +289,14 @@ class tree {
 
   // --- Lookups ---
 
+  // A query the search converts first (`converted_query`): a string literal
+  // for string keys, an `int` for 64-bit keys.
+  template <class Q>
+    requires converted_query<T, Q>::converts
+  sought_entry<T> find(const Q& query) const noexcept {
+    return find(converted_query<T, Q>::of(query));
+  }
+
   template <class Q>
   sought_entry<T> find(const Q& query) const noexcept {
     if (!has_root()) {
@@ -344,6 +352,12 @@ class tree {
 
   template <class Q, class Pages>
   std::optional<std::pair<K, V>> remove(const Q& query, const Pages& pages, std::size_t& length) noexcept;
+  // By a query the search converts first (`converted_query`).
+  template <class Q, class Pages>
+    requires converted_query<T, Q>::converts
+  std::optional<std::pair<K, V>> remove(const Q& query, const Pages& pages, std::size_t& length) noexcept {
+    return remove(converted_query<T, Q>::of(query), pages, length);
+  }
   template <class Pages>
   std::optional<std::pair<K, V>> pop_first(const Pages& pages, std::size_t& length) noexcept;
   template <class Pages>
