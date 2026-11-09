@@ -115,7 +115,10 @@ class bbtree_set
 
    private:
     friend class detail::reverse_iterator<const_iterator>;
-    explicit const_iterator(cursor_type cursor) noexcept : cursor_(std::move(cursor)) {}
+    // Makes its cursor in place, as the map's iterators do (`map.hpp`).
+    template <class... Position>
+    explicit const_iterator(const detail::tree<types>* tree, Position&&... position) noexcept
+        : cursor_(tree, std::forward<Position>(position)...) {}
 
     cursor_type cursor_;
   };
@@ -152,11 +155,13 @@ class bbtree_set
 
   // --- Iterators ---
 
-  const_iterator begin() const noexcept { return const_iterator(cursor_type::first(&tree_)); }
+  const_iterator begin() const noexcept { return const_iterator(&tree_, detail::node_end::first); }
   const_iterator cbegin() const noexcept { return begin(); }
-  const_iterator end() const noexcept { return const_iterator(cursor_type(&tree_)); }
+  const_iterator end() const noexcept { return const_iterator(&tree_); }
   const_iterator cend() const noexcept { return end(); }
-  reverse_iterator rbegin() const noexcept { return reverse_iterator(end()); }
+  reverse_iterator rbegin() const noexcept {
+    return reverse_iterator::at(const_iterator(&tree_, detail::node_end::last));
+  }
   reverse_iterator crbegin() const noexcept { return rbegin(); }
   reverse_iterator rend() const noexcept { return reverse_iterator::at(end()); }
   reverse_iterator crend() const noexcept { return rend(); }
@@ -202,20 +207,20 @@ class bbtree_set
   size_type count(const K& key) const noexcept { return contains(key) ? 1 : 0; }
 
   const_iterator lower_bound(const K& key) const noexcept {
-    return const_iterator(cursor_type::beside(&tree_, key, detail::key_side::before));
+    return const_iterator(&tree_, key, detail::key_side::before);
   }
   const_iterator upper_bound(const K& key) const noexcept {
-    return const_iterator(cursor_type::beside(&tree_, key, detail::key_side::after));
+    return const_iterator(&tree_, key, detail::key_side::after);
   }
   template <class Q>
     requires transparent<Q>
   const_iterator lower_bound(const Q& key) const noexcept {
-    return const_iterator(cursor_type::beside(&tree_, key, detail::key_side::before));
+    return const_iterator(&tree_, key, detail::key_side::before);
   }
   template <class Q>
     requires transparent<Q>
   const_iterator upper_bound(const Q& key) const noexcept {
-    return const_iterator(cursor_type::beside(&tree_, key, detail::key_side::after));
+    return const_iterator(&tree_, key, detail::key_side::after);
   }
   std::pair<const_iterator, const_iterator> equal_range(const K& key) const noexcept {
     return {lower_bound(key), upper_bound(key)};
@@ -331,7 +336,7 @@ class bbtree_set
     cursor_type at = position.cursor_;
     detail::node_stack_mut<types> stack(tree_, at.attached_stack());
     stack.remove_and_go_to_next(pages(), length_);
-    return const_iterator(cursor_type(&tree_, stack.stack()));
+    return const_iterator(&tree_, stack.stack());
   }
   const_iterator erase(const_iterator first, const_iterator last) noexcept {
     std::size_t count = 0;
@@ -470,14 +475,14 @@ class bbtree_set
   bool looks_up_in(const bbtree_set& other) const noexcept { return size() * 16 < other.size(); }
 
   const_iterator found_or_end(detail::sought_entry<types> found) const noexcept {
-    return found ? const_iterator(cursor_type(&tree_, *found)) : end();
+    return found ? const_iterator(&tree_, *found) : end();
   }
 
   template <class KeyRef>
   std::pair<const_iterator, bool> put(KeyRef&& key) {
     const auto inserted = tree_.template insert<detail::existing_value::kept>(
         std::forward<KeyRef>(key), [] { return detail::set_value{}; }, pages(), length_);
-    return {const_iterator(cursor_type(&tree_, inserted.entry)), inserted.inserted};
+    return {const_iterator(&tree_, inserted.entry), inserted.inserted};
   }
 
   // The keys of this set that `keep`, built in order on `allocator`: the

@@ -19,6 +19,11 @@
 // keeps its root page for life (D52), so a cursor stays at its entry when its
 // map is swapped or moved, as std::map's iterators do.
 //
+// A cursor is made where it stays: the iterators construct theirs in place,
+// from a constructor's arguments. One handed over by value is copied, node
+// stack and all, by loads wider than the stores that just wrote it, which
+// wait for them (`node_stack.hpp`).
+//
 // A step, its crossing included, is inlined into the loop that steps, and
 // nothing it calls takes the cursor's address: the search that
 // gives a lookup's cursor its node stack returns the stack by value. So the
@@ -69,20 +74,19 @@ class cursor {
     }
   }
 
-  // At the tree's first entry, or past the last for an empty tree.
-  static cursor first(const tree<T>* owner) noexcept { return first_under(owner->root_or_none()); }
+  // At the tree's first entry or its last, by `end`; past the last for an
+  // empty tree.
+  cursor(const tree<T>* owner, node_end end) noexcept : cursor(owner->root_or_none(), end) {}
 
   // At the first entry not ordered before `query` (`side` before), or after
   // it (`side` after): a range bound.
   template <class Q>
-  static cursor beside(const tree<T>* owner, const Q& query, key_side side) noexcept {
-    cursor at(owner);
-    if (at.root_) {
-      at.stack_.attach(at.root_);
-      at.stack_.search_to_edge(search_key<T, Q>(query), side, owner->shared());
-      at.at_ = at_leaf_edge(at.stack_);
+  cursor(const tree<T>* owner, const Q& query, key_side side) noexcept : root_(owner->root_or_none()) {
+    if (root_) {
+      stack_.attach(root_);
+      stack_.search_to_edge(search_key<T, Q>(query), side, owner->shared());
+      at_ = at_leaf_edge(stack_);
     }
-    return at;
   }
 
   bool is_end() const noexcept { return at_.key == nullptr; }
@@ -126,7 +130,7 @@ class cursor {
   // iterator's step back from its end.
   void next_or_first() noexcept {
     if (is_end()) {
-      *this = first_under(root_);
+      *this = cursor(root_, node_end::first);
     } else {
       next();
     }
@@ -140,19 +144,19 @@ class cursor {
   }
 
  private:
-  // At the first entry of the tree under `root`, or past the last.
-  static cursor first_under(node_ptr<T> root) noexcept {
-    cursor at;
-    at.root_ = root;
-    if (root) {
-      at.stack_.attach(root);
-      if (at.stack_.descend_to_first_key()) {
-        at.at_ = position_of_stack(at.stack_);
+  // At the first entry or the last, by `end`, of the tree under `root`; past
+  // the last for no tree or an empty one.
+  cursor(node_ptr<T> root, node_end end) noexcept : root_(root) {
+    if (root_) {
+      stack_.attach(root_);
+      const bool has_entries =
+          end == node_end::first ? stack_.descend_to_first_key() : stack_.descend_to_last_key();
+      if (has_entries) {
+        at_ = position_of_stack(stack_);
       } else {
-        at.stack_.detach();
+        stack_.detach();
       }
     }
-    return at;
   }
 
   template <class P>
@@ -218,7 +222,7 @@ class cursor {
         found_entry<T>{stack.node(), stack.index()}.key() == key) [[likely]] {
       return stack;
     }
-    cursor walker = first_under(root);
+    cursor walker(root, node_end::first);
     while (!walker.is_end() && walker.key() != key) {
       walker.next();
     }

@@ -693,17 +693,20 @@ class file_map {
 
    private:
     friend class file_map;
-    explicit const_iterator(cursor_type cursor) noexcept : cursor_(std::move(cursor)) {}
+    // Makes its cursor in place, as the map's iterators do (`unsync/map.hpp`).
+    template <class... Position>
+    explicit const_iterator(const detail::tree<types>* tree, Position&&... position) noexcept
+        : cursor_(tree, std::forward<Position>(position)...) {}
     cursor_type cursor_;
   };
 
-  const_iterator begin() const noexcept { return const_iterator(cursor_type::first(&tree_)); }
-  const_iterator end() const noexcept { return const_iterator(cursor_type(&tree_)); }
+  const_iterator begin() const noexcept { return const_iterator(&tree_, detail::node_end::first); }
+  const_iterator end() const noexcept { return const_iterator(&tree_); }
   const_iterator lower_bound(const K& key) const noexcept {
-    return const_iterator(cursor_type::beside(&tree_, key, detail::key_side::before));
+    return const_iterator(&tree_, key, detail::key_side::before);
   }
   const_iterator upper_bound(const K& key) const noexcept {
-    return const_iterator(cursor_type::beside(&tree_, key, detail::key_side::after));
+    return const_iterator(&tree_, key, detail::key_side::after);
   }
 
  private:

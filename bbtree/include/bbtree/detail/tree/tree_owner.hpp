@@ -116,8 +116,8 @@ class tree_owner {
     const typename prepaid_pages::allocator prepaid_allocator(prepaid);
     tree_builder<T, typename prepaid_pages::allocator> builder{
         page_source<typename prepaid_pages::allocator>(prepaid_allocator)};
-    cursor_type mine = cursor_type::first(&tree_);
-    cursor_type theirs = cursor_type::first(&other.tree_);
+    cursor_type mine(&tree_, node_end::first);
+    cursor_type theirs(&other.tree_, node_end::first);
     auto take = [&](cursor_type& from) {
       builder.push(std::move(*from.key()), std::move(*from.value()));
       from.next();
