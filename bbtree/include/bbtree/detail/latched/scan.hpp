@@ -5,7 +5,10 @@
 //
 // - The first leaf is where the bound the scan starts from belongs; without
 //   one, or with one before every key (after every key, in reverse), the
-//   tree's first leaf, down first edges (its last, down last edges).
+//   tree's first leaf, down first edges (its last, down last edges). A bound
+//   that lacks what every key shares (D50) has no leaf: which side of every
+//   key it is on is read with that border leaf latched, which holds what
+//   every key shares still, as a shrink of it takes every border node.
 // - The next leaf is the held leaf's neighbor on the scan's side, found from
 //   the internal nodes the descent kept: from the nearest one with an edge on
 //   that side of the path, down the edges nearest the held leaf, each node
@@ -113,7 +116,7 @@ class latched_scan {
   template <class Q>
   bool end_at(const Q* end, tree_path<T>& path, held_leaf<T, leaf_mode::shared>& held,
               std::size_t& remaining) {
-    if (end != nullptr) {
+    while (end != nullptr) {
       const search_key<T, Q> key(*end);
       if (auto found = tree_.template descend<leaf_mode::shared>(key, path)) {
         held = std::move(found->leaf);
@@ -125,13 +128,24 @@ class latched_scan {
         }
         return true;
       }
-      // Outside what every key shares: before every key, or after.
+      // The bound lacked what every key shares when the descent read that. A
+      // shrink of it since may have put keys after the bound, so the side is
+      // read with the last leaf latched (top of the file): the scan starts
+      // there if the bound is after every key, visits nothing if it is before
+      // them all, and descends again if it has a leaf by now.
+      descend_to_border<node_end::last>(path, held);
       const std::optional<std::strong_ordering> outside = tree_.racing_shared().place_outside(key);
-      if (outside && *outside < 0) {
+      if (outside && *outside > 0) {
+        break;
+      }
+      held.release();
+      if (outside) {
         return false;
       }
     }
-    descend_to_border<node_end::last>(path, held);
+    if (end == nullptr) {
+      descend_to_border<node_end::last>(path, held);
+    }
     remaining = held.leaf().len();
     return true;
   }
@@ -140,7 +154,7 @@ class latched_scan {
   template <class Q>
   bool start_at(const Q* start, tree_path<T>& path, held_leaf<T, leaf_mode::shared>& held,
                 std::size_t& position, bool& head_first) {
-    if (start != nullptr) {
+    while (start != nullptr) {
       const search_key<T, Q> key(*start);
       if (auto found = tree_.template descend<leaf_mode::shared>(key, path)) {
         held = std::move(found->leaf);
@@ -153,13 +167,24 @@ class latched_scan {
         }
         return true;
       }
-      // Outside what every key shares: before every key, or after.
+      // The bound lacked what every key shares when the descent read that. A
+      // shrink of it since may have put keys before the bound, so the side is
+      // read with the first leaf latched (top of the file): the scan starts
+      // there if the bound is before every key, visits nothing if it is after
+      // them all, and descends again if it has a leaf by now.
+      descend_to_border<node_end::first>(path, held);
       const std::optional<std::strong_ordering> outside = tree_.racing_shared().place_outside(key);
-      if (outside && *outside > 0) {
+      if (outside && *outside < 0) {
+        break;
+      }
+      held.release();
+      if (outside) {
         return false;
       }
     }
-    descend_to_border<node_end::first>(path, held);
+    if (start == nullptr) {
+      descend_to_border<node_end::first>(path, held);
+    }
     position = 0;
     head_first = false;
     return true;

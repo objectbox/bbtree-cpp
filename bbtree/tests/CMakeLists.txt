@@ -48,7 +48,8 @@ endif()
 # tree's switch points, which every other target compiles to nothing.
 add_executable(bbtree_interleaving_tests
   support/interleaving_schedule.cpp
-  shared/interleaving_schedule_test.cpp)
+  shared/interleaving_schedule_test.cpp
+  shared/interleaving_test.cpp)
 target_compile_definitions(bbtree_interleaving_tests PRIVATE BBTREE_INTERLEAVING=1)
 target_link_libraries(bbtree_interleaving_tests PRIVATE bbtree::bbtree bbtree_warnings Catch2::Catch2WithMain
                                                         Threads::Threads)
