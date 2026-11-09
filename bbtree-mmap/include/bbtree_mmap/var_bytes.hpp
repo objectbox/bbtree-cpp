@@ -156,7 +156,9 @@ struct bbtree::file_storage<bbtree_mmap::var_bytes> {
   using in_writer = bbtree_mmap::arena_bytes;
 
   static void check(std::span<const std::byte> file_bytes, std::size_t slot) {
-    if (slot + 8 > file_bytes.size()) {
+    // Compared without `slot + 8`, which wraps for a slot near the address
+    // space's end.
+    if (slot > file_bytes.size() || file_bytes.size() - slot < sizeof(bbtree_mmap::var_bytes)) {
       throw bbtree::file_error(bbtree::file_error::kind::corrupt, "a span outside the file map");
     }
     std::uint32_t len;

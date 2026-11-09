@@ -7,7 +7,7 @@ target_link_libraries(bbtree_mmap INTERFACE bbtree::bbtree)
 set_target_properties(bbtree_mmap PROPERTIES EXPORT_NAME mmap)
 
 if(BBTREE_BUILD_TESTS)
-  add_executable(bbtree_mmap_tests tests/bbtree_map_file_test.cpp)
+  add_executable(bbtree_mmap_tests tests/bbtree_map_file_test.cpp tests/var_bytes_test.cpp)
   target_link_libraries(bbtree_mmap_tests PRIVATE bbtree::mmap bbtree_warnings Catch2::Catch2WithMain)
   catch_discover_tests(bbtree_mmap_tests DISCOVERY_MODE PRE_TEST TEST_PREFIX "bbtree_mmap_tests: ")
 
