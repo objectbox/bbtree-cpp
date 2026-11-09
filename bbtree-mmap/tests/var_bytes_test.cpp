@@ -85,6 +85,9 @@ std::string span_refusal(std::span<const std::byte> file_bytes, std::size_t slot
 }  // namespace
 
 template <>
+struct bbtree::is_plain_bytes<bytes8> : std::true_type {};
+
+template <>
 struct bbtree::inline_key<bytes8> {
   static bbtree::inline_word at(const bytes8& key, std::size_t offset) noexcept {
     return bbtree::detail::big_endian::window(key.bytes, offset);

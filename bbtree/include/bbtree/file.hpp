@@ -17,8 +17,9 @@
 // - Level order: the root page, each level of internal nodes, the leaves.
 // - Edges are offsets from their node, tagged with the child's kind: a file
 //   map is position-independent, at any aligned offset of a file.
-// - Keys and values are plain bytes here: trivially copyable, without
-//   padding. bbtree-mmap adds bytes of any length after each leaf.
+// - Keys and values are plain bytes here (`is_plain_bytes`): integers,
+//   floats, arrays of them, and structs their author vouches for. bbtree-mmap
+//   adds bytes of any length after each leaf.
 // A file map is for one layout: the same key and value types and strategy,
 // pointer width and byte order; a reader of another refuses it.
 #pragma once
@@ -28,6 +29,7 @@
 #include <bbtree/detail/tree/tree.hpp>
 #include <bbtree/unsync/map.hpp>
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -44,12 +46,34 @@
 
 namespace bbtree {
 
-// What a file map may keep in its slots as they are: trivially copyable types
-// whose every byte is part of the value, so the file holds no uninitialized
-// byte and any bytes read back are some value.
+// Whether a type's values are their bytes: what a file map may keep in its
+// slots as they are. Every bit pattern of its bytes is a value of the type,
+// none of its bytes is padding, and it holds no pointer or handle to anything
+// outside them: so a file map holds the whole value, with no uninitialized
+// byte, and a reader may take whatever bytes it finds for one.
+//
+// The integers are (not `bool`, whose byte may only be 0 or 1), `std::byte`,
+// `float` and `double` (not `long double`, which has padding where it is the
+// x87's), empty types, and `std::array`s of them. No trait tells whether a
+// struct or an enum is, with a `bool`, a pointer or a few named values among
+// its bytes: specialize this for a type of yours that is, as the Rust crate
+// has its users write `unsafe impl PlainBytes`:
+//
+//   template <>
+//   struct bbtree::is_plain_bytes<user_id> : std::true_type {};
 template <class T>
-concept plain_bytes = std::is_trivially_copyable_v<T> && (std::has_unique_object_representations_v<T> ||
-                                                          std::is_floating_point_v<T> || std::is_empty_v<T>);
+struct is_plain_bytes
+    : std::bool_constant<(std::is_integral_v<T> && !std::is_same_v<T, bool>) || std::is_same_v<T, int128> ||
+                         std::is_same_v<T, uint128> || std::is_same_v<T, std::byte> ||
+                         std::is_same_v<T, float> || std::is_same_v<T, double> || std::is_empty_v<T>> {};
+
+template <class T, std::size_t N>
+struct is_plain_bytes<std::array<T, N>> : std::bool_constant<(N > 0) && is_plain_bytes<T>::value> {};
+
+// What a file map may keep in its slots as they are (`is_plain_bytes`).
+template <class T>
+concept plain_bytes = std::is_trivially_copyable_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T> &&
+                      is_plain_bytes<T>::value;
 
 // How a file map keeps a key or value type: plain, in its slot as it is (the
 // default), or as a slot whose bytes lie after its leaf, which the type's

@@ -7,11 +7,74 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <random>
+#include <span>
+#include <string>
+#include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
+
+namespace {
+
+enum class color : std::uint8_t { red, green };
+
+// Without padding, and still not its bytes: a file's byte 2 in `live` is no
+// `bool`, and `name` points into the process that wrote it.
+struct flagged {
+  std::uint32_t id;
+  bool live;
+  char reserved[3];
+  const char* name;
+};
+
+// A struct that is its bytes, which only its author can say.
+struct version {
+  std::uint16_t release;
+  std::uint16_t patch;
+};
+
+}  // namespace
+
+template <>
+struct bbtree::is_plain_bytes<version> : std::true_type {};
+
+TEST_CASE("plain bytes are the types whose values are their bytes", "[file]") {
+  STATIC_REQUIRE(bbtree::plain_bytes<std::uint64_t>);
+  STATIC_REQUIRE(bbtree::plain_bytes<std::int8_t>);
+  STATIC_REQUIRE(bbtree::plain_bytes<char>);
+  STATIC_REQUIRE(bbtree::plain_bytes<bbtree::uint128>);
+  STATIC_REQUIRE(bbtree::plain_bytes<bbtree::int128>);
+  STATIC_REQUIRE(bbtree::plain_bytes<std::byte>);
+  STATIC_REQUIRE(bbtree::plain_bytes<float>);
+  STATIC_REQUIRE(bbtree::plain_bytes<double>);
+  STATIC_REQUIRE(bbtree::plain_bytes<std::array<std::uint8_t, 32>>);
+  STATIC_REQUIRE(bbtree::plain_bytes<std::array<std::array<std::uint16_t, 2>, 3>>);
+  STATIC_REQUIRE(bbtree::plain_bytes<std::monostate>);
+  STATIC_REQUIRE(bbtree::plain_bytes<version>);
+  STATIC_REQUIRE(bbtree::plain_bytes<std::array<version, 4>>);
+
+  // A byte that is no value of the type, when a file holds it.
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<bool>);
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<std::array<bool, 8>>);
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<color>);
+  // Bytes that mean something in the process that wrote them alone.
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<const char*>);
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<std::string_view>);
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<std::span<const std::uint8_t>>);
+  // Padding: bytes no write initializes.
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<long double>);
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<std::pair<std::uint8_t, std::uint32_t>>);
+  // No padding says nothing of the members.
+  STATIC_REQUIRE(std::has_unique_object_representations_v<flagged>);
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<flagged>);
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<std::string>);
+  STATIC_REQUIRE_FALSE(bbtree::plain_bytes<std::array<std::uint8_t, 0>>);
+}
 
 TEST_CASE("a file map reads like the map it was written from", "[file]") {
   for (const std::size_t count : {0u, 1u, 30u, 1000u, 100'000u}) {
