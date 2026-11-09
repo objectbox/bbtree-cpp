@@ -127,7 +127,7 @@ class node_latch {
     if ((word & exclusive) == 0) {
       return latch_version(word & ~shared_mask);
     }
-    return read_version_contended();
+    return read_version_contended(*this);
   }
 
   // The node's version if nobody holds it exclusively now; none otherwise.
@@ -171,7 +171,7 @@ class node_latch {
     if ((word & (exclusive | shared_mask)) == 0 && try_lock_at(latch_version(word))) {
       return latch_version(word);
     }
-    return lock_exclusive_contended();
+    return lock_exclusive_contended(*this);
   }
 
   // Takes the node exclusively now if nobody holds it in either mode.
@@ -186,7 +186,7 @@ class node_latch {
     if ((word & exclusive) == 0 && try_add_shared_holder(word)) {
       return;
     }
-    lock_shared_contended();
+    lock_shared_contended(*this);
   }
 
   void unlock_shared() noexcept { word_.fetch_sub(shared_unit, std::memory_order_release); }
@@ -211,33 +211,37 @@ class node_latch {
                                        std::memory_order_relaxed);
   }
 
-  [[gnu::cold, gnu::noinline]] latch_version read_version_contended() const noexcept {
+  // The waits, out of line. Each takes the latch by value, a pointer in a
+  // register: called as a member, it would take the address of its caller's
+  // `node_latch`, which the caller then keeps in memory and writes there on
+  // every use, though it never waits.
+  [[gnu::cold, gnu::noinline]] static latch_version read_version_contended(node_latch latch) noexcept {
     backoff wait;
     while (true) {
       wait.wait();
-      const std::uint64_t word = word_.load(std::memory_order_acquire);
+      const std::uint64_t word = latch.word_.load(std::memory_order_acquire);
       if ((word & exclusive) == 0) {
         return latch_version(word & ~shared_mask);
       }
     }
   }
 
-  [[gnu::cold, gnu::noinline]] latch_version lock_exclusive_contended() noexcept {
+  [[gnu::cold, gnu::noinline]] static latch_version lock_exclusive_contended(node_latch latch) noexcept {
     backoff wait;
     while (true) {
       wait.wait();
-      const std::uint64_t word = word_.load(std::memory_order_relaxed);
-      if ((word & (exclusive | shared_mask)) == 0 && try_lock_at(latch_version(word))) {
+      const std::uint64_t word = latch.word_.load(std::memory_order_relaxed);
+      if ((word & (exclusive | shared_mask)) == 0 && latch.try_lock_at(latch_version(word))) {
         return latch_version(word);
       }
     }
   }
 
-  [[gnu::cold, gnu::noinline]] void lock_shared_contended() noexcept {
+  [[gnu::cold, gnu::noinline]] static void lock_shared_contended(node_latch latch) noexcept {
     backoff wait;
     while (true) {
-      const std::uint64_t word = word_.load(std::memory_order_relaxed);
-      if ((word & exclusive) == 0 && try_add_shared_holder(word)) {
+      const std::uint64_t word = latch.word_.load(std::memory_order_relaxed);
+      if ((word & exclusive) == 0 && latch.try_add_shared_holder(word)) {
         return;
       }
       wait.wait();
