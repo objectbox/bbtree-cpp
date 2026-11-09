@@ -492,8 +492,8 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
     for (const_iterator at = first; at != last; ++at) {
       ++count;
     }
-    iterator at = erase(first);
-    while (--count > 0) {
+    iterator at(first.cursor_);
+    for (; count > 0; --count) {
       at = erase(at);
     }
     return at;
