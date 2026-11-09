@@ -12,7 +12,10 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -22,6 +25,18 @@ using bbtree_test::interleaving_exploration;
 using bbtree_test::interleaving_schedule;
 
 using u64_map = bbtree::bbtree_map<std::uint64_t, std::uint64_t>;
+
+// Internal nodes of 12 keys and leaves of 9 entries: four levels with a few
+// thousand entries.
+struct small_internal_nodes : bbtree::default_node_config {
+  static constexpr std::size_t internal_page_size = 64;
+};
+struct wide_value {
+  std::uint64_t words[12];
+};
+using tall_map =
+    bbtree::bbtree_map<std::uint64_t, wide_value, std::less<std::uint64_t>, bbtree::global_allocator,
+                       bbtree::configured<bbtree::auto_inline_keys, small_internal_nodes>>;
 
 // The keys a scan bounded by `low` and `high` visits, in key order: forward
 // from `low` until a key past `high`, or in reverse from `high` back until a
@@ -92,4 +107,41 @@ TEST_CASE("scans from outside the shared prefix race a shrink", "[shared][interl
       map.check_invariants(steady.size() + 2);
     });
   }
+}
+
+// Leaves split in the middle of a tree of four levels, and then another
+// thread inserts a key that shrinks the shared prefix. Such a split holds
+// neither the root nor a border node, so nothing orders its read of what
+// every key shares with the shrink's write: the read is one of the racing
+// reads, which ThreadSanitizer reports here if it is not marked as one. (In a
+// tree of three levels every split holds the root.)
+TEST_CASE("a shrink of the shared prefix follows splits that held no border node", "[shared][interleaving]") {
+  interleaving_exploration{8}.run([](interleaving_schedule& schedule) {
+    tall_map map;
+    constexpr std::uint64_t steady = 12'000;
+    constexpr std::uint64_t first_split = 5'000;
+    constexpr std::uint64_t split = 40;
+    for (std::uint64_t index = 0; index < steady; ++index) {
+      REQUIRE(map.insert(index * 16, wide_value{}));
+    }
+    std::atomic<bool> leaves_split{false};
+    schedule.run({
+        [&] {
+          for (std::uint64_t index = first_split; index < first_split + split; ++index) {
+            schedule.expect(map.insert(index * 16 + 1, wide_value{}), "an insert of a new key found it held");
+          }
+          leaves_split.store(true, std::memory_order_relaxed);
+        },
+        [&] {
+          // Waited for through the scheduler and a relaxed load: in no order
+          // with the splits that ThreadSanitizer knows of.
+          while (!leaves_split.load(std::memory_order_relaxed)) {
+            bbtree::detail::interleaving::let_another_run();
+          }
+          schedule.expect(map.insert(std::uint64_t{1} << 50, wide_value{}),
+                          "an insert of a new key found it held");
+        },
+    });
+    map.check_invariants(steady + split + 1);
+  });
 }

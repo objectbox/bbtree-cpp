@@ -120,7 +120,7 @@ class latched_tree {
   template <class A>
   void destroy(const page_source<A>& source) noexcept {
     if (has_root()) {
-      tree<T> whole = view();
+      tree<T> whole = view(shared_);
       whole.destroy(source);
       root_.store(0, std::memory_order_relaxed);
       rightmost_leaf_.store(0, std::memory_order_relaxed);
@@ -142,9 +142,14 @@ class latched_tree {
   // node the operation changes: writes back the shared prefix and the root
   // pointer, retagged if the root changed kind. Appends' last-leaf pointer is
   // the caller's to keep.
+  //
+  // What every key shares is read racing: a caller that holds no border node
+  // may read it while a shrink writes it. Its operation then reads none of
+  // it, as every node it changes has both fences, and leaves it as read, so
+  // that nothing is written back.
   template <class Operation>
   decltype(auto) change_held(Operation&& operation) {
-    tree<T> whole = view();
+    tree<T> whole = view(racing_shared());
     struct write_back {
       latched_tree& self;
       tree<T>& whole;
@@ -372,7 +377,7 @@ class latched_tree {
   // Checks the tree's structure (`invariants.hpp`) and that appends go to
   // its last leaf; once no other thread changes it.
   void check_invariants(std::size_t length) {
-    tree<T> whole = view();
+    tree<T> whole = view(shared_);
     struct release_on_exit {
       tree<T>& whole;
       ~release_on_exit() { (void)whole.release_root(); }
@@ -389,9 +394,10 @@ class latched_tree {
 
  private:
   // The tree as an unsync tree over the same nodes, for an owner or a thread
-  // holding what it changes; its root page goes back by `release_root`.
-  tree<T> view() const noexcept {
-    return tree<T>::of_root(root_page<T>(root_node()), shared_,
+  // holding what it changes, with `shared` as what every key shares; its
+  // root page goes back by `release_root`.
+  tree<T> view(const shared_prefix& shared) const noexcept {
+    return tree<T>::of_root(root_page<T>(root_node()), shared,
                             node_ptr<T>::from_tagged(rightmost_leaf_.load(std::memory_order_relaxed)));
   }
 
