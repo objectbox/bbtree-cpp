@@ -77,6 +77,10 @@ class latched_changes {
     if (auto appended = append(key, value, policy)) {
       return std::move(*appended);
     }
+    // `append` above, the descent and `insert_into` are inlined into this
+    // function, as in the Rust crate: each hands back an optional of the
+    // policy's output or of the held leaf, which out of line goes through
+    // memory, behind three calls an insert.
     while (true) {
       auto found = tree_.template descend<leaf_mode::exclusive>(search_key<T, K>(key));
       if (!found) {
@@ -209,7 +213,7 @@ class latched_changes {
   // leaf has room (D45); nothing otherwise. A policy's refusal there is an
   // output: the insert's.
   template <class Policy>
-  auto append(K& key, V& value, Policy& policy)
+  [[gnu::always_inline]] auto append(K& key, V& value, Policy& policy)
       -> std::optional<decltype(policy.vacant(leaf_node<T>(), key, value))> {
     const node_ptr<T> last = rightmost_leaf();
     if (!last) {
@@ -251,8 +255,8 @@ class latched_changes {
   // with the edge where the key belongs, if the leaf is full. A policy's
   // refusal is an output: the insert's.
   template <class Policy>
-  auto insert_into(const held_leaf<T, leaf_mode::exclusive>& held, bool at_separator, K& key, V& value,
-                   Policy& policy, std::size_t& edge)
+  [[gnu::always_inline]] auto insert_into(const held_leaf<T, leaf_mode::exclusive>& held, bool at_separator,
+                                          K& key, V& value, Policy& policy, std::size_t& edge)
       -> std::optional<decltype(policy.vacant(leaf_node<T>(), key, value))> {
     const leaf_node<T> leaf = held.leaf();
     if (at_separator) {
