@@ -43,8 +43,11 @@ design, which this port follows; PORTING.md says where and why it differs.
 
 ## Verification
 
-- Local checks are `scripts/check.sh`: `clang-format --dry-run --Werror`, a warnings-as-errors build under Clang and GCC, and `ctest`. `scripts/check.sh --sanitize` adds AddressSanitizer + UBSan, the stand-in for the Rust crate's Miri.
+- Local checks are `scripts/check.sh` (needs [uv](https://docs.astral.sh/uv/) for its pinned clang-format): `clang-format --dry-run --Werror`, a warnings-as-errors build under Clang and GCC, and `ctest`. `scripts/check.sh --sanitize` adds AddressSanitizer + UBSan, the stand-in for the Rust crate's Miri.
 - ThreadSanitizer (`--preset tsan`) runs the concurrent map's tests; see PORTING.md for the races it is told to ignore.
+- Valgrind memcheck on the concurrent map's tests needs `--fair-sched=yes`: Valgrind runs one thread at a time, and under its default scheduler a spinning thread starves the others for hours.
+- Any recent Clang or GCC builds the port; it was written and measured with Clang 15 and GCC 13, and CMake 3.28. CI (GitHub, `objectbox/bbtree-cpp`; `gh run view --log-failed` for a failed run) builds on Linux with Ubuntu 24.04's default Clang and on macOS with Homebrew's newest, so a newer Clang's warnings show up there first. clang-format is pinned (`scripts/check.sh`, through `uvx`), as two versions format differently. A job that fails before reaching the port's code most likely means the runner image changed.
+- The Rust original builds with `cargo +1.99.0` where the default toolchain is older.
 
 ## Benchmark rule
 
@@ -54,6 +57,7 @@ design, which this port follows; PORTING.md says where and why it differs.
 - Only run a carefully selected subset of relevant benchmarks.
 - Start a timing run only on a quiet machine: a 1-minute load under 0.3, checked every few seconds (an IDE indexing counts). Time a comparison of the port with the Rust crate in one window, both benches back to back.
 - Cells that build many maps (`1Mx4`, `100kx32`) take about a GB of fresh huge pages; when the machine's memory is mostly page cache the kernel stalls in compaction. Read `compact_stall` in `/proc/vmstat` before and after such a cell: one that stalled is not a measurement.
+- Two builds that run the same instructions can differ by 5-19% in cycles on a cell from code placement alone (`-falign-functions=64` doesn't remove it), and 1M-entry cells move 10-30% between runs even on a quiet machine. Before calling a gap a regression, compare instruction counts (`perf stat -e instructions,cycles` on the one cell); the bench's `--perf` needs an L1d counter that some machines lack, where `perf stat` per cell is the fallback.
 - `bbtree-bench-memory` counts heap bytes, which don't depend on load: one run is exact. Its RSS columns move in 64 KiB steps, meaningless at 1k entries.
 - A probe outside the bench builds as the bench does, or it measures something else: C++ with the bench preset's flags (`-O3 -march=native -DNDEBUG`, LTO, mimalloc), Rust with `-C target-cpu=native` (the Rust bench's `.cargo/config.toml`) and its release profile. A probe that times a cold one-shot cell must not rebuild on warm pages.
 
@@ -61,3 +65,9 @@ design, which this port follows; PORTING.md says where and why it differs.
 
 - General docs (the READMEs, the bench's COMPARISON.md and CPP_MAPS.md, FUTURE_WORK.md, AGENTS.md) don't cite numbered entries such as P16, D25 or M11: link the section by its name, e.g. PORTING.md, [iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds). PORTING.md, PLAN.md and `design/` own their numbers.
 - Tables comparing the port with the Rust crate put the port first as `bbtree++`, name the original `bbtree (Rust)`, and bold the fastest (or smallest) figure of each row. String-key rows run bbtree++ with the compact string fastest on the cell and name it in the row.
+
+## Git
+
+- Agents commit but never push; the maintainer pushes, often a work-in-progress branch to check it against CI, which runs on every branch. Commit messages carry no attribution lines.
+- Keep history straight: a fix to an unpushed commit is folded into it (`git commit --fixup` and an autosquash rebase), not added on top. Pushed `main` is never rewritten; a pushed feature branch only with the maintainer's OK, else new commits go on top. `main` advances by fast-forward to a finished feature branch, so fixes go on the branch, not onto `main`.
+- Addressing a review: one commit per point.
