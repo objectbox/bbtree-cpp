@@ -190,12 +190,23 @@ class cursor {
     stack = searched_stack(root, at.key);
   }
 
+  // The node stack at the entry whose key is at `key`: where a search for
+  // the key ends. A key whose order or encoding lies (PORTING.md, P13) may
+  // be found elsewhere or nowhere; its entry is then found by its address,
+  // so that what steps or erases from the stack is at an entry all the same.
   [[gnu::noinline]] static node_stack<T> searched_stack(node_ptr<T> root, const K* key) noexcept {
     node_stack<T> stack;
     stack.attach(root);
-    [[maybe_unused]] const bool found = stack.search_sharing_prefix(search_key<T, K>(*key));
-    assert(found && "a cursor's key is found at its entry");
-    return stack;
+    if (stack.search_sharing_prefix(search_key<T, K>(*key)) &&
+        found_entry<T>{stack.node(), stack.index()}.key() == key) [[likely]] {
+      return stack;
+    }
+    cursor walker = first_under(root);
+    while (!walker.is_end() && walker.key() != key) {
+      walker.next();
+    }
+    assert(!walker.is_end() && "a cursor's key is in its tree");
+    return walker.attached_stack();
   }
 
   [[gnu::always_inline]] static position cross_forward(node_ptr<T> root, node_stack<T>& stack,
