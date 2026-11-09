@@ -364,12 +364,14 @@ class record_heap {
   // another page with room, which becomes the head; else, once a compaction
   // slid the records together if a quarter of the chain is holes, there;
   // else in a new head page; else, if the allocator has none to give, once a
-  // compaction took back whatever holes there are. Null without room.
+  // compaction took back whatever holes there are, unless the first one did:
+  // a second would find what that left. Null without room.
   std::byte* room_for(store_leaf& leaf, std::size_t size) {
     if (std::byte* at = leaf.annex().room(size)) {
       return at;
     }
-    if (leaf.annex().use().is_quarter_holes()) {
+    const bool quarter_holes = leaf.annex().use().is_quarter_holes();
+    if (quarter_holes) {
       compact(leaf, nullptr);
       if (std::byte* at = leaf.annex().room(size)) {
         return at;
@@ -378,10 +380,14 @@ class record_heap {
     if (std::byte* at = leaf.annex().room_in_new_page(size, allocator_)) {
       return at;
     }
-    const chain_use chain = leaf.annex().use();
-    if (chain.live < chain.used) {
-      compact(leaf, nullptr);
+    if (quarter_holes) {
+      return nullptr;
     }
+    const chain_use chain = leaf.annex().use();
+    if (chain.live == chain.used) {
+      return nullptr;
+    }
+    compact(leaf, nullptr);
     return leaf.annex().room(size);
   }
 
