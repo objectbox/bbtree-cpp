@@ -29,6 +29,7 @@
 #include <bbtree/detail/tree/tree.hpp>
 #include <bbtree/unsync/map.hpp>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -226,7 +227,16 @@ struct file_format {
   using K = typename T::key_type;
   using V = typename T::mapped_type;
 
-  static constexpr std::size_t alignment = T::root_page.align;
+  // A page's layout in a file map: its node's size, at a multiple of its
+  // size step, 1 KiB for most leaves, where a node in memory is aligned to
+  // a cache line. A page of the system's then holds whole 1 KiB pages, and
+  // a leaf's heap pages end where the next leaf may start.
+  static constexpr page_layout leaf_page{T::leaf.page.size, T::leaf.size_step};
+  static constexpr page_layout internal_page{T::internal.page.size, T::internal.size_step};
+  static constexpr page_layout root_page = T::root_is_leaf_sized ? leaf_page : internal_page;
+
+  // What a file map's bytes are aligned to: the largest of its pages' steps.
+  static constexpr std::size_t alignment = std::max(leaf_page.align, internal_page.align);
   // Without inline keys the internal nodes keep keys (D17), and no bytes
   // follow an internal node: keys whose bytes lie after their leaf have
   // inline keys, or there is no file map of them, to write or to read.
@@ -251,8 +261,8 @@ struct file_format {
         T::leaf_plan.width ? static_cast<std::uint64_t>(*T::leaf_plan.width) : 0,
         T::leaf_plan.hash_tags,
         T::internal_plan.width ? static_cast<std::uint64_t>(*T::internal_plan.width) : 0,
-        T::leaf.page.size,
-        T::leaf.page.align,
+        leaf_page.size,
+        leaf_page.align,
         T::leaf.keys.capacity,
         T::leaf.keys.inline_keys_offset.value_or(~0ull),
         T::leaf.keys.keys_offset,
@@ -261,8 +271,8 @@ struct file_format {
         T::leaf.value_stride,
         T::leaf.hash_tags_offset.value_or(~0ull),
         T::leaf.head_key_offset.value_or(~0ull),
-        T::internal.page.size,
-        T::internal.page.align,
+        internal_page.size,
+        internal_page.align,
         T::internal.keys.capacity,
         T::internal.keys.inline_keys_offset.value_or(~0ull),
         T::internal.keys.keys_offset,
@@ -319,7 +329,7 @@ struct file_format {
     }
     if (header.root != 0) {
       const std::uint64_t offset = header.root & ~leaf_tag;
-      if (offset < file_header::size || !holds_page(bytes.first(header.byte_len), offset, T::root_page)) {
+      if (offset < file_header::size || !holds_page(bytes.first(header.byte_len), offset, root_page)) {
         throw file_error(file_error::kind::corrupt, "a root page outside the file map");
       }
     }
@@ -342,7 +352,7 @@ struct file_format {
     std::uint64_t last_reached = header.root & ~leaf_tag;
     for (std::size_t depth = 0; depth <= max_depth; ++depth) {
       const bool leaves = (level.front() & leaf_tag) != 0;
-      const page_layout page = depth == 0 ? T::root_page : leaves ? T::leaf.page : T::internal.page;
+      const page_layout page = depth == 0 ? root_page : leaves ? leaf_page : internal_page;
       const std::size_t capacity = leaves ? T::leaf_capacity : T::internal_capacity;
       std::vector<std::uint64_t> children;
       // A leaf's head is the entry of the separator left of it (D17): every
@@ -533,9 +543,9 @@ class file_writer {
     while (!level.empty()) {
       std::vector<detail::node_ptr<types>> next;
       for (const auto node : level) {
-        const page_layout page = root             ? types::root_page
-                                 : node.is_leaf() ? types::leaf.page
-                                                  : types::internal.page;
+        const page_layout page = root             ? format::root_page
+                                 : node.is_leaf() ? format::leaf_page
+                                                  : format::internal_page;
         at = (at + page.align - 1) / page.align * page.align;
         order.push_back({node, at, page.size});
         at += page.size;

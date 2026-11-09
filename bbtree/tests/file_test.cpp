@@ -177,6 +177,26 @@ TEST_CASE("a file map of another layout, misaligned or truncated is refused", "[
                   bbtree::file_error);
 }
 
+TEST_CASE("a file map's pages start at multiples of their page size", "[file]") {
+  // Nodes in memory are aligned to a cache line; in a file map a 1 KiB page
+  // never crosses one of the system's 4 KiB pages.
+  using map_type = bbtree::file_map<std::uint64_t, std::uint64_t>;
+  CHECK(map_type::alignment() == 1024);
+  bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t> map;
+  for (std::uint64_t key = 0; key < 5000; ++key) {
+    map.insert({key, key});
+  }
+  const bbtree::file_buf bytes = bbtree::file_writer<std::uint64_t, std::uint64_t>(map).to_buf();
+  const bbtree::detail::file_header header = bbtree::detail::file_header::read(bytes.bytes());
+  CHECK(header.root == 1024);
+  CHECK(header.byte_len % 1024 == 0);
+  // A reader 64 bytes off its alignment is refused, though its nodes would
+  // be aligned as nodes in memory are.
+  bbtree::file_buf shifted(bytes.bytes().size() + 64, map_type::alignment());
+  std::copy(bytes.bytes().begin(), bytes.bytes().end(), shifted.bytes().begin() + 64);
+  CHECK_THROWS_AS(map_type::open(shifted.bytes().subspan(64)), bbtree::file_error);
+}
+
 TEST_CASE("corrupted file maps give answers or a refusal, never a crash", "[file]") {
   bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t> map;
   for (std::uint64_t key = 0; key < 20'000; ++key) {

@@ -11,8 +11,8 @@
 //                              bbtree::configured<bbtree::auto_inline_keys, large_leaves>>
 //
 // A page size is a power of two. A node is the smallest multiple of its
-// kind's page size that holds 12 keys, aligned to that page size, or more if
-// its keys or values need it. Bounds are checked at compile time.
+// kind's page size that holds 12 keys, aligned to a cache line (64 bytes), or
+// more if its keys or values need it. Bounds are checked at compile time.
 #pragma once
 
 #include <cstddef>

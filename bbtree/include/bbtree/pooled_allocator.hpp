@@ -3,11 +3,10 @@
 // from one page to 2 MiB, and pages given back are kept for reuse.
 //
 // Why: the global allocator asks aligned `operator new` for every page, and
-// glibc's `malloc` places 1 KiB pages aligned to 1 KiB with gaps between
-// them and without huge pages, which makes walks, builds and lookups miss
-// the TLB far more than they do on mimalloc. The idea of packing pages comes
-// from stx_btree, another C++ form of bbtree; the 2 MiB chunks on huge
-// pages are this port's.
+// glibc's `malloc` keeps them on 4 KiB pages, not on huge pages, which makes
+// walks, builds and lookups miss the TLB far more than they do on mimalloc.
+// The idea of packing pages comes from stx_btree, another C++ form of
+// bbtree; the 2 MiB chunks on huge pages are this port's.
 //
 // Ownership: copies of a `pooled_allocator` share one pool, which lives
 // until the last copy goes; only then do its chunks go back to the system.

@@ -21,7 +21,8 @@
 // - A leaf whose plan keeps hash tags has a byte per key after its inline
 //   keys, where the layout has room (D36).
 // - Each kind is the smallest multiple of its page size that holds 12 keys,
-//   aligned to it.
+//   aligned to a cache line (PORTING.md says why not to its page size, as in
+//   the Rust crate).
 //
 // Every invariant the node code relies on is checked when a layout is
 // computed, which happens at compile time.
@@ -84,6 +85,10 @@ struct key_area {
 
 struct leaf_layout {
   page_layout page;
+  // What `page.size` is a multiple of: the kind's page size, or the page's
+  // alignment if that is more (D13). A file map starts the page at a multiple
+  // of it.
+  std::size_t size_step;
   key_area keys;
   // The head, trailing slot 0; value i is trailing slot i + 1.
   std::size_t head_offset;
@@ -98,6 +103,8 @@ struct leaf_layout {
 
 struct internal_layout {
   page_layout page;
+  // As a leaf's.
+  std::size_t size_step;
   key_area keys;
   std::size_t edges_offset;
   std::size_t edge_stride;
@@ -140,7 +147,7 @@ class node_layout {
     const std::size_t page_size = keeps_keys ? plain_internal_page_size() : internal_page_size();
     const header_shape header{latched, 0, 1};
     const kind_layout layout = compute_kind(page_size, header, inline_key_size, 0, edge_slot(), keeps_keys);
-    return {layout.page, layout.keys, layout.trailing_offset, layout.trailing_stride};
+    return {layout.page, layout.size_step, layout.keys, layout.trailing_offset, layout.trailing_stride};
   }
 
   // Where a leaf's annex is: right after its node header.
@@ -177,6 +184,7 @@ class node_layout {
 
   struct kind_layout {
     page_layout page;
+    std::size_t size_step;
     key_area keys;
     std::size_t trailing_offset;
     std::size_t trailing_stride;
@@ -252,13 +260,16 @@ class node_layout {
     if (layout.keys.inline_keys_offset) {
       head_key_offset = entries_offset(layout);
     }
-    return {layout.page,      layout.keys,    layout.trailing_offset, layout.trailing_stride,
+    return {layout.page,      layout.size_step, layout.keys, layout.trailing_offset, layout.trailing_stride,
             hash_tags_offset, head_key_offset};
   }
 
-  static constexpr std::size_t node_align(std::size_t page_size, std::size_t trailing_align,
-                                          bool keeps_keys) {
-    return max(page_size, max(keeps_keys ? key_align : 1, trailing_align));
+  // A node's alignment: a cache line's, which keeps its header and inline
+  // keys on the lines the layout counts and entries up to a cache line on one
+  // (D34); more if its keys or trailing slots need it. An address carries
+  // nothing but an edge's tag in bit 0, so no node needs its page size's.
+  static constexpr std::size_t node_align(std::size_t trailing_align, bool keeps_keys) {
+    return max(cache_line_size, max(keeps_keys ? key_align : 1, trailing_align));
   }
 
   // The fewest bytes a node of `capacity` keys needs.
@@ -306,9 +317,10 @@ class node_layout {
                                             std::size_t inline_key_size, std::size_t hash_tag_size,
                                             trailing_slot trailing, bool keeps_keys) {
     const std::size_t column_size = inline_key_size + hash_tag_size;
-    const std::size_t align = node_align(page_size, trailing.align, keeps_keys);
+    const std::size_t align = node_align(trailing.align, keeps_keys);
+    const std::size_t size_step = max(page_size, align);
     const std::size_t size =
-        round_up(bytes_needed(header, column_size, trailing, keeps_keys, min_capacity), align);
+        round_up(bytes_needed(header, column_size, trailing, keeps_keys, min_capacity), size_step);
     const std::size_t capacity = capacity_in(header, size, max_capacity_of(page_size, inline_key_size),
                                              column_size, trailing, keeps_keys);
     const std::size_t keys_start = columns_end(header, column_size, capacity);
@@ -341,8 +353,11 @@ class node_layout {
     if (inline_key_size > 0) {
       inline_keys_at = inline_keys_offset(header);
     }
-    const kind_layout layout{
-        {size, align}, {capacity, inline_keys_at, keys_offset, key_stride}, trailing_offset, trailing_stride};
+    const kind_layout layout{{size, align},
+                             size_step,
+                             {capacity, inline_keys_at, keys_offset, key_stride},
+                             trailing_offset,
+                             trailing_stride};
     check_invariants(layout, page_size, header, inline_key_size, column_size, trailing, keeps_keys);
     return layout;
   }
@@ -355,7 +370,10 @@ class node_layout {
                                          trailing_slot trailing, bool keeps_keys) {
     const auto [size, align] = layout.page;
     const key_area& keys = layout.keys;
-    require(is_power_of_two(align) && size % page_size == 0 && size % align == 0, "whole aligned pages");
+    require(is_power_of_two(align) && align % cache_line_size == 0, "nodes aligned to cache lines");
+    require(
+        layout.size_step % page_size == 0 && layout.size_step % align == 0 && size % layout.size_step == 0,
+        "whole aligned pages");
     require(keys.capacity >= min_capacity && keys.capacity <= max_capacity, "capacity in bounds");
     const std::size_t keys_start = columns_end(header, column_size, keys.capacity);
     if (!keys.inline_keys_offset) {
