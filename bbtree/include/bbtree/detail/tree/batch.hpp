@@ -55,7 +55,7 @@ class batch_lookup {
   // the same index of `found`.
   template <class Q>
   static void find_many(const tree<T>& owner, std::size_t length, std::span<const Q* const> keys,
-                        std::span<std::optional<found_entry<T>>> found) noexcept {
+                        std::span<sought_entry<T>> found) noexcept {
     if (!owner.has_root() || keys.size() < 2 || owner.root().is_leaf() || !batches(length)) {
       for (std::size_t index = 0; index < keys.size(); ++index) {
         found[index] = owner.find(*keys[index]);
@@ -71,14 +71,14 @@ class batch_lookup {
  private:
   template <class Q>
   static void find_chunk(const tree<T>& owner, std::span<const Q* const> keys,
-                         std::span<std::optional<found_entry<T>>> found) noexcept {
+                         std::span<sought_entry<T>> found) noexcept {
     node_ptr<T> nodes[max_lanes];
     std::size_t edges[max_lanes];
     std::size_t live[max_lanes];
     std::size_t live_count = 0;
     const node_ptr<T> root = owner.root();
     for (std::size_t lane = 0; lane < keys.size(); ++lane) {
-      found[lane] = std::nullopt;
+      found[lane] = {};
       const search_key<T, Q> key(*keys[lane]);
       if (owner.shared().place_outside(key)) {
         continue;

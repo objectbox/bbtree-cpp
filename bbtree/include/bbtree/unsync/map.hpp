@@ -342,12 +342,11 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   template <class Q>
     requires(std::is_same_v<Q, K> || transparent<Q>)
   void get_many(std::span<const Q* const> keys, std::span<V*> values) noexcept {
-    std::optional<detail::found_entry<types>> found[detail::batch_lookup<types>::max_lanes];
+    detail::sought_entry<types> found[detail::batch_lookup<types>::max_lanes];
     for (std::size_t start = 0; start < keys.size(); start += std::size(found)) {
       const std::size_t count = std::min(std::size(found), keys.size() - start);
-      detail::batch_lookup<types>::find_many(
-          tree_, length_, keys.subspan(start, count),
-          std::span<std::optional<detail::found_entry<types>>>(found, count));
+      detail::batch_lookup<types>::find_many(tree_, length_, keys.subspan(start, count),
+                                             std::span<detail::sought_entry<types>>(found, count));
       for (std::size_t index = 0; index < count; ++index) {
         values[start + index] = found[index] ? found[index]->value() : nullptr;
       }
@@ -591,11 +590,11 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
     requires std::same_as<std::remove_cvref_t<decltype((entry.first))>, K>;
   };
 
-  iterator found_or_end(std::optional<detail::found_entry<types>> found) noexcept {
+  iterator found_or_end(detail::sought_entry<types> found) noexcept {
     return found ? iterator(cursor_type(&tree_, *found)) : end();
   }
 
-  std::optional<const_reference> entry_of(std::optional<detail::found_entry<types>> found) const noexcept {
+  std::optional<const_reference> entry_of(detail::sought_entry<types> found) const noexcept {
     if (!found) {
       return std::nullopt;
     }

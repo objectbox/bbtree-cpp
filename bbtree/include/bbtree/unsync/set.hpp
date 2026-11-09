@@ -240,12 +240,11 @@ class bbtree_set
   template <class Q>
     requires(std::is_same_v<Q, K> || transparent<Q>)
   void contains_many(std::span<const Q* const> keys, std::span<bool> held) const noexcept {
-    std::optional<detail::found_entry<types>> found[detail::batch_lookup<types>::max_lanes];
+    detail::sought_entry<types> found[detail::batch_lookup<types>::max_lanes];
     for (std::size_t start = 0; start < keys.size(); start += std::size(found)) {
       const std::size_t count = std::min(std::size(found), keys.size() - start);
-      detail::batch_lookup<types>::find_many(
-          tree_, length_, keys.subspan(start, count),
-          std::span<std::optional<detail::found_entry<types>>>(found, count));
+      detail::batch_lookup<types>::find_many(tree_, length_, keys.subspan(start, count),
+                                             std::span<detail::sought_entry<types>>(found, count));
       for (std::size_t index = 0; index < count; ++index) {
         held[start + index] = found[index].has_value();
       }
@@ -470,7 +469,7 @@ class bbtree_set
   // by one, rather than walk both: when this set is much smaller.
   bool looks_up_in(const bbtree_set& other) const noexcept { return size() * 16 < other.size(); }
 
-  const_iterator found_or_end(std::optional<detail::found_entry<types>> found) const noexcept {
+  const_iterator found_or_end(detail::sought_entry<types> found) const noexcept {
     return found ? const_iterator(cursor_type(&tree_, *found)) : end();
   }
 

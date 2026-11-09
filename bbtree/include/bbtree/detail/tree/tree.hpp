@@ -290,13 +290,13 @@ class tree {
   // --- Lookups ---
 
   template <class Q>
-  std::optional<found_entry<T>> find(const Q& query) const noexcept {
+  sought_entry<T> find(const Q& query) const noexcept {
     if (!has_root()) {
-      return std::nullopt;
+      return {};
     }
     const search_key<T, Q> key(query);
     if (shared_.place_outside(key)) {
-      return std::nullopt;
+      return {};
     }
     node_ptr<T> node = root();
     while (!node.is_leaf()) {
@@ -310,24 +310,23 @@ class tree {
     if (const std::optional<std::size_t> index = leaf_node<T>(node).find(key)) {
       return found_entry<T>{node, *index};
     }
-    return std::nullopt;
+    return {};
   }
 
-  std::optional<found_entry<T>> first() const noexcept {
+  sought_entry<T> first() const noexcept {
     if (!has_root()) {
-      return std::nullopt;
+      return {};
     }
     const leaf_node<T> leaf = node_end_of<T>::template border_leaf<node_end::first>(root());
-    return leaf.len() > 0 ? std::optional<found_entry<T>>(found_entry<T>{leaf.node(), 0}) : std::nullopt;
+    return leaf.len() > 0 ? sought_entry<T>(found_entry<T>{leaf.node(), 0}) : sought_entry<T>();
   }
 
-  std::optional<found_entry<T>> last() const noexcept {
+  sought_entry<T> last() const noexcept {
     if (!has_root()) {
-      return std::nullopt;
+      return {};
     }
     const leaf_node<T> leaf = node_end_of<T>::template border_leaf<node_end::last>(root());
-    return leaf.len() > 0 ? std::optional<found_entry<T>>(found_entry<T>{leaf.node(), leaf.len() - 1})
-                          : std::nullopt;
+    return leaf.len() > 0 ? sought_entry<T>(found_entry<T>{leaf.node(), leaf.len() - 1}) : sought_entry<T>();
   }
 
   // --- Inserting (`insert.hpp`) ---

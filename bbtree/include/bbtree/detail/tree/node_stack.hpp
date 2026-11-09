@@ -278,4 +278,29 @@ struct found_entry {
   }
 };
 
+// What a lookup returns: where its key's entry is, if the tree holds the key.
+// It reads as a `std::optional<found_entry<T>>` and is a `found_entry` whose
+// node is null for "not there": two words, which a function returns in
+// registers, where the optional's three go through memory, stores and loads
+// on every lookup that isn't inlined into its caller.
+template <class T>
+class sought_entry {
+ public:
+  // Not found.
+  constexpr sought_entry() noexcept = default;
+  sought_entry(found_entry<T> entry) noexcept : entry_(entry) {}  // NOLINT(google-explicit-constructor)
+
+  bool has_value() const noexcept { return static_cast<bool>(entry_.node); }
+  explicit operator bool() const noexcept { return has_value(); }
+
+  const found_entry<T>& operator*() const noexcept {
+    assert(has_value());
+    return entry_;
+  }
+  const found_entry<T>* operator->() const noexcept { return &**this; }
+
+ private:
+  found_entry<T> entry_{};
+};
+
 }  // namespace bbtree::detail
