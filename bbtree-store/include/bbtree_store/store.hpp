@@ -128,7 +128,8 @@ class bbtree_store {
   // place of its own. Both are copied into the store's heap. Fails, the store
   // holding what it held, on a key longer than `max_key_len`, a value longer
   // than `max_value_len`, or the allocator's refusal of a page, a node or a
-  // heap page.
+  // heap page. Throws `std::bad_alloc`, the store holding what it held, only
+  // if the program's heap lacks the memory for a compaction's lists.
   insert_result insert(bytes key, bytes value) {
     if (key.size() > max_key_len()) {
       return insert_result::key_too_long;
@@ -136,9 +137,10 @@ class bbtree_store {
     if (value.size() > max_value_len()) {
       return insert_result::value_too_long;
     }
-    detail::overflow<C> pages;
+    // The value's overflow pages are `pages`' until a record links them.
+    detail::unlinked_overflow<A, C> pages(heap_.allocator());
     try {
-      pages = heap_.write_overflow(key.size(), value);
+      heap_.write_overflow(key.size(), value, pages);
       const query_key query(key);
       return map_.update_or_insert_with_leaf(
           query.as_store_key(), no_value(),
@@ -153,8 +155,6 @@ class bbtree_store {
             return insert_result::inserted;
           });
     } catch (const bbtree::alloc_error&) {
-      // No record links the overflow pages.
-      heap_.free_overflow(pages);
       return insert_result::refused;
     }
   }

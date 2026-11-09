@@ -13,6 +13,17 @@ if(BBTREE_BUILD_TESTS)
   target_link_libraries(bbtree_store_tests PRIVATE bbtree::store bbtree_warnings Catch2::Catch2WithMain
                         Threads::Threads)
   catch_discover_tests(bbtree_store_tests DISCOVERY_MODE PRE_TEST TEST_PREFIX "bbtree_store_tests: ")
+
+  # On its own: it replaces the global `operator new`, to fail allocations.
+  # Not under ThreadSanitizer, whose runtime defines `operator new` itself;
+  # the test runs one thread.
+  if(NOT BBTREE_SANITIZE MATCHES "thread")
+    add_executable(bbtree_store_heap_failure_tests tests/heap_failure_test.cpp)
+    target_link_libraries(bbtree_store_heap_failure_tests PRIVATE bbtree::store bbtree_warnings
+                          Catch2::Catch2WithMain)
+    catch_discover_tests(bbtree_store_heap_failure_tests DISCOVERY_MODE PRE_TEST
+                         TEST_PREFIX "bbtree_store_heap_failure_tests: ")
+  endif()
 endif()
 
 # The Rust crate's `examples/bench.rs`, on mimalloc as it is: with the bench.

@@ -52,6 +52,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <new>
 #include <utility>
 #include <vector>
 
@@ -200,6 +201,9 @@ class record_heap {
   record_heap(const record_heap&) = delete;
   record_heap& operator=(const record_heap&) = delete;
 
+  // The store's allocator, which every page of a record comes from.
+  const A& allocator() const noexcept { return allocator_; }
+
   // Whether dropping the store must kill its records, for pages outside the
   // chains to go back: orphans that hold live records, or overflow pages,
   // once any value took some.
@@ -207,42 +211,42 @@ class record_heap {
     return orphans_.load(std::memory_order_acquire) > 0 || overflowed_.load(std::memory_order_relaxed);
   }
 
-  // The overflow pages of the record of a key of `key_len` and `value`,
-  // written, for `write`: the value's bytes the record doesn't keep; none if
-  // it keeps them all. Throws `alloc_error` if a page is refused.
-  overflow<C> write_overflow(std::size_t key_len, bytes value) {
+  // Writes the pages of the record of a key of `key_len` and `value` that lie
+  // outside its leaf's heap: its overflow pages, into `pages`, for `write`,
+  // with the value's bytes the record doesn't keep; none if it keeps them
+  // all. Throws `alloc_error` if a page is refused.
+  void write_overflow(std::size_t key_len, bytes value, unlinked_overflow<A, C>& pages) {
     const std::size_t kept = record<C>::kept_len(key_len, value.size());
     if (kept == value.size()) {
-      return overflow<C>();
+      return;
     }
-    const overflow<C> pages = overflow<C>::write(value.subspan(kept), allocator_);
-    if (!pages) {
+    const overflow<C> written = overflow<C>::write(value.subspan(kept), allocator_);
+    if (!written) {
       throw bbtree::alloc_error();
     }
+    pages.hold(written);
     if (!overflowed_.load(std::memory_order_relaxed)) {
       overflowed_.store(true, std::memory_order_relaxed);
     }
-    return pages;
   }
 
-  // Gives back the overflow pages of a record that never went in.
-  void free_overflow(overflow<C> pages) const noexcept { pages.free(allocator_); }
-
-  // Writes the record of `key` and `value`, whose overflow pages
-  // `write_overflow` wrote, into `leaf`'s heap, for a key of `leaf` to point
-  // to; throws `alloc_error` if a page it needs is refused. The leaf's
-  // records may move first, for room, or to their own leaf (top of the file).
-  record<C> write(store_leaf& leaf, bytes key, bytes value, overflow<C> pages) {
+  // Writes the record of `key` and `value`, which takes the overflow pages
+  // `write_overflow` wrote from `pages`, into `leaf`'s heap, for a key of
+  // `leaf` to point to; throws `alloc_error`, `pages` left as they are, if a
+  // page it needs is refused. The leaf's records may move first, for room,
+  // or to their own leaf (top of the file).
+  record<C> write(store_leaf& leaf, bytes key, bytes value, unlinked_overflow<A, C>& pages) {
     pull_stale(leaf);
     std::byte* at = room_for(leaf, record<C>::size_of(key.size(), value.size()));
-    return record<C>::write(at, key, value, pages, leaf.annex().generation());
+    return record<C>::write(at, key, value, pages.release(), leaf.annex().generation());
   }
 
   // Gives `stored`, a key of `leaf`, whose bytes are `key`, `value` in place
   // of its own: in its record if it keeps its value whole and the new one is
   // no longer, else in a new record (`write`). The leaf's head keeps its
   // record, which becomes, or stays, a stub of the new one (top of the file).
-  void overwrite(store_leaf& leaf, const store_key& stored, bytes key, bytes value, overflow<C> pages) {
+  void overwrite(store_leaf& leaf, const store_key& stored, bytes key, bytes value,
+                 unlinked_overflow<A, C>& pages) {
     const record<C> old = stored.stored_record<C>();
     const bool pinned = leaf.is_head(stored);
     const record<C> holder = old.is_stub() ? old.target() : old;
@@ -313,8 +317,10 @@ class record_heap {
  private:
   // `doomed`, of a key of `leaf` that points elsewhere now, dies
   // (`kill_record`). If it lay in the leaf's own chain, the leaf compacts
-  // once half the page, and half the chain, are holes.
-  void kill(store_leaf& leaf, record<C> doomed) {
+  // once half the page, and half the chain, are holes; or leaves that to a
+  // later kill, if the program's heap has no memory for the compaction's
+  // lists: the key's value is replaced by now, which can't fail any more.
+  void kill(store_leaf& leaf, record<C> doomed) noexcept {
     const page in = page::of_record(doomed.address());
     // Before the kill: once it is done, another leaf's page may go.
     const bool own = leaf.annex().holds(in);
@@ -322,7 +328,10 @@ class record_heap {
       return;
     }
     if (in.live() * 2 <= in.used() && leaf.annex().use().is_half_holes()) {
-      compact(leaf, nullptr);
+      try {
+        compact(leaf, nullptr);
+      } catch (const std::bad_alloc&) {
+      }
     }
   }
 

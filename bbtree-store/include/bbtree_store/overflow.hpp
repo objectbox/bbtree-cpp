@@ -9,7 +9,7 @@
 // its link to them along, and leaves them where they are; they go back when
 // it dies. No chain holds them, and only their record points to them, so a
 // thread reads them only while it holds the record's leaf, as it reads the
-// record.
+// record. Until their record is written they are an `unlinked_overflow`'s.
 #pragma once
 
 #include <bbtree_store/heap_page.hpp>
@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace bbtree_store::detail {
@@ -98,6 +99,34 @@ class overflow {
 
  private:
   std::byte* first_ = nullptr;
+};
+
+// A value's overflow pages while no record links them: an insert writes them
+// before it holds the value's leaf. They go back to `allocator`, which they
+// came from, when this goes, unless a record took them (`release`): however
+// the insert ends, by a refusal or an exception too, they have one owner.
+template <class A, class C>
+class unlinked_overflow {
+ public:
+  // Holds no pages yet; `allocator` outlives it.
+  explicit unlinked_overflow(const A& allocator) noexcept : allocator_(allocator) {}
+  unlinked_overflow(const unlinked_overflow&) = delete;
+  unlinked_overflow& operator=(const unlinked_overflow&) = delete;
+  ~unlinked_overflow() { pages_.free(allocator_); }
+
+  // Takes `pages`, written and unlinked; it held none.
+  void hold(overflow<C> pages) noexcept {
+    assert(!pages_ && "one value's pages");
+    pages_ = pages;
+  }
+
+  // The pages, if any, for the record that links them: they are that
+  // record's from now on.
+  [[nodiscard]] overflow<C> release() noexcept { return std::exchange(pages_, overflow<C>()); }
+
+ private:
+  overflow<C> pages_;
+  const A& allocator_;
 };
 
 }  // namespace bbtree_store::detail
