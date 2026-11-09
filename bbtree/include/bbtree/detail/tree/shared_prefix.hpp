@@ -13,6 +13,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <span>
 #include <type_traits>
@@ -48,6 +49,20 @@ class shared_prefix {
 
   std::span<const std::uint8_t> bytes() const noexcept { return {bytes_.data(), len_}; }
   std::size_t len() const noexcept { return len_; }
+
+  // A copy of these, made while another thread may be writing them (a shared
+  // map's descent, whose version check then vouches for the copy or throws it
+  // away): the length first, a byte read once, and the rest only if there is
+  // any. Most trees share nothing, and their descents read that byte alone.
+  shared_prefix racing_copy() const noexcept {
+    const volatile std::uint8_t& racing_len = len_;
+    if (racing_len == 0) {
+      return shared_prefix();
+    }
+    shared_prefix copy;
+    std::memcpy(static_cast<void*>(&copy), static_cast<const void*>(this), sizeof copy);
+    return copy;
+  }
 
   // How many of these bytes `key`'s encoding starts with.
   template <class T>

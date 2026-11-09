@@ -375,9 +375,7 @@ class latched_tree {
   // What every key shares, copied out while writers may change it.
   shared_prefix racing_shared() const noexcept {
     const racing_reads reads_guard;
-    shared_prefix copy;
-    std::memcpy(static_cast<void*>(&copy), static_cast<const void*>(&shared_), sizeof copy);
-    return copy;
+    return shared_.racing_copy();
   }
 
   // Checks the tree's structure (`invariants.hpp`) and that appends go to
