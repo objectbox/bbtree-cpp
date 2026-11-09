@@ -256,16 +256,12 @@ class bbtree_set
     }
   }
 
-  // Inserts each key in input order, their paths fetched together first;
-  // returns whether each was new.
+  // Inserts each key in input order, their paths fetched together first
+  // where that pays; returns whether each was new.
   template <std::size_t N>
   std::array<bool, N> insert_many(std::array<K, N>&& keys) {
-    std::array<const K*, N> pointers;
-    for (std::size_t index = 0; index < N; ++index) {
-      pointers[index] = &keys[index];
-    }
+    this->template fetch_paths_for_inserts<N>([&](std::size_t index) -> const K& { return keys[index]; });
     std::array<bool, N> inserted;
-    contains_many(std::span<const K* const>(pointers), std::span<bool>(inserted));
     for (std::size_t index = 0; index < N; ++index) {
       inserted[index] = insert(std::move(keys[index])).second;
     }

@@ -4,12 +4,16 @@
 // `unsync::bbtree_map` and `unsync::bbtree_set` derive from it.
 #pragma once
 
+#include <bbtree/detail/tree/batch.hpp>
 #include <bbtree/detail/tree/cursor.hpp>
 #include <bbtree/detail/tree/tree.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <iterator>
+#include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -71,6 +75,31 @@ class tree_owner {
     clear_tree();
     tree_ = std::move(built.first);
     length_ = built.second;
+  }
+
+  // Fetches the paths of the `N` keys `key_at(index)` together, before they
+  // are inserted one by one in that order: one key's misses then overlap the
+  // others' (D53). Only where that pays, as the Rust crate's `insert_many`
+  // decides: not in a tree below the batches' cutoff, whose nodes are in
+  // cache, where it would be a second search of every key; and not if the
+  // first key appends to the remembered leaf, as ascending keys do, which
+  // descend through no node.
+  template <std::size_t N, class KeyAt>
+  void fetch_paths_for_inserts(KeyAt key_at) const noexcept {
+    using lookup = batch_lookup<T>;
+    if (N < 2 || !lookup::batches(length_) || tree_.appends_to_rightmost(key_at(0))) {
+      return;
+    }
+    std::array<const K*, N> keys;
+    for (std::size_t index = 0; index < N; ++index) {
+      keys[index] = &key_at(index);
+    }
+    sought_entry<T> ignored[lookup::max_lanes];
+    for (std::size_t start = 0; start < N; start += lookup::max_lanes) {
+      const std::size_t count = std::min(lookup::max_lanes, N - start);
+      lookup::find_many(tree_, length_, std::span<const K* const>(keys).subspan(start, count),
+                        std::span<sought_entry<T>>(ignored, count));
+    }
   }
 
   // Replaces an empty tree with one built straight from [first, last), whose

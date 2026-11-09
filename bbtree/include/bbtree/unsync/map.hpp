@@ -360,16 +360,12 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
   }
 
   // Inserts or assigns each entry in input order, as `insert_or_assign` one
-  // by one would, the keys' paths fetched together first; returns whether
-  // each was new (the Rust crate's `insert_many`).
+  // by one would, the keys' paths fetched together first where that pays;
+  // returns whether each was new (the Rust crate's `insert_many`).
   template <std::size_t N>
   std::array<bool, N> insert_or_assign_many(std::array<std::pair<K, V>, N>&& entries) {
-    std::array<const K*, N> keys;
-    for (std::size_t index = 0; index < N; ++index) {
-      keys[index] = &entries[index].first;
-    }
-    std::array<V*, N> ignored;
-    get_many(std::span<const K* const>(keys), std::span<V*>(ignored));
+    this->template fetch_paths_for_inserts<N>(
+        [&](std::size_t index) -> const K& { return entries[index].first; });
     std::array<bool, N> inserted;
     for (std::size_t index = 0; index < N; ++index) {
       inserted[index] =

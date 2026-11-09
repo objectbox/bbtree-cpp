@@ -342,6 +342,11 @@ class tree {
 
   // --- Inserting (`insert.hpp`) ---
 
+  // Whether `key` appends to the remembered last leaf: the leaf has room,
+  // and `key` is greater than its last key and shares what every key does.
+  // An insert of it then descends through no node.
+  bool appends_to_rightmost(const K& key) const noexcept;
+
   // Inserts `key` with the value `make_value()` makes, unless the tree holds
   // the key; then `Existing` says whether the made value is assigned to its
   // entry. The key (`const K&` or `K&&`) is copied or moved only if it goes
@@ -415,10 +420,6 @@ class tree {
     }
     return {entry, false};
   }
-
-  // Whether `key` appends to the remembered last leaf: the leaf has room,
-  // and `key` is greater than its last key and shares what every key does.
-  bool appends_to_rightmost(const K& key) const noexcept;
 
   void shrink_borders_to(std::size_t len) noexcept;
 

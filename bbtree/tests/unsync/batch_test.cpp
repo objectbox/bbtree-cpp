@@ -65,11 +65,45 @@ TEST_CASE("insert_or_assign_many matches inserts one by one", "[batch]") {
       entry = {rng() % 200'000, rng()};
     }
     entries[5].first = entries[2].first;
-    for (const auto& [key, value] : entries) {
-      single.insert_or_assign(key, value);
+    std::array<bool, 16> expected;
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+      expected[index] = single.insert_or_assign(entries[index].first, entries[index].second).second;
     }
-    batched.insert_or_assign_many(std::move(entries));
+    REQUIRE(batched.insert_or_assign_many(std::move(entries)) == expected);
   }
   batched.check_invariants();
   REQUIRE(batched == single);
+}
+
+TEST_CASE("batched inserts of ascending keys, and of keys inside, past the batch cutoff", "[batch]") {
+  bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t> batched;
+  bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t> single;
+  bbtree::unsync::bbtree_set<std::uint64_t> batched_set;
+  bbtree::unsync::bbtree_set<std::uint64_t> single_set;
+  std::mt19937_64 rng(10);
+  std::uint64_t next = 0;
+  for (int round = 0; round < 8000; ++round) {
+    // Ascending past the last key: appends. Every eighth batch goes inside,
+    // and every eighth of the others ends inside.
+    std::array<std::pair<std::uint64_t, std::uint64_t>, 16> entries;
+    std::array<std::uint64_t, 16> keys;
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+      const bool inside = round % 8 == 7 || (round % 8 == 3 && index >= 12);
+      keys[index] = inside ? rng() % (next * 4 + 1) : ++next * 4;
+      entries[index] = {keys[index], rng()};
+    }
+    std::array<bool, 16> expected;
+    std::array<bool, 16> expected_in_set;
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+      expected[index] = single.insert_or_assign(entries[index].first, entries[index].second).second;
+      expected_in_set[index] = single_set.insert(keys[index]).second;
+    }
+    REQUIRE(batched.insert_or_assign_many(std::move(entries)) == expected);
+    REQUIRE(batched_set.insert_many(std::move(keys)) == expected_in_set);
+  }
+  batched.check_invariants();
+  batched_set.check_invariants();
+  REQUIRE(batched.size() > 100'000);
+  REQUIRE(batched == single);
+  REQUIRE(batched_set == single_set);
 }
