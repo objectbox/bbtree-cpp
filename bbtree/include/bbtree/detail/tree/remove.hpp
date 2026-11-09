@@ -249,7 +249,9 @@ auto node_stack_mut<T>::take_out(const Pages& pages, std::size_t& length) noexce
     }
   }();
   --length;
-  return {{std::move(key), std::move(succession->value)}, std::move(changed)};
+  // The pair is named: from a braced list it would be made and then copied
+  // (`pair(const T1&, const T2&)`), which a move-only key or value can't be.
+  return {std::pair<K, V>(std::move(key), std::move(succession->value)), std::move(changed)};
 }
 
 template <class T>

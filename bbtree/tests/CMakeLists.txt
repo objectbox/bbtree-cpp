@@ -15,6 +15,7 @@ set(BBTREE_TEST_SOURCES
   unsync/set_test.cpp
   unsync/batch_test.cpp
   unsync/compact_string_test.cpp
+  unsync/move_only_test.cpp
   shared/lookup_stress_test.cpp
   shared/change_stress_test.cpp
   shared/scan_test.cpp
