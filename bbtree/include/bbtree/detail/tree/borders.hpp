@@ -59,6 +59,7 @@ struct border_fixes {
 template <class T>
 template <node_end End, class Pages>
 void tree<T>::fix_border(const Pages& pages) noexcept {
+  forget_rightmost_leaf();
   lower_while_root_empty(pages);
   if (!root().is_leaf()) {
     internal_node<T> node(root());

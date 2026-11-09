@@ -10,9 +10,11 @@
 
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <random>
 #include <string>
+#include <type_traits>
 
 namespace {
 
@@ -39,6 +41,8 @@ class tree_under_test {
   std::optional<std::pair<K, V>> pop_first() { return tree_.pop_first(pages_, length_); }
   std::optional<std::pair<K, V>> pop_last() { return tree_.pop_last(pages_, length_); }
   void check() const { tree_.check_invariants(length_); }
+  // Whether the next key past the last would append without a descent.
+  bool remembers_last_leaf() const { return static_cast<bool>(tree_.remembered_rightmost_leaf()); }
   std::size_t size() const { return length_; }
   std::size_t depth() const { return tree_.has_root() ? tree_.leaf_depth() : 0; }
 
@@ -233,4 +237,113 @@ TEST_CASE("ascending inserts append and grow the tree", "[tree]") {
   }
   tree.check();
   CHECK(tree.size() == 0);
+}
+
+TEST_CASE("inserts that fit and upserts keep the remembered last leaf", "[tree]") {
+  tree_under_test<std::uint64_t, std::uint64_t, bbtree::auto_inline_keys> tree;
+  std::uint64_t next = 0;
+  for (; next < 1000; ++next) {
+    REQUIRE(tree.insert_or_assign(next * 1000, next));
+  }
+  REQUIRE(tree.remembers_last_leaf());
+
+  // An existing key, and a new one into a leaf with room: no node moves.
+  CHECK_FALSE(tree.insert_or_assign(5000, 1));
+  CHECK(tree.remembers_last_leaf());
+  CHECK(tree.insert_or_assign(5001, 1));
+  CHECK(tree.remembers_last_leaf());
+  tree.check();
+
+  // A leaf that splits elsewhere forgets it, until the last leaf splits.
+  for (std::uint64_t key = 5002; tree.remembers_last_leaf(); ++key) {
+    REQUIRE(key < 5999);
+    REQUIRE(tree.insert_or_assign(key, 1));
+    tree.check();
+  }
+  while (!tree.remembers_last_leaf()) {
+    REQUIRE(tree.insert_or_assign(next * 1000, next));
+    ++next;
+    tree.check();
+  }
+}
+
+TEST_CASE("a key that shares less keeps the remembered last leaf", "[tree]") {
+  tree_under_test<std::string, std::uint64_t, bbtree::auto_inline_keys> tree;
+  std::map<std::string, std::uint64_t> model;
+  auto insert = [&](const std::string& key, std::uint64_t value) {
+    REQUIRE(tree.insert_or_assign(key, value) == model.insert_or_assign(key, value).second);
+    tree.check();
+  };
+  auto path = [](std::uint64_t n) {
+    std::string digits = std::to_string(n);
+    return "/usr/share/data/item-" + std::string(6 - digits.size(), '0') + digits;
+  };
+  std::uint64_t next = 0;
+  for (; next < 500; ++next) {
+    insert(path(next), next);
+  }
+  REQUIRE(tree.remembers_last_leaf());
+  // Shares "/usr/" only: every border node's prefix moves back, the last
+  // leaf's too, and appends go on into it.
+  insert("/usr/lib", 1);
+  CHECK(tree.remembers_last_leaf());
+  for (; next < 1000; ++next) {
+    insert(path(next), next);
+  }
+  // Shares nothing, and is past the last key.
+  insert("zebra", 2);
+  for (; next < 1500; ++next) {
+    insert(path(next), next);
+  }
+  REQUIRE(tree.size() == model.size());
+  for (const auto& [key, value] : model) {
+    const std::uint64_t* found = tree.find(key);
+    REQUIRE(found != nullptr);
+    REQUIRE(*found == value);
+  }
+}
+
+TEMPLATE_TEST_CASE("appends mixed with inserts, upserts and removals match std::map", "[tree][differential]",
+                   std::uint64_t, std::string) {
+  using K = TestType;
+  auto key_of = [](std::uint64_t n) {
+    if constexpr (std::is_same_v<K, std::string>) {
+      std::string digits = std::to_string(n);
+      return "key-" + std::string(12 - digits.size(), '0') + digits;
+    } else {
+      return n;
+    }
+  };
+  tree_under_test<K, std::uint64_t, bbtree::auto_inline_keys> tree;
+  std::map<K, std::uint64_t> model;
+  std::mt19937_64 rng(11);
+  std::uint64_t next = 0;
+  for (std::uint64_t step = 0; step < 30'000; ++step) {
+    const unsigned op = static_cast<unsigned>(rng() % 8);
+    if (op < 3 || next == 0) {
+      // Past the last key: an append.
+      const K key = key_of(next * 4 + 2);
+      ++next;
+      REQUIRE(tree.insert_or_assign(key, step));
+      model.insert_or_assign(key, step);
+    } else if (op < 6) {
+      // A key inside, new or not.
+      const K key = key_of((rng() % next) * 4 + rng() % 3);
+      REQUIRE(tree.insert_or_assign(key, step) == model.insert_or_assign(key, step).second);
+    } else if (op < 7) {
+      const K key = key_of((rng() % next) * 4 + 2);
+      REQUIRE(tree.remove(key).has_value() == (model.erase(key) == 1));
+    } else if (rng() % 64 == 0 && !model.empty()) {
+      REQUIRE(tree.pop_last()->first == std::prev(model.end())->first);
+      model.erase(std::prev(model.end()));
+    }
+    // The remembered leaf is the tree's last, with everything else.
+    tree.check();
+  }
+  REQUIRE(tree.size() == model.size());
+  for (const auto& [key, value] : model) {
+    const std::uint64_t* found = tree.find(key);
+    REQUIRE(found != nullptr);
+    REQUIRE(*found == value);
+  }
 }

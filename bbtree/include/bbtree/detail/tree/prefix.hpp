@@ -49,7 +49,6 @@ template <class T>
 [[gnu::cold, gnu::noinline]] void tree<T>::shrink_borders_to(std::size_t len) noexcept {
   const window fill = shared_.window_at(len);
   shared_.shrink_to(len);
-  forget_rightmost_leaf();
   for (const node_end end : {node_end::first, node_end::last}) {
     node_ptr<T> node = root();
     while (!node.is_leaf()) {

@@ -242,7 +242,10 @@ class tree {
   shared_prefix& shared_mut() noexcept { return shared_; }
 
   // Ends the permission to append to the remembered leaf, before a change
-  // that could move or free it.
+  // that could move or free a node: every change through a node stack
+  // (`node_stack_mut`), a raise, a lower and a border's fixing. Entries that
+  // go into or out of a leaf, or change in place, leave every node where it
+  // is: the remembered leaf stays the tree's last through them.
   void forget_rightmost_leaf() noexcept { rightmost_leaf_ = node_ptr<T>(); }
   node_ptr<T> remembered_rightmost_leaf() const noexcept { return rightmost_leaf_; }
   void remember_rightmost_leaf(leaf_node<T> leaf) noexcept { rightmost_leaf_ = leaf.node(); }
@@ -413,9 +416,9 @@ class tree {
     return {entry, false};
   }
 
-  // The append of `key` to the remembered last leaf, if it has room and
-  // `key` is greater than its last key and shares what every key does.
-  bool appends_to_rightmost(const K& key) noexcept;
+  // Whether `key` appends to the remembered last leaf: the leaf has room,
+  // and `key` is greater than its last key and shares what every key does.
+  bool appends_to_rightmost(const K& key) const noexcept;
 
   void shrink_borders_to(std::size_t len) noexcept;
 

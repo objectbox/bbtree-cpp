@@ -3,8 +3,10 @@
 // An insert first tries the last leaf a split remembered (D45): a key greater
 // than its last appends there directly while the leaf has room. Otherwise it
 // descends without a node stack, as a lookup does (D37): an existing key, or
-// a leaf with room, needs no ancestors. A full leaf takes an outlined second
-// search that records the node stack, takes the split's pages from the
+// a leaf with room, needs no ancestors. Neither moves or frees a node, so the
+// remembered leaf stays the last and the next append still goes straight to
+// it. A full leaf takes an outlined second search that records the node
+// stack, which forgets the remembered leaf, takes the split's pages from the
 // allocator first, and splits up the stack. A root that splits raises the
 // tree. Once the entry is in and counted, the split halves refit their
 // prefixes, and the stack goes back down to the new entry.
@@ -18,12 +20,11 @@
 namespace bbtree::detail {
 
 template <class T>
-bool tree<T>::appends_to_rightmost(const K& key) noexcept {
+bool tree<T>::appends_to_rightmost(const K& key) const noexcept {
   if (!rightmost_leaf_) {
     return false;
   }
   const leaf_node<T> leaf(rightmost_leaf_);
-  rightmost_leaf_ = node_ptr<T>();
   const std::size_t len = leaf.len();
   if (len >= leaf_node<T>::capacity || len == 0) {
     return false;
@@ -39,22 +40,20 @@ template <existing_value Existing, class KeyRef, class A, class MakeValue>
 insertion<T> tree<T>::insert(KeyRef&& key, MakeValue&& make_value, const page_source<A>& pages,
                              std::size_t& length) {
   static_assert(std::is_same_v<std::remove_cvref_t<KeyRef>, K>);
-  if (const node_ptr<T> remembered = rightmost_leaf_; appends_to_rightmost(key)) {
-    const leaf_node<T> leaf(remembered);
+  if (appends_to_rightmost(key)) {
+    const leaf_node<T> leaf(rightmost_leaf_);
     V value = make_value();
     const std::size_t index = leaf.len();
     leaf.insert_fit(
         index, prefixed_key<KeyRef&&>(std::forward<KeyRef>(key)).template window_at<T>(leaf.prefix_len()),
         std::move(value));
-    rightmost_leaf_ = remembered;
     ++length;
-    return {{remembered, index}, true};
+    return {{leaf.node(), index}, true};
   }
   if (!has_root()) {
     make_root(pages);
   }
   const prefixed_key<KeyRef&&> prefixed = shrink_shared_prefix_for<KeyRef&&>(std::forward<KeyRef>(key));
-  forget_rightmost_leaf();
 
   // The descent without a node stack, as a lookup's.
   const search_key<T, K> query(prefixed.key());
