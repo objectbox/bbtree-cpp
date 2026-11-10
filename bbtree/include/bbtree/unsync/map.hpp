@@ -561,7 +561,9 @@ class bbtree_map : private detail::tree_owner<detail::tree_types<K, V, Compare, 
 
   // Panics, by `detail::invariant_violation`, unless the tree is well formed;
   // where `BBTREE_CHECKED` is set (tests, fuzz targets).
+#if defined(BBTREE_CHECKED)
   void check_invariants() const { tree_.check_invariants(length_); }
+#endif
 
  private:
   using key_order = typename types::order;

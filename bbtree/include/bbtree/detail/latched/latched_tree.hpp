@@ -380,6 +380,7 @@ class latched_tree {
 
   // Checks the tree's structure (`invariants.hpp`) and that appends go to
   // its last leaf; once no other thread changes it.
+#if defined(BBTREE_CHECKED)
   void check_invariants(std::size_t length) {
     tree<T> whole = view(shared_);
     struct release_on_exit {
@@ -395,6 +396,7 @@ class latched_tree {
       }
     }
   }
+#endif
 
  private:
   // The tree as an unsync tree over the same nodes, for an owner or a thread

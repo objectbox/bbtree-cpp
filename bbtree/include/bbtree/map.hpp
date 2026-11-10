@@ -355,7 +355,9 @@ class bbtree_map {
 
   // Panics, by `detail::invariant_violation`, unless the tree is well formed
   // and holds `length` entries. Owner; where `BBTREE_CHECKED` is set.
+#if defined(BBTREE_CHECKED)
   void check_invariants(std::size_t length) { tree_.check_invariants(length); }
+#endif
 
  private:
   pages_type pages() const noexcept { return pages_type(allocator_); }

@@ -448,7 +448,9 @@ class bbtree_set
     return std::lexicographical_compare_three_way(a.begin(), a.end(), b.begin(), b.end());
   }
 
+#if defined(BBTREE_CHECKED)
   void check_invariants() const { tree_.check_invariants(length_); }
+#endif
 
  private:
   // Whether a range's elements are keys `K`. Only then does the set's order,

@@ -405,7 +405,9 @@ class tree {
 
   // --- Checks (`invariants.hpp`) ---
 
+#if defined(BBTREE_CHECKED)
   void check_invariants(std::size_t length) const;
+#endif
 
  private:
   template <existing_value Existing, class KeyRef, class A, class MakeValue>
@@ -518,7 +520,9 @@ void node_stack_mut<T>::finish_insertion() noexcept {
 #include <bbtree/detail/tree/build.hpp>
 #include <bbtree/detail/tree/clone.hpp>
 #include <bbtree/detail/tree/insert.hpp>
+#if defined(BBTREE_CHECKED)
 #include <bbtree/detail/tree/invariants.hpp>
+#endif
 #include <bbtree/detail/tree/prefix.hpp>
 #include <bbtree/detail/tree/remove.hpp>
 #include <bbtree/detail/tree/teardown.hpp>
