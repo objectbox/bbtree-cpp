@@ -7,7 +7,8 @@
 //   struct large_leaves : bbtree::default_node_config {
 //     static constexpr std::size_t leaf_page_size = 4096;
 //   };
-//   bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t, std::less<>,
+//   bbtree::unsync::bbtree_map<std::uint64_t, std::uint64_t, std::less<std::uint64_t>,
+//                              bbtree::global_allocator,
 //                              bbtree::configured<bbtree::auto_inline_keys, large_leaves>>
 //
 // A page size is a power of two. A node is the smallest multiple of its
