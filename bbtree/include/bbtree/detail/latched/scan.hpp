@@ -202,6 +202,9 @@ class latched_scan {
         if (tree_.root_node() == root) {
           return;
         }
+        // The page is the root no longer: let it go before the retry, which
+        // would else hold it through its walk and its wait for a leaf.
+        held.release();
         continue;
       }
       latch_version version = node_latch(root.page()).read_version();
