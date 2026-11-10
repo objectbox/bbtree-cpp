@@ -37,6 +37,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace bbtree {
 
@@ -222,17 +223,33 @@ class bbtree_map {
   }
 
   // Runs `f(key, value)` on the entry at `key`, inserting `key` and `value`
-  // first if there is none, with the leaf latched exclusive.
+  // first if there is none, with the leaf latched exclusive. Returns what
+  // `f` returns, which may be nothing.
   template <class F>
   auto get_or_insert(K key, V value, F&& f) {
+    constexpr bool returns_nothing = std::is_void_v<std::invoke_result_t<F&, const K&, const V&>>;
+    // The insert hands a closure's result back, so one that returns nothing
+    // hands back an empty value in its place.
     struct read {
       F& f;
-      auto occupied(leaf, const K& stored_key, V& stored, V&&) {
-        return f(stored_key, std::as_const(stored));
+      auto run(const K& entry_key, const V& entry_value) {
+        if constexpr (returns_nothing) {
+          f(entry_key, entry_value);
+          return std::monostate{};
+        } else {
+          return f(entry_key, entry_value);
+        }
       }
-      auto vacant(leaf, const K& new_key, const V& new_value) { return f(new_key, new_value); }
+      auto occupied(leaf, const K& stored_key, V& stored, V&&) {
+        return run(stored_key, std::as_const(stored));
+      }
+      auto vacant(leaf, const K& new_key, const V& new_value) { return run(new_key, new_value); }
     } policy{f};
-    return changes().insert(std::move(key), std::move(value), policy, pages());
+    if constexpr (returns_nothing) {
+      changes().insert(std::move(key), std::move(value), policy, pages());
+    } else {
+      return changes().insert(std::move(key), std::move(value), policy, pages());
+    }
   }
 
   // Runs `occupied(leaf, key, value)` on the entry at `key`, its value
@@ -346,9 +363,12 @@ class bbtree_map {
     std::size_t ignored_length = 0;
     tree_.change_owned([&](detail::tree<types>& whole) {
       for (; first != last; ++first) {
-        const auto& entry = *first;
+        // An entry the range gives away (a move iterator's) moves in.
+        auto&& entry = *first;
+        using entry_type = decltype(entry);
         whole.template insert<detail::existing_value::assigned>(
-            K(entry.first), [&] { return V(entry.second); }, pages(), ignored_length);
+            K(std::forward<entry_type>(entry).first),
+            [&] { return V(std::forward<entry_type>(entry).second); }, pages(), ignored_length);
       }
     });
   }

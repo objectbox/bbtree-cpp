@@ -27,7 +27,8 @@ set(BBTREE_TEST_SOURCES
   shared/lookup_stress_test.cpp
   shared/change_stress_test.cpp
   shared/scan_test.cpp
-  shared/annex_test.cpp)
+  shared/annex_test.cpp
+  shared/entry_calls_test.cpp)
 
 find_package(Threads REQUIRED)
 
