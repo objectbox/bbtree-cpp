@@ -10,10 +10,11 @@ Both ran the same benchmark cells with the same inputs on one machine; see Setup
 - **String keys:** with compact strings bbtree++ is 1.15-1.7× as fast. Key
   type for key type, `std::string` against the Rust crate's `String`, it is
   1.1-1.55× as fast on lookups and 0.66-0.94× on inserts and builds.
-- **The shared map:** faster on one thread, even to 1.15× as fast with 8
-  threads.
-- **bbtree-store:** inserts and gets are even, on one thread and on eight;
-  scans are 1.25× slower and gets of long values 1.28× slower.
+- **The shared map:** 1.2-2.2× as fast on one thread; with 8 threads
+  inserts, updates and removes are 1.1-1.2× as fast and gets even.
+- **bbtree-store:** on one thread inserts and gets are 1-7% slower, on
+  eight even; scans are 1.25× slower and gets of long values 1.15-1.3×
+  slower.
 
 ## Integer keys
 
@@ -84,7 +85,7 @@ The `1Mx4` and `100kx32` rows are the `tiny` suite's: a million maps of 4
 entries and 100k maps of 32, keys and 32-byte values.
 
 With compact keys bbtree++ inserts, looks up, iterates and builds 32-entry
-maps faster than the Rust crate, and builds many 4-entry maps about as
+maps faster than the Rust crate, and builds many 4-entry maps 1.15× as
 fast, though each map takes a full 1 KiB root page (FUTURE_WORK.md). With
 `std::string` keys it looks up faster and iterates as fast, and inserts and
 builds slower (see "Where bbtree++ trails"). Iterating maps of 4 trailed
@@ -99,24 +100,27 @@ same probe in both languages (1M scrambled keys, 8 threads, wall time an
 operation; `bbtree::bbtree_map` against `bbtree::BBTreeMap`, both on
 mimalloc).
 
+Bold marks the faster of each pair: shared against shared, unsync
+against unsync.
+
 | u64 → u64, 1k | bbtree++ shared | bbtree (Rust) shared | bbtree++ unsync | bbtree (Rust) unsync |
 |---|--:|--:|--:|--:|
-| random_insert | 26.1 | 38.8 | 23.5 | 36.4 |
-| sequential_insert | 8.29 | 11.6 | 6.44 | 8.11 |
-| get_hit | 13.3 | 25.5 | 9.54 | 24.9 |
-| get_miss | 10.7 | 23.1 | 8.95 | 24.1 |
-| iterate | 0.614 | 0.825 | 0.214 | 0.338 |
-| range64 | 70.8 | 102 | 84.0 | 118 |
-| random_remove | 34.0 | 50.2 | 33.2 | 44.6 |
+| random_insert | **26.1** | 38.8 | **23.5** | 36.4 |
+| sequential_insert | **8.29** | 11.6 | **6.44** | 8.11 |
+| get_hit | **13.3** | 25.5 | **9.54** | 24.9 |
+| get_miss | **10.7** | 23.1 | **8.95** | 24.1 |
+| iterate | **0.614** | 0.825 | **0.214** | 0.338 |
+| range64 | **70.8** | 102 | **84.0** | 118 |
+| random_remove | **34.0** | 50.2 | **33.2** | 44.6 |
 
 | 1M, 8 threads | bbtree++ | bbtree (Rust) |
 |---|--:|--:|
-| insert | **37-39** | 44 |
-| get_copied | **49-50** | 52-54 |
-| update | **18** | 22 |
-| remove | **35-37** | 41 |
+| insert | **37-41** | 42-44 |
+| get_copied | 49-53 | 50-54 |
+| update | **18-19** | 21-23 |
+| remove | **35-37** | 40-41 |
 
-Two runs of each probe.
+Four passes of each probe, in two runs.
 
 ## bbtree-store, `examples/bench` at 1M entries
 
@@ -126,14 +130,14 @@ don't overlap.
 
 | | bbtree++ | bbtree (Rust) |
 |---|--:|--:|
-| 1 thread: insert, ns | 231-243 | 229 |
-| 1 thread: get, ns | 222-226 | 219 |
-| 1 thread: scan, ns per entry | 21.6 | **17.2** |
+| 1 thread: insert, ns | 231-243 | **226-229** |
+| 1 thread: get, ns | 222-226 | **212-219** |
+| 1 thread: scan, ns per entry | 21.6 | **16.9-17.2** |
 | nodes + heap, bytes per entry | 110.6 | **103.6** |
 | churn, heap bytes a live record byte (round 4) | 1.74 | **1.52** |
-| 8 threads: insert, ns wall | 61 | 62 |
-| 8 threads: get, ns wall | 33 | 34 |
-| 4,000-byte values: insert / get, ns | 1731 / 704 | 1737 / **550** |
+| 8 threads: insert, ns wall | 61-65 | 62-64 |
+| 8 threads: get, ns wall | 33-34 | 34-35 |
+| 4,000-byte values: insert / get, ns | 1731-1751 / 702-704 | 1737-1762 / **550-616** |
 
 The store keeps a head's record in place (the race TSan found, which the
 Rust crate has; PORTING.md, [heads' records](../../PORTING.md#p24-a-leafs-head-keys-record-stays-put)): the pages such records pin
@@ -150,7 +154,9 @@ its inserts and gets 3-14% slower than they are.
   shipped (mimalloc crate 0.1, which builds mimalloc 3; `-C
   target-cpu=native`, fat LTO, one codegen unit). The store's example and
   the 8-thread probe are not the bench crate's and were built with the same
-  three settings.
+  three settings. The Rust bench ran about 50 minutes before the C++
+  bench's runs these tables have, each in a quiet window, not back to
+  back.
 - **C++:** Clang 15, `--preset bench` (`-O3 -march=native`, LTO), mimalloc
   3.3.2 (PORTING.md, [the bench's allocator](../../PORTING.md#p17-the-benchs-allocator-mimalloc-332-behind-operator-new)).
 - **Inputs:** the same keys, values, orders and probes: `bbtree-bench
@@ -285,7 +291,7 @@ were. Memory is unchanged, byte for byte, over 48 cells of
   entry became 21. The Rust crate built for the host CPU scans in 17: an
   earlier 1.05× was against a build of it for baseline x86-64. Part of the
   rest is bbtree++'s 7 more heap bytes per entry (87 against 80; [heads' records](../../PORTING.md#p24-a-leafs-head-keys-record-stays-put)).
-- **The store's gets of 4,000-byte values (1.28×):** not the read path,
+- **The store's gets of 4,000-byte values (1.15-1.3×):** not the read path,
   which runs the Rust crate's instructions (1,324 against 1,333 a get) and
   is even with it in a program of its own (549-579 against 551-572 ns). In
   the bench's process the same instructions take 1.28× the cycles, about 8

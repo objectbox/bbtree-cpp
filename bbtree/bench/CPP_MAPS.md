@@ -135,14 +135,14 @@ row.
 | str-json_u64_get_miss_1M | 149 | 141 | **132** | 145 |
 
 - **Writes:** a string → `u64` leaf entry shrinks from 49 bytes to 33 and
-  shifts by one `memmove`: 1M JSON-key inserts 226 → 138 ns; removes,
+  shifts by one `memmove`: 1M JSON-key inserts 214 → 132 ns; removes,
   upserts, bulk builds and builds of 32-entry maps 0.45-0.6×; `pop_first`
   0.2×.
 - **Iteration:** 0.67× `std::string`'s for maps of 4, 0.75× for maps of
   32. A first layout with 15 bytes in place decoded the size in eight
   instructions and walked 1.2-1.4× slower; PORTING.md, [compact_string](../../PORTING.md#p29-compact_string-12-bytes-in-place-the-size-in-one-place),
   has the measurement.
-- **Lookups** with `compact_string` are within 5% of `std::string`'s or
+- **Lookups** with `compact_string` are within 10% of `std::string`'s or
   faster: with 12 bytes in place, 16% of JSON keys and most `str-16` keys
   live on the heap, so a tie reads a line past the node, and `data()`
   branches on the form. Not profiled further.

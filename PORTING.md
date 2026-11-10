@@ -1269,7 +1269,7 @@ an owning byte string for keys that does neither.
   `operator++` wherever a program had two loops over one map type, a call a
   step (33.8 → 12.9 instructions an entry), which P38's figures, from one
   loop a type, did not show. A loop of one bound and 64 steps runs 4% more
-  instructions for it than before (1,287 → 1,343; its time within 1%).
+  instructions for it than before (1,287 → 1,343, and 1.4% more cycles).
 - `rbegin()` and `rend()` return reverse iterators of the maps' own, which
   step the cursor backwards: `std::reverse_iterator` copied the 288-byte
   iterator at every dereference (a reverse walk of 1k entries 45 → 0.73 ns
