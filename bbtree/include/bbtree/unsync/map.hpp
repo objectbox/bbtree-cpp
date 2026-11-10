@@ -16,7 +16,7 @@
 // - Keys and values must not throw from their move constructors and
 //   destructors, nor comparators and inline-key specializations (D48).
 // Extras from the Rust crate: `fold`, `first`/`last`, `pop_first`/`pop_last`,
-// `retain`, `extract_if`, `append`, `split_off`, the batches `get_many` and
+// `retain`, `append`, `split_off`, the batches `get_many` and
 // `insert_many`, and `check_invariants`.
 #pragma once
 

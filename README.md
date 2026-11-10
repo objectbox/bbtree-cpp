@@ -31,7 +31,8 @@ follows.
   looked up where they lie.
 - `bbtree::pooled_allocator`: packs a map's pages into 2 MiB chunks on huge
   pages. Without mimalloc or another allocator replacing `operator new`, it
-  makes large maps up to 3× faster to walk and build on glibc; give many
+  makes large maps up to 2× faster to walk and build on glibc, as
+  `GLIBC_TUNABLES=glibc.malloc.hugetlb=1` in the environment also does; give many
   small maps copies of one allocator to share its pool (PORTING.md,
   [pooled pages](PORTING.md#p32-pooled_allocator-pages-packed-into-chunks-opt-in)).
 - Zero dependencies: headers only, C++20, Clang 15+ or GCC 13+; CMake 3.28+.
@@ -124,8 +125,19 @@ std::string_view first = map.begin()->first;
 - Iterators dereference to `bbtree::entry_ref<K, V>`, a pair of references:
   `for (auto& [k, v] : map)` does not compile; `it->second = v` writes
   through (PORTING.md, [iterators](PORTING.md#p7-iterators-proxy-references-and-node-stacks-attached-lazily)).
-- Every insert and erase invalidates every iterator, as for
-  `absl::btree_map`.
+- Every insert and erase invalidates every iterator, and every reference
+  and pointer to an entry, as for `absl::btree_map`: `m[a] = m[b]` reads a
+  reference that the insert of `a` may have moved. Iterators stay valid
+  across `swap` and moves of the map.
+- `for (const std::pair<const K, V>& entry : map)` compiles and copies
+  every entry; take `const auto&`.
+- Not there: `extract`, `merge` and node handles, `value_comp`, transparent
+  `equal_range`, constructors that take a comparator or an allocator with a
+  range, deduction guides. `std::erase_if` and `std::views::keys` don't
+  compile for the maps; `erase_if(map, predicate)`, found by its argument,
+  and a range-for with `entry.first` stand for them.
+- An `emplace` or `try_emplace` that an allocator refuses a page has
+  consumed its arguments, as std::map's has when it throws.
 - Comparators must be stateless; allocators are page allocators
   (`bbtree/allocator.hpp`), not std allocators (PORTING.md, [allocators](PORTING.md#p3-allocators-a-concept-of-page-allocators-not-stds-allocator),
   [comparators](PORTING.md#p8-stateless-comparators-and-the-maps-template-parameters)).
@@ -174,15 +186,17 @@ target_link_libraries(app PRIVATE bbtree::bbtree)   # or bbtree::mmap, bbtree::s
 
 ## Status
 
-**Testing.** 245 Catch2 tests, built for the baseline and native targets,
+**Testing.** 328 Catch2 test cases, most built for the baseline and for the
+native target (619 tests in all),
 pass under Clang and GCC with warnings as errors; CI runs them again under
 AddressSanitizer and UBSan, and the shared map's under ThreadSanitizer.
 Eight libFuzzer targets check the maps and the shared map against
 `std::map`, the set algebra against std's algorithms, the tree's
 invariants after every operation, and memory safety under keys whose order
 lies. CI fuzzes each target for a minute, and the ordinary tests run the
-same harnesses on fixed inputs. Not yet ported are the Rust crate's own
-map and set test suites and a random test over iterators (PLAN.md).
+same harnesses on fixed inputs. The shared map's interleavings run under a
+seeded scheduler (PORTING.md, [switch points](PORTING.md#p45-switch-points-in-the-latched-tree-and-a-scheduler-of-threads-for-tests)). Of the Rust crate's own test
+suites, parts are still to port (FUTURE_WORK.md, [tests](FUTURE_WORK.md#tests-still-to-port)).
 
 **How it was ported.** bbtree++ was written by an AI coding agent, Claude
 Opus 5.5, with Claude Fable 5.1 as its advisor, under a human's direction.

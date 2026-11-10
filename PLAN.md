@@ -36,7 +36,9 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
   clone by node copy
 - [x] retain/erase_if (extract_if: future work, C++ has no lazy owning iterator idiom)
 - [x] set API and set algebra (shared tree owner for map and set)
-- [ ] port `unsync/map/tests`, `unsync/set/tests`
+- [~] port `unsync/map/tests`, `unsync/set/tests`: drop accounting, allocator refusal and throwing copies
+  at every allocation point, std::map expectations, lying keys (the review round); hash tags at
+  saturation, shared-prefix shrinks, inline-key hooks, node-level units still to port (FUTURE_WORK.md)
 
 ## M4 Batches (D53)
 - [x] level-by-level lanes (P10), `get_many`, `insert_or_assign_many`, set `contains_many`/`insert_many`
@@ -89,3 +91,12 @@ Rust source: `../bbtree` at `3ab503d` (v0.2.0). Status marks: [x] done,
 - [x] `fold` on the unsync map and set, the bench's checksum folding as the Rust bench's does (P16)
 - [x] the gaps to the Rust bench closed: bulk builds (P30), the store's scan (P31), iterating many small
   maps (P16's four-a-round root leaves)
+## The review round (REVIEW_PLAN.md)
+- [x] a second look by seven reviews: about 20 defects reproduced, the decisions measured again
+- [x] the fixes, each with its test: the unsync map and set, file maps, the shared map's scans and entry
+  calls, the store's overflow pages; `BBTREE_CHECKED` gates the checks; sanitizer presets with assertions
+- [x] in-node counts in explicit vectors (P9); nodes aligned to a cache line (P44); refusals by value (P21);
+  iterators (P47); the shared map's inlined descent (P48); batched inserts, the remembered leaf, bulk
+  builds, copies and range erases
+- [x] switch points and a seeded scheduler for the shared map's interleavings (P45)
+- [x] the bench docs remeasured in one window, the Rust side built as its bench crate builds

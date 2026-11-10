@@ -52,14 +52,19 @@ keys it was slower, hits 77-97 → 110-128 ns and misses 76-99 → 115-146
 single-threaded: with 2-byte windows few misses are ruled out, and the
 latched descent already latches the leaf once, at its end. Not kept.
 
-## bbtree-store: a refused insert without an exception
+## bbtree-store: a head's record moved under its separator's node
 
-A store whose budget is spent refuses inserts by an `alloc_error` thrown
-from its closure inside the map and caught by `insert` (PORTING.md, [refused inserts](PORTING.md#p21-refusing-an-insert-by-throwing-not-by-a-result-type)),
-microseconds a refusal. A cache that runs at its budget refuses often; a
-refusal result threaded through `latched_changes`' insert paths, and a
-non-throwing failure of the split's page reservation, would make it as
-cheap as an insert. Not measured.
+A leaf's head key's record stays where it is (PORTING.md, [heads' records](PORTING.md#p24-a-leafs-head-keys-record-stays-put)), which pins its
+page: all of the store's 7 bytes an entry and 0.22 bytes of heap a live
+byte over the Rust crate's are holes in such pages, and compactions run
+45-59% more often. The map's rule is that a separator's key is held by
+holding its internal node. A store that moved a head's record only while it
+also held that node, the lowest of its descent with an edge left of the
+path, taken without waiting by a compare-and-swap at the version the descent
+read, would obey it: no deadlock, as the thread waits for nothing while it
+holds its leaf, and a swap that fails leaves the record pinned that time.
+The map would hand the store's closures that node and version. By reading
+it is correct; not built, and what it costs eight threads is unmeasured.
 
 ## bbtree-store: heads' stubs go once their key is no longer a head
 
@@ -78,9 +83,11 @@ once no separator's reader can hold them), at the cost of a second path.
 
 ## CRC32C in hardware
 
-The WAL's CRC32C is a byte-at-a-time table ([CRC32C](PORTING.md#p27-crc32c-a-table-a-byte-at-a-time)). SSE4.2's `crc32`
-instruction (8 bytes a cycle), or slicing by 8, would cut the CRC of a
-commit of many records, if appends ever show it.
+The WAL's CRC32C is a byte-at-a-time table ([CRC32C](PORTING.md#p27-crc32c-a-table-a-byte-at-a-time)), about 5 to 6
+cycles a byte through its dependent load. It is paid by every `read_value`
+and by the whole WAL at open, not once a commit. SSE4.2's `crc32`
+instruction (8 bytes a cycle), or slicing by 8, which needs no CPU check,
+would cut both. Not measured.
 
 ## libstdc++ strings moved as bytes, their short-string pointer fixed
 
@@ -91,7 +98,7 @@ building 100k maps of 32 `std::string` → 32-byte entries 26% faster (79 ns
 an insert to 58) in a prototype that fixed up `slots`' shifts and the paired
 entries' shift; 1M random inserts into one map gained nothing, their shifts
 overlapping the leaf's cache misses. The bench's `build_many_100kx32` cell
-is where bbtree++ trails the Rust crate most (1.7x). Doing it means: a
+is where bbtree++ with `std::string` keys trails the Rust crate most (1.5×). Doing it means: a
 relocation trait with a fix-up after byte moves (`std::string` under
 libstdc++'s C++11 ABI, whose layout the ABI freezes: data pointer first,
 buffer at 16), fix-ups in every byte-moving path (`slots`' shifts and runs,
@@ -121,8 +128,7 @@ branch in `size()` for long strings only, and a second layout to test.
 ## From abseil's B-tree
 
 `absl::btree_map` beats bbtree++ on 1k random u64 inserts (17 ns against
-30), `pop_first` (2×), `range64` (1.2-1.5×), and on building 4-entry maps
-and iterating them with `std::string` keys (CPP_MAPS.md). The Rust crate
+23.5), `pop_first` (2×), and on building 4-entry maps (CPP_MAPS.md). The Rust crate
 trails `BTreeMap` the same way, so these are design differences, not port
 ones. Three of abseil's choices explain them:
 
@@ -217,3 +223,60 @@ right sibling each pop, but moving several at once (as abseil rebalances
 by half the difference) would leave the shift. A leaf whose live slots
 start at an offset, so that taking slot 0 moves the offset, would remove
 it, at the cost of an offset in every slot access.
+
+## The binary search that branches under Clang
+
+Maps without inline keys (`int`, `double`, `std::greater`, `plain_keys`) and
+the kernel target search a node's keys by a binary search written without
+branches (`detail/node/child.hpp`), which Clang 15 compiles to branches:
+5.7 branch misses a `u32` lookup at 1k and 12.8 at 1M, against 1.15 under
+GCC and 1.17 in the Rust crate, which uses `select_unpredictable`.
+`__builtin_unpredictable` and arithmetic selects don't change Clang's mind;
+steps written out without a loop, each guarded, do (0.46 misses at 1k in a
+prototype). No bench cell has such a map.
+
+## A leaf insert's two shifts
+
+An insert into a leaf shifts its inline keys (up to 110 bytes) and its
+entries (up to 880) by two calls of libc's `memmove`: 24% of the
+instructions and of the branch misses of a `u64` insert and erase. A
+shift of the small column in fixed-size vector moves would save one call.
+Idea only; this is where abseil's 256-byte nodes lead at 1k (CPP_MAPS.md).
+
+## The racing-reads checker for GCC, and in CI
+
+The Rust crate's checker, adapted, passes Clang's builds of the shared map
+and can't follow GCC's since the version check clobbers memory and the
+descent is inlined (PORTING.md, [no checker](PORTING.md#p15-no-racing-reads-checker-on-the-compiled-code)): GCC loads a node's version through
+a register that holds the latch's address. Teaching the checker that
+address (a `lea` of offset 8 from a node pointer, followed through moves)
+would let it check GCC's builds; then it could run in CI with its planted
+reloads, which it must flag. AArch64 was never audited.
+
+## The pool's lock
+
+`pooled_allocator` zeroes a page and first touches a 2 MiB chunk under its
+mutex, and with 8 threads inserting, threads sleep on it: 15 thousand
+voluntary context switches per 200 thousand page requests, which the CPU
+profile that cleared the mutex could not show. It is the likely rest of the
+pool's gap to mimalloc on the shared map (the entry above). It also maps
+4 MiB and trims for each 2 MiB chunk, three system calls and a hole each.
+
+## Tests still to port
+
+Of the Rust crate's tests, still without a counterpart: node-level units
+(`slots`, `leaf_node`, `internal_node`, siblings, teardown; about 2,300
+lines), hash tags at saturation, shared-prefix shrinks, inline-key hooks,
+node configs, over-aligned and empty types (a reviewer's ports of these
+pass, outside the repository); six of the seven Shuttle interleavings the
+stress tests can't reach (root lowering under scans and under lookups,
+three levels lowering to two, emptying the tree, a prefix shrink racing a
+root raise, the root's separator removed while lowering), and merges,
+steals and page reuse under threads, on the scheduler of PORTING.md's
+[switch points](PORTING.md#p45-switch-points-in-the-latched-tree-and-a-scheduler-of-threads-for-tests); the file maps' round trips by key type and exact refusals;
+a libFuzzer target that mutates valid file maps (a probe of 8,800 mutated
+images found nothing after the checks of PORTING.md, [file maps](PORTING.md#p46-file-maps-what-a-checked-open-refuses-and-what-the-bytes-are)). The fuzz
+harnesses drive `u64` values only, no batches and no overlapping `append`.
+bbtree-mmap's edge cases (a range past the file's end, a 0-byte file, a
+moved-from `file_map`'s `size()`) have no test and no fix.
+

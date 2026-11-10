@@ -54,7 +54,8 @@ D1–D60) still hold unless an entry here says otherwise.
   (`allocate_internal`, `allocate_leaf`, `allocate_heap`), which
   `page_allocator_traits` defaults, as the Rust trait's default methods do.
   Failure is a null pointer; a map turns it into `bbtree::alloc_error`, a
-  `std::bad_alloc`, except where the API hands it back (`try_insert`).
+  `std::bad_alloc`, except where the API hands it back
+  (`try_update_or_insert_with_leaf`, P21).
 - **Alternatives:** std's `Allocator` named requirement (typed `T*`
   allocation, rebinding; no zeroing, no page kinds: the map would rebind to
   each page type and zero by hand), or `std::pmr::memory_resource` (a
@@ -173,10 +174,22 @@ D1–D60) still hold unless an entry here says otherwise.
 
 ## P9. In-node counts: the compiler's, SSE2 masks, and no AVX-512 or NEON
 
-- **Chosen:** the count over every inline-key slot (04, Q6) is a plain loop
-  over a compile-time capacity, which Clang and GCC vectorize; on x86-64
-  without POPCNT, the SSE2 mask path (D40, D43); on x86-64 without SSE2, a
-  binary search. Hash-tag filtering uses SSE2 (D36).
+- **Chosen:** on x86-64 the count over every inline-key slot (04, Q6) is
+  written in vectors (`detail/node/vector_count.hpp`), one primitive for
+  every slot width and capacity: AVX2 compares and a population count where
+  the build has AVX2, SSE2 compares read as runs of mask bits otherwise
+  (D40, D43), two scalar passes for 8-byte slots without SSE4.2; on x86-64
+  without SSE2, a binary search. Elsewhere it is a plain loop over a
+  compile-time capacity, which Clang turns into NEON compares on AArch64
+  (P33). Hash-tag filtering uses SSE2 (D36).
+- **It was the plain loop on x86-64 too**, left to the vectorizer, which
+  holds at `-O3` only: g++ 13 at `-O2` counted a slot at a time with a
+  branch each, wherever the build had POPCNT (`-march=native`, x86-64-v2 and
+  up) and for string keys at any `-march`. Timed (`bbtree-bench`, `u64`):
+  under g++ `-O2 -march=native` a 1k hit 59 → 11.5 ns and a 1M hit 181 → 73;
+  under Clang `-O3 -march=native`, whose vectorizer did take the loop, a 1k
+  hit 15.4 → 10.2 ns and a 1M hit 85 → 69, the explicit count being 39
+  instructions for 55 two-byte slots where the vectorizer's was 107.
 - **The count's counters have the slots' width.** With `std::size_t`
   counters Clang widened every compared 2-byte slot to 64 bits and counted
   4 slots a vector; with `uint16_t` ones, 16 (`-Rpass=loop-vectorize`). The
@@ -234,9 +247,15 @@ D1–D60) still hold unless an entry here says otherwise.
 - The latch word is reached through `std::atomic_ref` over the page's
   bytes: a page is raw memory, and `std::atomic` is not an implicit-lifetime
   type that could appear in it.
-- **Open (M11):** on one thread, shared `u64` hits cost 21% more than the
-  unsync map's at 1M (128.5 against 105.9 ns) and 12% at 10M; the Rust
-  crate's cost about 3% more (09-concurrency.md, Performance).
+- **What a shared lookup costs over an unsync one** was open here as 21%
+  at 1M `u64` hits (128.5 against 105.9 ns, a probe of `get_copied`)
+  against the Rust crate's 3% (09-concurrency.md, measured on another CPU,
+  at 10M). In instructions at 1M hits the two crates were alike before P48
+  (unsync 407, `read` 549, `get_copied` 591; Rust 454, 555, 537), and since
+  it the port's `read` is 468 and `get_copied` 492. In time, on one thread,
+  unsync `find` 50 ns against 62-72 for the three shared lookups: what is
+  left is the version loads' and, for `read`, the latch's two locked
+  operations.
 
 ## P12. Bench dependencies include mimalloc
 
@@ -290,11 +309,31 @@ same mimalloc (P17).
   rustc's assembly to confirm that once a node's version check passes, the
   code reads nothing more of the node before another check. Rust offers no
   fence that orders its volatile racing reads before a check, so it checks
-  the compiler's output. Here every check is an acquire fence followed by a
-  relaxed load (P11), which the C++ memory model orders, and ThreadSanitizer
-  runs the stress tests. Porting the checker would mean a second
-  assembly-pattern parser for Clang's output, for what the fences already
-  guarantee.
+  the compiler's output. It is not in this repository's checks.
+- **What keeps a read before its check here** is not the language: the
+  racing reads are plain loads, a data race (P11), so the memory model
+  orders nothing, and a compiler that takes memory as unchanging may read a
+  node again after the check in place of the copy it made before. Every
+  check (`node_latch::is_unchanged`) is an acquire fence and an empty `asm`
+  statement that clobbers memory, before a relaxed load of the version:
+  Clang and GCC take either to change any memory, so what is used after it
+  was loaded before it or is loaded anew because the source says so.
+  Neither emits an instruction; the clobber cost a shared insert 1 to 2
+  instructions.
+- **Audited with the Rust crate's checker**, which reads Clang's and GCC's
+  Intel-syntax assembly with small changes (the latched fallbacks of
+  `get_copied` and `contains` end a path as a restart does). Clang 15, `-O2`
+  and `-O3`, with and without `-march=native`: no read of a node after its
+  check reaches a result in `get_copied`, `contains`, `read`, the descent,
+  the scans or `insert`; what it reports is one check it can't make out, the
+  absent key's in `contains` of a string, which compiles to a `sete` with no
+  branch. **GCC 13 is not verified:** before the clobber and the inlined
+  descent (P48) the checker passed GCC's `-O2` builds; since, GCC keeps a
+  node's latch address in a register and loads the version through it,
+  which the checker's model of a latch word at offset 8 of a node pointer
+  does not follow, and it reports paths it can't check in every lookup.
+  Read by hand where sampled (the tied separators' search), those are
+  version loads. FUTURE_WORK.md has the checker for GCC and in CI.
 
 ## P16. `for_each` beside iterators, for Rust's folds
 
@@ -494,20 +533,30 @@ datasets' lines split as `str::lines` splits them.
 
 ## P21. Refusing an insert: by throwing, not by a result type
 
-- **Chosen:** `update_or_insert_with_leaf`'s closures refuse by throwing
-  (`bbtree::alloc_error`, for want of a page). They run before the tree
-  changes, and every latch, held node and reserved page is let go by a
+- **Chosen at first:** `update_or_insert_with_leaf`'s closures refuse by
+  throwing (`bbtree::alloc_error`, for want of a page). They run before the
+  tree changes, and every latch, held node and reserved page is let go by a
   destructor (`held_leaf`, `held_nodes`, `node_pages`), so the map is
   unchanged and the exception reaches the caller, as an allocator's refusal
   of a node page already does. Both closures return the same non-void type,
   which the call returns.
+- **Now beside it: `try_update_or_insert_with_leaf`,** whose closures return
+  a `std::optional`, empty to refuse, and which returns empty too where the
+  allocator refuses a node page. bbtree-store inserts through it and has no
+  `try` block. A store at its budget is where it matters: a cache that
+  evicts and retries sees about one refusal an insert, and a refusal was
+  20,724 instructions by exception against 1,842 by value. Evicting and
+  retrying at the budget, 32-byte values: 2,434 → 1,017 ns an insert on one
+  thread, 455 → 267 on eight; 2,000-byte values 1,627 → 743 and 346 → 256.
+  The map's other inserts compile to what they did (the probe functions of
+  P20, Clang `-O2`: 161 functions, none differs).
 - **Alternative:** Rust's `Result<R, Layout>` and `InsertError<K, V>`, which
   hand the entry back: an optional-or-entry result threaded through every
   insert path of `latched_changes`, and a second, non-throwing way for the
   split's page reservation to fail. More code on the hot path's types for
   one caller, bbtree-store, whose key and value need not come back.
-- **Cost:** an exception per refused insert, which happens only once a
-  store's budget is spent.
+- **Cost of the throwing form:** an exception per refused insert, for
+  callers whose closures refuse rarely.
 
 ## P22. Reverse scans of the shared map
 
@@ -589,7 +638,16 @@ datasets' lines split as `str::lines` splits them.
   (17 + key bytes for an empty value, against 9 + key); a head whose value
   outgrows its record takes a stub and a target until its key is written
   again when not a head, or removed. Records of values of 8 bytes or more
-  are as in the Rust crate.
+  are as in the Rust crate. **What the store bench shows is neither:** with
+  heads free to move (one thread) the port takes the Rust crate's 103.6
+  bytes an entry and 1.52 bytes of heap a live byte exactly, so the 110.6
+  and 1.74 it takes are holes in pages that a head's record pins, which
+  compaction can't slide; pinning also makes 45-59% more compactions.
+- **The race is the Rust crate's:** ThreadSanitizer reports it on its
+  unmodified sources (`3ab503d`) with one test file added, 24 to 44 reports
+  a run: `tree/prefix.rs:131` and `node/internal.rs:496` read a head's key
+  while `leaf_heap.rs:458` moves its record. Its CI runs the map's tests
+  under ThreadSanitizer, not the store's.
 
 ## P25. The WAL is synchronous
 
@@ -1132,3 +1190,111 @@ an owning byte string for keys that does neither.
 - **Before it,** the comparison with stx_btree (P32-P37) grew the bench's
   code 17% (3.15 → 3.68 MB), 0.47 MB of it in the bench's two new maps
   (the pooled one and stx_btree's), and the tests' build 94 → 103 s of CPU.
+
+## P44. Nodes are aligned to a cache line, not to their size
+
+- **Chosen:** a node's page is as large as before, a multiple of its kind's
+  page size, and aligned to 64 bytes; D15 aligns it to its size, 1 KiB for a
+  leaf, so that a node never crosses a 4 KiB page. Only bit 0 of a node
+  pointer is a tag (D52), and no code reads more of an address. File maps
+  keep their pages at multiples of the page size, so their bytes and
+  fingerprint are as they were.
+- **Why:** on glibc an aligned `operator new` of 1 KiB at 1 KiB takes 2 KiB
+  of heap, as the chunk's header sits before the pointer: a map took twice
+  its pages' memory, spread over twice the 4 KiB pages. Aligned to 64, on
+  glibc 2.39 (1M `u64` entries, `bbtree-bench-system`): bulk build 24.9 →
+  15.3 ns an entry, a walk 2.24 → 1.48, `range64` 465 → 332, random inserts
+  138 → 116, a cell's peak RSS 85.5 → 61.8 MB; 1M maps of 4 entries 2,285 →
+  1,370 MB. On mimalloc, whose 1 KiB blocks come aligned to 1 KiB anyway:
+  the same instructions, page faults and heap bytes, times within their
+  run-to-run range.
+- **With it, glibc's own tunable does what the pool does:**
+  `GLIBC_TUNABLES=glibc.malloc.hugetlb=1` (glibc 2.35 and later; the
+  environment only, there is no `mallopt` for it) has `malloc` ask for huge
+  pages, and the default allocator then matches `pooled_allocator` (P32) on
+  the six cells measured. So a pooled default was not built: it would save
+  no memory, and time only for programs on glibc that can't set the
+  variable.
+
+## P45. Switch points in the latched tree, and a scheduler of threads for tests
+
+- **Chosen:** every atomic the shared map's threads share (the latch word,
+  the root and last-leaf pointers, the free lists) is an
+  `interleaved<A>` (`detail/latched/interleaving.hpp`): with
+  `BBTREE_INTERLEAVING` unset, as everywhere but in one test executable, an
+  alias of `A`, so production code compiles to what it did (the review's
+  probes: byte-identical assembly under Clang 15). Set, each access first
+  asks a scheduler, which runs the test's threads one at a time in an order
+  drawn from a seed (`tests/support/interleaving_schedule`), so that an
+  interleaving that fails runs again from its seed. It stands for the Rust
+  crate's Shuttle tests, whose interleavings the stress tests didn't reach:
+  the first test ported, a scan from a bound outside the shared prefix
+  against a prefix shrink, failed, and its fix is the Rust crate's (the
+  bound's side decided again under the border leaf's latch).
+- **One `thread_local` pointer,** the thread's scheduler, in the test build
+  only: the alternative is a context argument through every latch call of
+  the library. AGENTS.md's rule against statics yields here, by the
+  maintainer's word, as it costs production code nothing.
+- **Not ported yet:** six of the seven interleavings the review listed, and
+  merges, steals and page reuse under threads (FUTURE_WORK.md).
+
+## P46. File maps: what a checked open refuses, and what the bytes are
+
+- **A checked `open` refuses** what the Rust reader refuses by checks that
+  are on in its release builds and were `assert`s here: a page offset whose
+  end wraps, a root page outside the file map or in its header, a leaf below
+  the root without a key, and a head flag that a leaf's place contradicts
+  (none in the first leaf, one in every other), so that every head slot a
+  reader reaches is one the check saw. A probe that mutates valid images
+  (8,800 of them, eleven kinds of damage, `u64` and string keys, release
+  build under ASan and UBSan) then reads, bounds and walks what opens: no
+  report.
+- **The fingerprint covers what the slots hold** (`file_storage::format`),
+  so a file of plain values no longer opens as one of spans. Every file map
+  written before has another fingerprint and is refused as a layout
+  mismatch.
+- **Plain bytes are the types that say so** (`is_plain_bytes`: the
+  integers but `bool`, `std::byte`, floating point, empty types and arrays
+  of them; a struct opts in), not every type without padding, which
+  admitted pointers and `std::string_view`.
+- **The writer puts no address of its own into the file:** edges and slots
+  past a node's entries are zeros, so equal maps give equal files.
+
+## P47. Iterators after the review
+
+- A cursor keeps its tree's root node, not the tree's address, so iterators
+  stay at their entries when their map is swapped or moved, as std::map's
+  do; a tree keeps its root page for life (D52).
+- Steps are `always_inline` at the iterators too: Clang had outlined
+  `operator++` wherever a program had two loops over one map type, a call a
+  step (33.8 → 12.9 instructions an entry), which P38's figures, from one
+  loop a type, did not show. A loop of one bound and 64 steps runs 4% more
+  instructions for it than before (1,287 → 1,343; its time within 1%).
+- `rbegin()` and `rend()` return reverse iterators of the maps' own, which
+  step the cursor backwards: `std::reverse_iterator` copied the 288-byte
+  iterator at every dereference (a reverse walk of 1k entries 45 → 0.73 ns
+  an entry).
+- Iterators construct their cursor in place, lookups return their entry in
+  two registers, and a query a transparent comparator would convert anyway
+  (a string literal, an integer whose common type with the key is the
+  key's) is converted before the search, which then takes inline keys.
+- `erase` at an iterator a lookup made removes within its leaf where that
+  takes no node above it, so `erase(find(key))` descends once; an iterator
+  whose key a search no longer finds (a comparator that lies) is found by
+  its address.
+
+## P48. The shared map's descent is inlined into each operation
+
+- **Chosen:** `descend`, the routing through an internal node, the
+  unlatched leaf reads, and the insert's append and insert into its held
+  leaf are `always_inline`; the tied separators' search returns its answer
+  in two registers; what every key shares is copied only if its length, read
+  first, is not zero; and the latch's waits take the latch by value, so that
+  a latch that never waits stays in a register. The Rust crate inlines the
+  same (`#[inline(always)]` on `descend`, `route_racing`,
+  `find_optimistic`).
+- **Measured** (instructions, 1M `u64`): `read` 542 → 468, `get_copied`
+  554 → 492, `contains` 552 → 489; what a shared insert costs over an unsync
+  one 236 → 138 (the Rust crate's 93), a removal 213 → 130 (100).
+- **Cost:** the racing-reads checker no longer follows GCC's builds (P15).
+

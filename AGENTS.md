@@ -30,7 +30,7 @@ design, which this port follows; PORTING.md says where and why it differs.
 
 - organize the code by features, not by technical buckets, e.g., don't have `api.hpp`, `views.hpp`, `data.hpp`, etc. Instead, do `settings.hpp`, `data_panel.hpp`, `code_map.hpp`, etc.
 
-- No static (or global) mutable variables. `static constexpr` constants are fine.
+- No static (or global) mutable variables. `static constexpr` constants are fine. One exception, in a test build only: the thread's scheduler of the shared map's interleaving tests is a `thread_local` pointer (PORTING.md, [switch points](PORTING.md#p45-switch-points-in-the-latched-tree-and-a-scheduler-of-threads-for-tests)).
 
 ## Performance reasoning
 
@@ -45,6 +45,7 @@ design, which this port follows; PORTING.md says where and why it differs.
 
 - Local checks are `scripts/check.sh` (needs [uv](https://docs.astral.sh/uv/) for its pinned clang-format): `clang-format --dry-run --Werror`, a warnings-as-errors build under Clang and GCC, and `ctest`. `scripts/check.sh --sanitize` adds AddressSanitizer + UBSan, the stand-in for the Rust crate's Miri.
 - ThreadSanitizer (`--preset tsan`) runs the concurrent map's tests; see PORTING.md for the races it is told to ignore.
+- The `asan`, `tsan` and `fuzz` presets build with assertions on. `BBTREE_CHECKED` compiles the structural checks (`check_invariants`); tests and fuzz targets set it, an installed bbtree never has it.
 - Valgrind memcheck on the concurrent map's tests needs `--fair-sched=yes`: Valgrind runs one thread at a time, and under its default scheduler a spinning thread starves the others for hours.
 - Any recent Clang or GCC builds the port; it was written and measured with Clang 15 and GCC 13, and CMake 3.28. CI (GitHub, `objectbox/bbtree-cpp`; `gh run view --log-failed` for a failed run) builds on Linux with Ubuntu 24.04's default Clang and on macOS with Homebrew's newest, so a newer Clang's warnings show up there first. clang-format is pinned (`scripts/check.sh`, through `uvx`), as two versions format differently. A job that fails before reaching the port's code most likely means the runner image changed.
 - The Rust original builds with `cargo +1.99.0` where the default toolchain is older.
