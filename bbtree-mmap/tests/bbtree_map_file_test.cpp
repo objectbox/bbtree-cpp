@@ -87,3 +87,29 @@ TEST_CASE("u64 keys with byte-vector values", "[mmap]") {
   }
   std::filesystem::remove(path);
 }
+
+// Keys without inline keys stay in the internal nodes (D17), so a leaf's head
+// is a value alone, whose bytes lie after the leaf as every value's do.
+TEST_CASE("keys without inline keys with string values", "[mmap]") {
+  using map_file = bbtree_mmap::bbtree_map_file<std::uint32_t, std::string>;
+  bbtree::unsync::bbtree_map<std::uint32_t, std::string> map;
+  for (std::uint32_t key = 0; key < 3000; ++key) {
+    map.insert({key * 7, std::string(key % 90, static_cast<char>('a' + key % 26))});
+  }
+  const auto path = temp_path("u32_strings");
+  map_file::create(path, map);
+  const auto read = map_file::read(path);
+  const auto mapped = map_file::mmap(path);
+  REQUIRE(read.size() == map.size());
+  REQUIRE(mapped.size() == map.size());
+  for (const auto& [key, value] : map) {
+    const auto in_read = read.get(key);
+    const auto in_mapped = mapped.get(key);
+    REQUIRE(in_read.has_value());
+    REQUIRE(in_mapped.has_value());
+    REQUIRE(*in_read == value);
+    REQUIRE(*in_mapped == value);
+  }
+  CHECK_FALSE(read.contains(std::uint32_t{1}));
+  std::filesystem::remove(path);
+}

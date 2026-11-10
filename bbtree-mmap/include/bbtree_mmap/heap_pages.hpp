@@ -67,8 +67,8 @@ struct heap_pages {
     constexpr std::size_t page = bbtree::detail::heap_page_size_of<typename T::config>;
     constexpr auto layout = T::leaf;
     std::size_t top = 0;
-    auto entry = [&](std::size_t key_slot, const K& key, std::size_t value_slot, const V& value) {
-      const auto key_bytes = bytes_of(key);
+    auto entry = [&](std::size_t key_slot, std::span<const std::uint8_t> key_bytes, std::size_t value_slot,
+                     const V& value) {
       const auto value_bytes = bytes_of(value);
       const std::size_t size = key_bytes.size() + value_bytes.size();
       if (size > page - top % page) {
@@ -84,12 +84,17 @@ struct heap_pages {
     };
     if constexpr (keys_have_bytes || values_have_bytes) {
       if (leaf.has_head()) {
+        // The head is the entry of the separator left of the leaf (D17).
+        // Without inline keys its key stays in the internal node, and the
+        // leaf has its value alone.
         if constexpr (T::has_inline_keys) {
-          entry(*layout.head_key_offset, leaf.head_key(), layout.head_offset, leaf.head_value());
+          entry(*layout.head_key_offset, bytes_of(leaf.head_key()), layout.head_offset, leaf.head_value());
+        } else {
+          entry(0, {}, layout.head_offset, leaf.head_value());
         }
       }
       for (std::size_t index = 0; index < leaf.len(); ++index) {
-        entry(layout.keys.keys_offset + index * layout.keys.key_stride, leaf.key(index),
+        entry(layout.keys.keys_offset + index * layout.keys.key_stride, bytes_of(leaf.key(index)),
               layout.values_offset() + index * layout.value_stride, leaf.value(index));
       }
     }
