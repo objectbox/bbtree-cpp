@@ -19,15 +19,15 @@
     },
     {
       "name": "asan",
-      "displayName": "Clang, AddressSanitizer + UBSan (the local stand-in for Miri)",
+      "displayName": "Clang, AddressSanitizer + UBSan with assertions (the local stand-in for Miri)",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "BBTREE_SANITIZE": "address,undefined" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g", "BBTREE_SANITIZE": "address,undefined" }
     },
     {
       "name": "tsan",
-      "displayName": "Clang, ThreadSanitizer",
+      "displayName": "Clang, ThreadSanitizer with assertions",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "BBTREE_SANITIZE": "thread" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g", "BBTREE_SANITIZE": "thread" }
     },
     {
       "name": "gcc",
@@ -57,10 +57,11 @@
     },
     {
       "name": "fuzz",
-      "displayName": "Clang, libFuzzer + ASan",
+      "displayName": "Clang, libFuzzer + ASan with assertions",
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -g",
         "BBTREE_BUILD_TESTS": "OFF",
         "BBTREE_CHECKED": "ON",
         "BBTREE_BUILD_FUZZ": "ON",
