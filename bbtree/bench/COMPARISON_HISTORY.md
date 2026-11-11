@@ -83,3 +83,25 @@ which none of these tables is built with, the counts' change is larger: a
 1k `u64` hit 59 → 11.5 ns, as g++ did not vectorize the loop the counts
 were. Memory is unchanged, byte for byte, over 48 cells of
 `bbtree-bench-memory`.
+
+## Gaps to the Rust crate that were closed
+
+Where bbtree++ once trailed the Rust crate and no longer does, with the
+factor it trailed by; COMPARISON.md, "Where bbtree++ trails, and why", has
+what is left.
+
+- **Sequential inserts (1.06-1.14×):** each append checks the key
+  against the prefix every key shares, and the check by 8-byte windows that
+  came with the bulk builds' change, inlined into the insert path, took
+  registers from it: the leaf's length was spilled and loaded straight
+  back. Out of line ([loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)), 0.89-1.02×.
+- **Bulk builds (1.3×):** the build loop read its state back
+  from members after every store into a page, which C++ can't rule out
+  aliasing and Rust's `&mut self` does (PORTING.md,
+  [loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)). The probe that matched the
+  Rust bench rebuilt on warm pages, which hid it. Now 0.74-0.94×.
+- **Iterating 1M maps of 4 entries (1.8×):** the walk read every
+  entry of a leaf with one load, whose steps no stride prefetcher follows;
+  Rust's fold, vectorized four entries a round, reads each with one of its
+  own. Four entries a round in a root leaf ([iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): `compact_string` keys
+  0.68× the Rust crate's `String`, `std::string` keys 1.0-1.1× across runs.

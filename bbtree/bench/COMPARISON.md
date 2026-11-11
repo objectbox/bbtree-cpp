@@ -193,21 +193,6 @@ its inserts and gets 3-14% slower than they are.
   type and depending on libstdc++'s layout: FUTURE_WORK.md.
   `bbtree::compact_string` keys, 16 bytes and moved as bytes, close the
   insert and build gaps (the string keys' table).
-- **Sequential inserts (1.06-1.14×), closed:** each append checks the key
-  against the prefix every key shares, and the check by 8-byte windows that
-  came with the bulk builds' change, inlined into the insert path, took
-  registers from it: the leaf's length was spilled and loaded straight
-  back. Out of line ([loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)), 0.89-1.02×.
-- **Bulk builds (1.3×), closed:** the build loop read its state back
-  from members after every store into a page, which C++ can't rule out
-  aliasing and Rust's `&mut self` does (PORTING.md,
-  [loops that store into a page](../../PORTING.md#p30-loops-that-store-into-a-page-keep-their-state-in-locals)). The probe that matched the
-  Rust bench rebuilt on warm pages, which hid it. Now 0.74-0.94×.
-- **Iterating 1M maps of 4 entries (1.8×), closed:** the walk read every
-  entry of a leaf with one load, whose steps no stride prefetcher follows;
-  Rust's fold, vectorized four entries a round, reads each with one of its
-  own. Four entries a round in a root leaf ([iteration](../../PORTING.md#p16-for_each-beside-iterators-for-rusts-folds)): `compact_string` keys
-  0.68× the Rust crate's `String`, `std::string` keys 1.0-1.1× across runs.
 - **The store's scan (1.25×):** the scan's visit and the record's
   `value()` were calls, a third more instructions per entry, so fewer
   entries' record misses overlapped; inlined ([store scans](../../PORTING.md#p31-a-store-scans-visit-inlines-into-the-maps-loop)), 28 ns an
@@ -220,4 +205,5 @@ its inserts and gets 3-14% slower than they are.
   the bench's process the same instructions take 1.28× the cycles, about 8
   of a get's 66 lines of memory arriving late. Not explained.
 
-Everything else is faster: lookups 1.3-2.7×, upserts 1.7-1.95×.
+Everything else is faster: lookups 1.3-2.7×, upserts 1.7-1.95×. The gaps that were
+closed, and how, are in [COMPARISON_HISTORY.md](COMPARISON_HISTORY.md#gaps-to-the-rust-crate-that-were-closed).
