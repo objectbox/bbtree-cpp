@@ -64,7 +64,7 @@ design, which this port follows; PORTING.md says where and why it differs.
 
 ## Docs
 
-- General docs (the READMEs, the bench's COMPARISON.md and CPP_MAPS.md, FUTURE_WORK.md, AGENTS.md) don't cite numbered entries such as P16, D25 or M11: link the section by its name, e.g. PORTING.md, [iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds). PORTING.md, PLAN.md and `design/` own their numbers.
+- General docs (the READMEs, the bench's COMPARISON.md, COMPARISON_HISTORY.md and CPP_MAPS.md, FUTURE_WORK.md, AGENTS.md) don't cite numbered entries such as P16, D25 or M11: link the section by its name, e.g. PORTING.md, [iteration](PORTING.md#p16-for_each-beside-iterators-for-rusts-folds). PORTING.md, PLAN.md and `design/` own their numbers.
 - Tables comparing the port with the Rust crate put the port first as `bbtree++`, name the original `bbtree (Rust)`, and bold the fastest (or smallest) figure of each row. String-key rows run bbtree++ with the compact string fastest on the cell and name it in the row.
 
 ## Git
