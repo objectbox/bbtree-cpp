@@ -37,6 +37,17 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
 else()
   set(BBTREE_NATIVE_FLAG -march=native)
 endif()
+# For some hosts' CPUs Clang's own `-march=native` names a feature set it
+# then warns of (`-Winvalid-feature-combination`: a 256-bit AVX10.1 it
+# promotes to 512 bits), which `-Werror` would make an error of every native
+# build there. The check fails for a compiler that doesn't know the warning.
+include(CheckCXXCompilerFlag)
+set(CMAKE_REQUIRED_FLAGS -Werror)
+check_cxx_compiler_flag(-Winvalid-feature-combination BBTREE_HAS_INVALID_FEATURE_COMBINATION_WARNING)
+unset(CMAKE_REQUIRED_FLAGS)
+if(BBTREE_HAS_INVALID_FEATURE_COMBINATION_WARNING)
+  list(APPEND BBTREE_NATIVE_FLAG -Wno-error=invalid-feature-combination)
+endif()
 if(BBTREE_NATIVE)
   add_compile_options(${BBTREE_NATIVE_FLAG})
 endif()
